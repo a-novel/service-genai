@@ -43,6 +43,22 @@ It is scheduled in the image's init SQL rather than in a migration: `postgres.Ru
 
 ---
 
+## Provider retention
+
+Every request goes out with `store: false`. Nothing here needs the provider to keep the prose, and
+retrieval survives it: background responses are held to disk for roughly ten minutes to enable
+polling, independently of `store`, while re-attach only has to outlive a pod restart.
+
+It is forced, not defaulted. Retention is a platform posture rather than a per-call choice, and this
+service is the one egress where it can be decided once.
+
+**Reopen this if** re-attach starts failing with a not-found on an operation that should still be
+live — that would mean the ten-minute floor no longer holds, and the trade goes back to the human.
+The cost of being wrong is a lost generation, not a double charge: a re-attach that 404s settles the
+generation as failed rather than starting a second paid call.
+
+---
+
 ## Transactions
 
 Two or more writes that must land together are wrapped in a `transaction.Transactor`, taken as a constructor dependency by the service that needs one and injected in `cmd`. It names no database, so business code says "these writes are one unit" without knowing what stores them:
