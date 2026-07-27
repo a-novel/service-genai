@@ -1,10 +1,9 @@
-// Package catalog holds the three closed vocabularies that turn a caller's abstract request into a
-// concrete priced call: the purposes a generation may be billed to, the profiles it may run under,
-// and what each model costs.
+// Package catalog holds the three closed vocabularies that turn an abstract request into a priced
+// call: the purposes a generation may be billed to, the profiles it may run under, and what each
+// model costs.
 //
-// All three are YAML embedded into the binary and parsed once at boot. Keeping them in the
-// repository rather than in a database or a remote file makes a price change a reviewed commit with
-// a git history, which is the audit trail a cost ledger needs.
+// All three are YAML embedded at build time and parsed at boot, so a price change is a reviewed
+// commit with a git history.
 package catalog
 
 import (
@@ -22,8 +21,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// priceBookVersionLength is how much of the price file's digest identifies it. Enough to be unique
-// across the handful of revisions a price book ever has, short enough to read in a ledger row.
+// priceBookVersionLength is enough to be unique across a price book's revisions, short enough to
+// read in a ledger row.
 const priceBookVersionLength = 12
 
 //go:embed purposes.yaml
@@ -35,9 +34,8 @@ var profilesFile []byte
 //go:embed prices.yaml
 var pricesFile []byte
 
-// Errors reported when a lookup finds nothing, or when a catalog cannot be trusted. Each is a loud
-// failure on purpose: a missing price must never resolve to a free call, and an unregistered
-// purpose must never become a new billing category by accident.
+// A missing price must never resolve to a free call, and an unregistered purpose must never become
+// a billing category by accident, so every miss is an error.
 var (
 	// ErrPurposeUnknown is returned when no registered purpose carries the requested name.
 	ErrPurposeUnknown = errors.New("unknown purpose")
@@ -46,9 +44,8 @@ var (
 	// ErrPriceUnknown is returned when the price book has no entry in force for a provider and
 	// model at the requested time.
 	ErrPriceUnknown = errors.New("no price in force for provider and model")
-	// ErrCatalogInvalid is returned by [LoadFrom] when a catalog cannot be trusted to price a call.
-	// Every parse and validation failure wraps it, so a caller branches on the class rather than on
-	// a message.
+	// ErrCatalogInvalid wraps every parse and validation failure, so a caller branches on the class
+	// rather than on a message.
 	ErrCatalogInvalid = errors.New("invalid catalog")
 )
 
@@ -58,37 +55,32 @@ type Purpose struct {
 	Description string `yaml:"description"`
 }
 
-// Profile is one entry in the closed vocabulary of how a generation runs, resolved to a provider,
-// a model and its parameters.
+// Profile is how a generation runs, resolved to a provider, a model and its parameters.
 //
-// Callers name a profile and never a model, so the model behind a profile can be swapped without
-// any caller changing, and no caller can request an expensive model or raise its own output
-// ceiling.
+// Callers name a profile and never a model, so a model can be swapped without any caller changing,
+// and no caller can request an expensive one or raise its own ceiling.
 type Profile struct {
 	Name        string `yaml:"name"`
 	Description string `yaml:"description"`
 	Provider    string `yaml:"provider"`
 	Model       string `yaml:"model"`
-	// MaxOutputTokens is the ceiling this profile allows. A request may ask for less, never more.
+	// MaxOutputTokens is the ceiling. A request may ask for less, never more.
 	MaxOutputTokens int `yaml:"maxOutputTokens"`
-	// ReasoningEffort is passed to providers that accept one. Empty leaves the provider default.
+	// ReasoningEffort is passed to providers that accept one. Empty leaves their default.
 	ReasoningEffort string `yaml:"reasoningEffort"`
 }
 
-// Price is what one model costs over a period, in currency per million tokens.
-//
-// Per million rather than per token because that is the unit providers publish, so a stored rate
-// can be read against a public price sheet directly.
+// Price is what one model costs over a period, per million tokens — the unit providers publish, so
+// a stored rate reads against a public price sheet directly.
 type Price struct {
 	Provider string `yaml:"provider"`
 	Model    string `yaml:"model"`
 	Currency string `yaml:"currency"`
-	// EffectiveFrom is when this rate came into force. The entry in force at a given moment is the
-	// latest one at or before it.
+	// EffectiveFrom is when this rate came into force. The one in force at a moment is the latest
+	// at or before it.
 	EffectiveFrom time.Time `yaml:"effectiveFrom"`
 
-	// Rates are read from quoted strings: a bare YAML number is a float, which would round the rate
-	// before it was ever used.
+	// Quoted strings, because a bare YAML number is a float and would round the rate before use.
 	InputPerMTokenRaw       string `yaml:"inputPerMtoken"`
 	CachedInputPerMTokenRaw string `yaml:"cachedInputPerMtoken"`
 	OutputPerMTokenRaw      string `yaml:"outputPerMtoken"`
@@ -102,8 +94,7 @@ type Price struct {
 type Catalog struct {
 	purposes map[string]Purpose
 	profiles map[string]Profile
-	// prices holds every entry for a provider and model, oldest first, so a lookup walks backwards
-	// to the one in force.
+	// Oldest first, so a lookup walks backwards to the entry in force.
 	prices map[priceKey][]Price
 
 	priceBookVersion string
@@ -126,17 +117,15 @@ type pricesDocument struct {
 	Prices []Price `yaml:"prices"`
 }
 
-// Load parses the catalogs embedded in the binary. It is what the service calls at boot.
+// Load parses the embedded catalogs. It is what the service calls at boot.
 func Load() (*Catalog, error) {
 	return LoadFrom(purposesFile, profilesFile, pricesFile)
 }
 
 // LoadFrom parses catalogs from raw YAML.
 //
-// It fails rather than degrades. A service that boots with a malformed price book would serve
-// generations it cannot price, and the charge for those is unrecoverable once the provider has run
-// them — so every problem surfaces at startup, where it stops a deployment instead of silently
-// costing money. Taking the bytes rather than reading the embedded files is what lets those
+// It fails rather than degrades: a service that booted with a hole in its price book would run
+// generations it cannot price, and that charge is unrecoverable. Taking bytes is what lets the
 // refusals be tested; [Load] is the entry point everything else uses.
 func LoadFrom(purposesYAML, profilesYAML, pricesYAML []byte) (*Catalog, error) {
 	purposes, err := loadPurposes(purposesYAML)
@@ -158,8 +147,7 @@ func LoadFrom(purposesYAML, profilesYAML, pricesYAML []byte) (*Catalog, error) {
 		purposes: purposes,
 		profiles: profiles,
 		prices:   prices,
-		// The version is a digest of the price file rather than a hand-maintained number, so it
-		// cannot drift from the rates it identifies and no one has to remember to bump it.
+		// A digest rather than a hand-maintained number, so it cannot drift from the rates it names.
 		priceBookVersion: priceBookVersion(pricesYAML),
 	}
 
@@ -191,11 +179,8 @@ func (catalog *Catalog) Profile(name string) (Profile, error) {
 	return profile, nil
 }
 
-// Price returns the rate in force for a provider and model at the given moment: the latest entry
-// effective at or before it.
-//
-// Taking the time of the call rather than reading "the current price" is what lets a generation
-// that ran yesterday still be priced with yesterday's rate.
+// Price returns the rate in force at a moment: the latest entry effective at or before it. Taking
+// the time is what lets a generation that ran yesterday be priced with yesterday's rate.
 func (catalog *Catalog) Price(provider, model string, at time.Time) (Price, error) {
 	entries := catalog.prices[priceKey{provider: provider, model: model}]
 
@@ -208,8 +193,7 @@ func (catalog *Catalog) Price(provider, model string, at time.Time) (Price, erro
 	return Price{}, fmt.Errorf("%w: %s/%s at %s", ErrPriceUnknown, provider, model, at.Format(time.RFC3339))
 }
 
-// PriceBookVersion identifies the price file the rates came from, so a disputed ledger row can be
-// traced to the commit that set them.
+// PriceBookVersion traces a disputed ledger row to the commit that set its rates.
 func (catalog *Catalog) PriceBookVersion() string {
 	return catalog.priceBookVersion
 }
@@ -228,9 +212,8 @@ func (catalog *Catalog) Profiles() []Profile {
 	})
 }
 
-// validate enforces the cross-catalog invariant: every profile must be priceable. A profile naming
-// a model the price book does not cover would run, cost money, and fail at settle time with the
-// charge already incurred — so it is refused at boot instead.
+// validate enforces the cross-catalog invariant: every profile must be priceable. One that is not
+// would run, cost money, and fail at settle with the charge already incurred.
 func (catalog *Catalog) validate() error {
 	for _, profile := range catalog.profiles {
 		_, found := catalog.prices[priceKey{provider: profile.Provider, model: profile.Model}]

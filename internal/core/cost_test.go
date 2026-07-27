@@ -23,8 +23,8 @@ func price(input, cachedInput, output string) catalog.Price {
 func TestCostOf(t *testing.T) {
 	t.Parallel()
 
-	// The published rates for gpt-5.6-terra, so the arithmetic below can be checked against a real
-	// price sheet rather than against invented numbers.
+	// The published rates for gpt-5.6-terra, so the arithmetic below checks against a real price
+	// sheet rather than invented numbers.
 	terra := price("2.50", "0.25", "15.00")
 
 	testCases := []struct {
@@ -43,9 +43,8 @@ func TestCostOf(t *testing.T) {
 			//                                 =====
 			//                                  0.046
 			//
-			// Charging the whole 10,000 input at the full rate and pricing the 500 reasoning tokens
-			// as a fourth term would give 0.0625 — 36% over. That gap is the whole reason this
-			// function exists rather than a two-number multiplication.
+			// The naive version — full rate on all 10,000 input, reasoning as a fourth term —
+			// gives 0.0625, 36% over. That gap is why this is a function and not a multiplication.
 			name: "Success/CachedAndReasoning",
 
 			usage: core.Usage{
@@ -76,9 +75,8 @@ func TestCostOf(t *testing.T) {
 			expect: "0.25",
 		},
 		{
-			// Reasoning is inside the output total and billed at the output rate, so moving tokens
-			// between the two must not change the price. If it does, reasoning is being counted
-			// twice.
+			// Moving tokens into reasoning must not change the price. If it does, reasoning is
+			// being counted twice.
 			name: "Success/ReasoningDoesNotChangeTheCost",
 
 			usage: core.Usage{OutputTokens: 2_000, ReasoningTokens: 2_000},
@@ -95,8 +93,7 @@ func TestCostOf(t *testing.T) {
 			expect: "0",
 		},
 		{
-			// Sub-cent rates are why this is decimal and not a float: the exact value is
-			// 0.0000025, which no binary float represents.
+			// 0.0000025 exactly, which no binary float represents. This is why it is decimal.
 			name: "Success/SingleToken",
 
 			usage: core.Usage{InputTokens: 1},
@@ -149,17 +146,15 @@ func TestCostOf(t *testing.T) {
 	}
 }
 
-// TestCostOfAgainstPublishedRates prices one call per shipped model against the rates in the price
-// book, so the catalog and the formula are checked together rather than each in isolation.
+// Prices one call per shipped model, so the catalog and the formula are checked together.
 func TestCostOfAgainstPublishedRates(t *testing.T) {
 	t.Parallel()
 
 	loaded, err := catalog.Load()
 	require.NoError(t, err)
 
-	// One million uncached input tokens and one million output tokens, so the expected cost is
-	// exactly the published input rate plus the published output rate — readable straight off the
-	// price sheet with no arithmetic to get wrong in the test itself.
+	// A million of each, so the expected cost is the published input rate plus the output rate —
+	// readable off the price sheet, with no arithmetic for the test itself to get wrong.
 	usage := core.Usage{InputTokens: 1_000_000, OutputTokens: 1_000_000}
 
 	for _, profile := range loaded.Profiles() {

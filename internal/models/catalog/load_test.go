@@ -9,9 +9,8 @@ import (
 	"github.com/a-novel/service-genai/internal/models/catalog"
 )
 
-// The refusals are the point of this file. A catalog that loads with a hole in it produces a
-// service that runs generations it cannot price, and the charge for those is unrecoverable once the
-// provider has executed them — so each of these has to stop a deployment rather than degrade.
+// The refusals are the point. A catalog that loads with a hole in it runs generations it cannot
+// price, and that charge is unrecoverable — so each of these stops a deployment.
 func TestLoadFromRefusesBadCatalogs(t *testing.T) {
 	t.Parallel()
 
@@ -95,8 +94,7 @@ func TestLoadFromRefusesBadCatalogs(t *testing.T) {
 			expectErr: "has no output ceiling",
 		},
 		{
-			// The cross-catalog invariant: a profile whose model carries no price would run and
-			// then fail at settle, with the money already spent.
+			// A profile whose model carries no price fails at settle, money already spent.
 			name:     "Error/ProfileWithNoPrice",
 			purposes: goodPurposes,
 			profiles: `profiles:
@@ -159,8 +157,7 @@ func TestLoadFromRefusesBadCatalogs(t *testing.T) {
 			expectErr: "is negative",
 		},
 		{
-			// Two rates in force at the same instant make the price of a call ambiguous, and the
-			// tie would be broken by map ordering.
+			// Two rates at one instant make a call's price ambiguous, broken by map ordering.
 			name: "Error/TwoRatesAtTheSameInstant", purposes: goodPurposes, profiles: goodProfiles,
 			prices: `prices:
   - provider: openai
@@ -204,7 +201,7 @@ func TestLoadFromRefusesBadCatalogs(t *testing.T) {
 	}
 }
 
-// A later entry supersedes an earlier one from its effective date onward, and never before it.
+// A later entry supersedes an earlier one from its effective date, never before.
 func TestPriceInForceAtATime(t *testing.T) {
 	t.Parallel()
 

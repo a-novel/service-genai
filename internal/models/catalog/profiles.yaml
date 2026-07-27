@@ -1,10 +1,5 @@
-# How a generation runs. A caller names a profile; the service resolves it to a provider, a model
-# and its parameters.
-#
-# Profiles are named for the shape of the work, never for a model or a vendor. That is what keeps a
-# caller's own definitions provider-agnostic: an engine can ask for "deep" and stay correct when the
-# model behind it is swapped. A caller can never name a model, request an expensive one, or raise
-# its own output ceiling.
+# How a generation runs. Named for the shape of the work, never for a model or a vendor, so a
+# caller can ask for "deep" and stay correct when the model behind it is swapped.
 profiles:
   - name: fast
     description: Short, cheap, latency-sensitive work — classification and ranking.

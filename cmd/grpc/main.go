@@ -50,9 +50,8 @@ func main() {
 	// CATALOGS
 	// =================================================================================================================
 
-	// Loaded before the server listens, and fatal on failure. A service that came up with a hole in
-	// its price book would run generations it cannot price, and that charge is unrecoverable once
-	// the provider has executed them — so a bad catalog stops the deployment instead.
+	// Before the server listens, and fatal: a service that came up with a hole in its price book
+	// would run generations it cannot price, and that charge is unrecoverable.
 	catalogs := lo.Must(catalog.Load())
 
 	log.Println("Loaded price book " + catalogs.PriceBookVersion())

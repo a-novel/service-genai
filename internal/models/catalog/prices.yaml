@@ -1,14 +1,8 @@
-# What each model costs, in currency per million tokens — the unit every provider publishes, so a
-# ledger row can be checked against a public price sheet without arithmetic.
+# Per million tokens, the unit providers publish. Never fetched at runtime: a price change is a
+# reviewed commit, and a third party must not be able to mutate our billing.
 #
-# This file is never fetched at runtime. A price change is a reviewed commit with a git history,
-# which is the audit trail we want; a third party mutating our billing without a review is not.
-# Seeded by hand and cross-checked against OpenAI's published pricing.
-#
-# Entries are effective-dated and additive: a rate change appends a new entry rather than editing an
-# old one, so a past generation can still be priced with the rate that was in force when it ran.
-# Values are quoted strings, never bare numbers — a YAML float would round the rate before it was
-# ever used.
+# Effective-dated and additive — a rate change appends, so a past generation is still priced with
+# the rate that was in force. Values are quoted: a YAML float would round the rate before use.
 prices:
   - provider: openai
     model: gpt-5.6-luna

@@ -32,7 +32,7 @@ func TestPurpose(t *testing.T) {
 	require.Equal(t, "studio.generation", purpose.Name)
 	require.NotEmpty(t, purpose.Description)
 
-	// The vocabulary is closed: an unregistered name is a caller bug, not a new billing category.
+	// Closed: an unregistered name is a caller bug, not a new billing category.
 	_, err = loaded.Purpose("studio.invented")
 	require.ErrorIs(t, err, catalog.ErrPurposeUnknown)
 }
@@ -53,9 +53,8 @@ func TestProfile(t *testing.T) {
 	require.ErrorIs(t, err, catalog.ErrProfileUnknown)
 }
 
-// TestEveryProfileIsPriceable is the invariant that matters most here. A profile naming a model the
-// price book does not cover would run, cost money, and fail at settle with the charge already
-// incurred. Load refuses that at boot; this proves the shipped catalogs satisfy it.
+// The invariant that matters most: a profile the price book does not cover would run, cost money,
+// and fail at settle with the charge already incurred.
 func TestEveryProfileIsPriceable(t *testing.T) {
 	t.Parallel()
 
@@ -72,7 +71,7 @@ func TestEveryProfileIsPriceable(t *testing.T) {
 			require.True(t, modelPrice.InputPerMToken.IsPositive())
 			require.True(t, modelPrice.OutputPerMToken.IsPositive())
 
-			// Every provider we price discounts cached input rather than charging it in full.
+			// Every provider we price discounts cached input.
 			require.True(t, modelPrice.CachedInputPerMToken.LessThan(modelPrice.InputPerMToken))
 		})
 	}
@@ -87,8 +86,7 @@ func TestPriceEffectiveDating(t *testing.T) {
 	profile, err := loaded.Profile("standard")
 	require.NoError(t, err)
 
-	// A moment before the first entry came into force has no rate. Answering with the earliest
-	// known one would silently price a call at a rate that did not exist yet.
+	// Answering with the earliest known rate would price a call at one that did not exist yet.
 	_, err = loaded.Price(profile.Provider, profile.Model, time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC))
 	require.ErrorIs(t, err, catalog.ErrPriceUnknown)
 
@@ -100,8 +98,7 @@ func TestPriceEffectiveDating(t *testing.T) {
 	require.ErrorIs(t, err, catalog.ErrPriceUnknown)
 }
 
-// TestPricesAreExact guards the reason rates are quoted strings in the YAML. Parsed as a YAML
-// number, a rate becomes a float and 0.25 stops being 0.25.
+// Guards the quoting: parsed as a YAML number, 0.25 stops being 0.25.
 func TestPricesAreExact(t *testing.T) {
 	t.Parallel()
 
@@ -119,8 +116,7 @@ func TestPricesAreExact(t *testing.T) {
 	require.True(t, modelPrice.OutputPerMToken.Equal(decimal.RequireFromString("15.00")))
 }
 
-// TestPriceBookVersionTracksTheFile proves the version identifies the rates rather than being a
-// number someone has to remember to bump.
+// The version identifies the rates rather than being a number someone must remember to bump.
 func TestPriceBookVersionTracksTheFile(t *testing.T) {
 	t.Parallel()
 
