@@ -8,15 +8,14 @@ INSERT INTO
     id,
     owner_id,
     purpose,
-    profile,
     idempotency_key,
     request_fingerprint,
     request,
     max_attempts
   )
 VALUES
-  (?0, ?1, ?2, ?3, ?4, ?5, ?6, ?7)
-ON CONFLICT (owner_id, purpose, idempotency_key) DO UPDATE
+  (?0, ?1, ?2, ?3, ?4, ?5, ?6)
+ON CONFLICT (owner_id, idempotency_key) DO UPDATE
 SET
   updated_at = generations.updated_at
 RETURNING

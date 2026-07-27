@@ -41,7 +41,6 @@ func (sub submission) build() *dao.GenerationSubmitRequest {
 		ID:                 uuid.Must(uuid.NewV7()),
 		OwnerID:            submitOwner,
 		Purpose:            "studio.generation",
-		Profile:            "standard",
 		IdempotencyKey:     "the-key",
 		RequestFingerprint: []byte{0x01},
 		Request:            json.RawMessage(`{"instructions": "write"}`),
@@ -93,12 +92,13 @@ func TestGenerationSubmit(t *testing.T) {
 			},
 		},
 		{
-			// purpose is part of the key: without it one owner's keys collide across features.
+			// The key is scoped to the owner alone, so a caller reusing one across its own features
+			// gets a replay. Namespacing the key is the caller's job.
 			name: "SameKeyDifferentPurpose",
 
 			submissions: []submission{
 				{expectCreated: true},
-				{purpose: "discovery.recommendation", expectCreated: true},
+				{purpose: "discovery.recommendation", expectCreated: false, expectReplayOf: 1},
 			},
 		},
 		{
