@@ -29,14 +29,11 @@ const (
 	GenerationStatusCancelled GenerationStatus = "cancelled"
 )
 
-// Generation is the durable record of one AI generative call, from submission to terminal outcome.
+// Generation is the durable record of one AI generative call.
 //
-// Request and Output hold user content, which is why this row is purged on a retention schedule
-// while the cost rows describing it are kept indefinitely.
-//
-// The generation_ledger table ships in the same migration but has no model here yet: it gains one
-// with the settle operation that writes it, which is also where the exact-decimal representation
-// its money columns need gets chosen.
+// Request and Output hold user content, so this row is purged on a retention schedule while the
+// cost rows describing it are kept. The generation_ledger table gains its model with the settle
+// operation that writes it.
 type Generation struct {
 	bun.BaseModel `bun:"table:generations,alias:generations"`
 
@@ -49,7 +46,7 @@ type Generation struct {
 	RequestFingerprint []byte          `bun:"request_fingerprint"`
 	Request            json.RawMessage `bun:"request,type:jsonb"`
 	Output             json.RawMessage `bun:"output,type:jsonb,nullzero"`
-	// Error is the serialised failure. Opaque here: nothing queries inside it.
+	// Error is the serialised failure. Nothing queries inside it.
 	Error *string `bun:"error,nullzero"`
 
 	Status      GenerationStatus `bun:"status"`

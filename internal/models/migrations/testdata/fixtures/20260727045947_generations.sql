@@ -1,8 +1,5 @@
--- A fixture runs after its matching migration and seeds data the next migration must carry over.
---
--- Two rows deliberately: a pending generation with no ledger, and a settled one whose ledger row
--- outlives it. Together they cover both sides of the terminal-fields constraint and prove the
--- ledger stands on its own, with no foreign key holding it to its parent.
+-- Seeds data the next migration must carry over. Two rows cover both sides of the terminal-fields
+-- constraint, and the settled one's ledger row proves the ledger stands without its parent.
 INSERT INTO
   generations (
     id,

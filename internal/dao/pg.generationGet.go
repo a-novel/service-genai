@@ -18,16 +18,13 @@ import (
 var generationGetQuery string
 
 // ErrGenerationGetNotFound is returned by [GenerationGet.Exec] when the owner has no generation
-// with the requested ID. It is joined onto the underlying sql.ErrNoRows so callers can branch on it
-// with errors.Is.
+// with the requested ID. It is joined onto sql.ErrNoRows so callers can branch on it with errors.Is.
 //
-// A generation owned by someone else reports this too, and deliberately: a distinct "forbidden"
-// answer would confirm the identifier exists.
+// Another owner's generation reports this too: a distinct "forbidden" would confirm the ID exists.
 var ErrGenerationGetNotFound = errors.New("generation not found")
 
 // GenerationGetRequest is the input to [GenerationGet.Exec].
 type GenerationGetRequest struct {
-	// ID of the generation to read.
 	ID uuid.UUID
 	// OwnerID scopes the read. A generation owned by anyone else reports not-found.
 	OwnerID uuid.UUID
