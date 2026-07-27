@@ -49,6 +49,9 @@ var (
 	grpcUrl  = getEnv("GRPC_URL")
 	grpcPing = getEnv("GRPC_PING")
 
+	openaiAPIKey  = getEnv("OPENAI_API_KEY")
+	openaiBaseURL = getEnv("OPENAI_BASE_URL")
+
 	gcloudProjectId = getEnv("GCLOUD_PROJECT_ID")
 )
 
@@ -76,6 +79,13 @@ var (
 	GrpcUrl = grpcUrl
 	// GrpcPing is the refresh interval for the gRPC server's internal health check.
 	GrpcPing = config.LoadEnv(grpcPing, GrpcDefaultPing, config.DurationParser)
+
+	// OpenAIAPIKey authenticates against the provider. The only credential this service holds, and
+	// the reason no consumer holds one.
+	OpenAIAPIKey = openaiAPIKey
+	// OpenAIBaseURL overrides the provider endpoint. Empty uses the SDK default; a value points at
+	// an OpenAI-compatible provider or a local stand-in.
+	OpenAIBaseURL = openaiBaseURL
 
 	// GcloudProjectId names the Google Cloud project the service runs in. Setting
 	// it switches logging and tracing from the local console to Google Cloud.
