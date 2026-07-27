@@ -96,23 +96,13 @@ func (provider *OpenAI) Cancel(ctx context.Context, id string) (*ProviderCall, e
 	return otel.ReportSuccess(span, providerCallOf(response)), nil
 }
 
-// mergeProviderFields adds the fields this service owns to the caller's request.
+// mergeProviderFields adds the three fields this service owns, overwriting whatever the caller set.
 //
-// background is what makes crash-safety possible: the call returns an identifier immediately and
-// the model runs on the provider's side, so a restarted worker can resume it. A blocking call
-// cannot be resumed and a crash burns the whole spend.
-//
-// store is false because nothing here needs the provider to keep the prose. Retrieval survives it:
-// background responses are held to disk for roughly ten minutes to enable polling, independently of
-// store, and re-attach only has to outlive a pod restart. Leaving store at its default would trade
-// that for thirty days of provider-side retention of user content, which is the wrong trade on a
-// platform that hosts explicit material.
-//
-// The metadata cannot close the window between the provider accepting a call and its identifier
-// reaching the database, but it makes an operation orphaned in that window identifiable afterwards.
-//
-// All three overwrite whatever the caller set. Retention is a platform posture rather than a
-// per-call choice: one egress, one place it is decided.
+// background is what makes crash-safety possible: the call returns an identifier immediately, so a
+// restarted worker can resume it rather than burning the whole spend. store is false because nothing
+// here needs the provider to keep the prose, and a background response stays retrievable for roughly
+// ten minutes regardless, where re-attach only has to outlive a pod restart. metadata identifies an
+// operation orphaned between the provider accepting a call and its identifier reaching the database.
 func mergeProviderFields(request *ProviderStartRequest) (json.RawMessage, error) {
 	fields := map[string]json.RawMessage{}
 

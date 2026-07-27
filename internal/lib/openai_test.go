@@ -275,8 +275,7 @@ func TestOpenAIRequestPassThrough(t *testing.T) {
 			expectKept: map[string]any{"model": "gpt-5.6-terra"},
 		},
 		{
-			// Neither is the retention posture. A caller asking the provider to keep the prose does
-			// not get to make that call for the platform.
+			// Retention is not the caller's to set either.
 			name: "OverridesStoreEvenWhenTheCallerSetIt",
 
 			request: json.RawMessage(`{"model": "gpt-5.6-terra", "store": true}`),
@@ -304,7 +303,6 @@ func TestOpenAIRequestPassThrough(t *testing.T) {
 			}
 
 			require.Equal(t, true, script.lastBody["background"])
-			// Retention is decided here, not per call: the provider is asked not to keep the prose.
 			require.Equal(t, false, script.lastBody["store"])
 			require.Equal(t, map[string]any{
 				"generation_id": "01999999-0000-7000-8000-000000000001",
