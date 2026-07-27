@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+import "generation.proto";
+
+// GenerationWatchService streams a generation's state to a caller waiting on its outcome.
+//
+// The stream is resumable by construction: a caller that reconnects calls it again, and the server
+// answers from current state — the generation as it stands now, then each change until it is
+// terminal. There is no cursor and no window in which a change can be missed, because the stream
+// reads durable state rather than consuming events.
+//
+// A caller that wants a single answer uses GenerationGet instead; this is the latency lever for a
+// caller that would otherwise poll.
+service GenerationWatchService {
+  rpc GenerationWatch(GenerationWatchRequest) returns (stream GenerationWatchResponse);
+}
+
+// GenerationWatchRequest identifies the generation to watch and the owner it must belong to.
+message GenerationWatchRequest {
+  // ID of the generation to watch, formatted as a UUID.
+  string id = 1;
+  // OwnerID scopes the watch, formatted as a UUID. Another owner's generation reports not-found.
+  string owner_id = 2;
+}
+
+// GenerationWatchResponse carries one snapshot of the watched generation. One is sent on subscribe
+// and one on each change until it is terminal.
+message GenerationWatchResponse {
+  Generation generation = 1;
+}

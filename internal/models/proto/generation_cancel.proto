@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+import "generation.proto";
+
+// GenerationCancelService stops a generation so an abandoned one stops costing.
+//
+// It records the request and returns. The worker holding the generation observes it, stops the
+// provider operation, and settles — recording whatever was consumed before the stop, because a
+// cancelled call is not a free one.
+service GenerationCancelService {
+  rpc GenerationCancel(GenerationCancelRequest) returns (GenerationCancelResponse);
+}
+
+// GenerationCancelRequest identifies the generation to stop and the owner it must belong to.
+message GenerationCancelRequest {
+  // ID of the generation to stop, formatted as a UUID.
+  string id = 1;
+  // OwnerID scopes the request, formatted as a UUID.
+  string owner_id = 2;
+}
+
+// GenerationCancelResponse returns the generation with the request recorded. Its status is
+// unchanged: the worker settles it once the provider operation has actually stopped.
+message GenerationCancelResponse {
+  Generation generation = 1;
+}

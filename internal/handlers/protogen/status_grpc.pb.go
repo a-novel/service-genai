@@ -26,7 +26,7 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// StatusService reports the health of the gRPC server's dependencies.
+// StatusService reports the health of the gRPC server's dependencies and the queue's own backlog.
 type StatusServiceClient interface {
 	Status(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (*StatusResponse, error)
 }
@@ -53,7 +53,7 @@ func (c *statusServiceClient) Status(ctx context.Context, in *StatusRequest, opt
 // All implementations must embed UnimplementedStatusServiceServer
 // for forward compatibility.
 //
-// StatusService reports the health of the gRPC server's dependencies.
+// StatusService reports the health of the gRPC server's dependencies and the queue's own backlog.
 type StatusServiceServer interface {
 	Status(context.Context, *StatusRequest) (*StatusResponse, error)
 	mustEmbedUnimplementedStatusServiceServer()

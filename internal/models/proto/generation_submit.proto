@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+import "generation.proto";
+
+// GenerationSubmitService records a generation for execution, deduplicating on the idempotency key.
+service GenerationSubmitService {
+  rpc GenerationSubmit(GenerationSubmitRequest) returns (GenerationSubmitResponse);
+}
+
+// GenerationSubmitRequest carries a new generation. The server mints the id and the timestamps.
+message GenerationSubmitRequest {
+  // OwnerID is the user this acts for, formatted as a UUID. Supplied by the calling service, which
+  // verified it against its own credential — this service does not authenticate.
+  string owner_id = 1;
+  // Purpose labels what the spend is attributed to. Required, and otherwise opaque: the vocabulary
+  // belongs to the caller.
+  string purpose = 2;
+  // IdempotencyKey deduplicates repeat submissions within one owner. Required — an unkeyed
+  // submission of a priced call is a bug rather than a default worth tolerating. A value reused
+  // with a different request is a conflict, not a replay.
+  string idempotency_key = 3;
+  // Request is the provider payload, as JSON bytes, forwarded verbatim. The caller owns every
+  // parameter in it; this service merges in only what crash-safety requires.
+  bytes request = 4;
+  // MaxAttempts caps the runs this generation gets. Zero means one, the right floor for a priced
+  // call.
+  int32 max_attempts = 5;
+}
+
+// GenerationSubmitResponse returns the recorded generation and whether this call created it.
+message GenerationSubmitResponse {
+  // Generation is the recorded generation — the newly created one, or the existing one on a replay.
+  Generation generation = 1;
+  // Created is false when an existing generation was returned under the same idempotency key, so a
+  // caller retrying a request attaches to work already in flight instead of paying for a second one.
+  bool created = 2;
+}

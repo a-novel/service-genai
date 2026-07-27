@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+import "generation.proto";
+
+// GenerationGetService reads one of an owner's generations. A generation owned by anyone else
+// reports not-found, so the read cannot be used to learn whether an id exists.
+service GenerationGetService {
+  rpc GenerationGet(GenerationGetRequest) returns (GenerationGetResponse);
+}
+
+// GenerationGetRequest identifies the generation to read and the owner it must belong to.
+message GenerationGetRequest {
+  // ID of the generation to read, formatted as a UUID.
+  string id = 1;
+  // OwnerID scopes the read, formatted as a UUID.
+  string owner_id = 2;
+}
+
+// GenerationGetResponse returns the generation.
+message GenerationGetResponse {
+  Generation generation = 1;
+}

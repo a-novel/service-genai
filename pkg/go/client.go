@@ -16,6 +16,30 @@ import (
 type (
 	StatusRequest  = protogen.StatusRequest
 	StatusResponse = protogen.StatusResponse
+	QueueDepth     = protogen.QueueDepth
+
+	GenerationSubmitRequest  = protogen.GenerationSubmitRequest
+	GenerationSubmitResponse = protogen.GenerationSubmitResponse
+	GenerationGetRequest     = protogen.GenerationGetRequest
+	GenerationGetResponse    = protogen.GenerationGetResponse
+	GenerationCancelRequest  = protogen.GenerationCancelRequest
+	GenerationCancelResponse = protogen.GenerationCancelResponse
+	GenerationWatchRequest   = protogen.GenerationWatchRequest
+	GenerationWatchResponse  = protogen.GenerationWatchResponse
+
+	Generation       = protogen.Generation
+	GenerationStatus = protogen.GenerationStatus
+)
+
+// Terminal statuses, re-exported so a caller can decide whether to keep waiting without importing
+// the generated package.
+const (
+	GenerationStatusPending   = protogen.GenerationStatus_GENERATION_STATUS_PENDING
+	GenerationStatusRunning   = protogen.GenerationStatus_GENERATION_STATUS_RUNNING
+	GenerationStatusSucceeded = protogen.GenerationStatus_GENERATION_STATUS_SUCCEEDED
+	GenerationStatusFailed    = protogen.GenerationStatus_GENERATION_STATUS_FAILED
+	GenerationStatusAbandoned = protogen.GenerationStatus_GENERATION_STATUS_ABANDONED
+	GenerationStatusCancelled = protogen.GenerationStatus_GENERATION_STATUS_CANCELLED
 )
 
 // A Client issues the service's gRPC calls, one method per RPC. Construct one
@@ -26,6 +50,26 @@ type Client interface {
 	) (*golibproto.UnaryEchoResponse, error)
 	Status(ctx context.Context, req *StatusRequest, opts ...grpc.CallOption) (*StatusResponse, error)
 
+	// GenerationSubmit records a generation. The idempotency key is required: a replay attaches to
+	// the work already in flight rather than paying for a second run, and the response reports
+	// which happened.
+	GenerationSubmit(
+		ctx context.Context, req *GenerationSubmitRequest, opts ...grpc.CallOption,
+	) (*GenerationSubmitResponse, error)
+	// GenerationGet reads one of an owner's generations. Another owner's reports not-found.
+	GenerationGet(
+		ctx context.Context, req *GenerationGetRequest, opts ...grpc.CallOption,
+	) (*GenerationGetResponse, error)
+	// GenerationCancel stops a generation so an abandoned one stops costing.
+	GenerationCancel(
+		ctx context.Context, req *GenerationCancelRequest, opts ...grpc.CallOption,
+	) (*GenerationCancelResponse, error)
+	// GenerationWatch streams a generation's state until it is terminal. Resumable: a caller that
+	// reconnects calls it again and is answered from current state.
+	GenerationWatch(
+		ctx context.Context, req *GenerationWatchRequest, opts ...grpc.CallOption,
+	) (grpc.ServerStreamingClient[GenerationWatchResponse], error)
+
 	// Close releases the underlying gRPC connection. Call it once the client is
 	// no longer needed.
 	Close()
@@ -34,6 +78,10 @@ type Client interface {
 type client struct {
 	golibproto.EchoServiceClient
 	protogen.StatusServiceClient
+	protogen.GenerationSubmitServiceClient
+	protogen.GenerationGetServiceClient
+	protogen.GenerationCancelServiceClient
+	protogen.GenerationWatchServiceClient
 
 	conn *grpc.ClientConn
 }
@@ -52,8 +100,12 @@ func NewClient(addr string, opts ...grpc.DialOption) (Client, error) {
 	}
 
 	return &client{
-		EchoServiceClient:   golibproto.NewEchoServiceClient(conn),
-		StatusServiceClient: protogen.NewStatusServiceClient(conn),
-		conn:                conn,
+		EchoServiceClient:             golibproto.NewEchoServiceClient(conn),
+		StatusServiceClient:           protogen.NewStatusServiceClient(conn),
+		GenerationSubmitServiceClient: protogen.NewGenerationSubmitServiceClient(conn),
+		GenerationGetServiceClient:    protogen.NewGenerationGetServiceClient(conn),
+		GenerationCancelServiceClient: protogen.NewGenerationCancelServiceClient(conn),
+		GenerationWatchServiceClient:  protogen.NewGenerationWatchServiceClient(conn),
+		conn:                          conn,
 	}, nil
 }

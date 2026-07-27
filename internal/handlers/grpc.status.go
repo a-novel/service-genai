@@ -9,6 +9,7 @@ import (
 	"github.com/a-novel-kit/golib/otel"
 	"github.com/a-novel-kit/golib/postgres"
 
+	"github.com/a-novel/service-genai/internal/core"
 	"github.com/a-novel/service-genai/internal/handlers/protogen"
 )
 
@@ -28,24 +29,47 @@ func NewGrpcHealthStatus(err error) *protogen.DependencyHealth {
 	}
 }
 
+// GrpcStatusQueueDepthService is the service dependency of [GrpcStatus].
+type GrpcStatusQueueDepthService interface {
+	Exec(ctx context.Context) (*core.QueueDepthResult, error)
+}
+
 // GrpcStatus is the gRPC handler for the Status RPC, reporting the health of the
-// service's external dependencies.
+// service's external dependencies and the queue's own backlog.
 type GrpcStatus struct {
 	protogen.UnimplementedStatusServiceServer
+
+	queueDepth GrpcStatusQueueDepthService
 }
 
-func NewGrpcStatus() *GrpcStatus {
-	return new(GrpcStatus)
+func NewGrpcStatus(queueDepth GrpcStatusQueueDepthService) *GrpcStatus {
+	return &GrpcStatus{queueDepth: queueDepth}
 }
 
-// Status probes each dependency and returns its current health.
+// Status probes each dependency and returns its current health, with the backlog beside it.
 func (handler *GrpcStatus) Status(ctx context.Context, _ *protogen.StatusRequest) (*protogen.StatusResponse, error) {
 	ctx, span := otel.Tracer().Start(ctx, "grpc.Status")
 	defer span.End()
 
-	return &protogen.StatusResponse{
+	response := &protogen.StatusResponse{
 		Postgres: NewGrpcHealthStatus(handler.reportPostgres(ctx)),
-	}, nil
+	}
+
+	// The backlog cannot be measured without the database, and postgres already reports down in
+	// that case — so a missing queue is a consequence of the health above, not a second failure.
+	depth, err := handler.queueDepth.Exec(ctx)
+	if err != nil {
+		_ = otel.ReportError(span, err)
+
+		return response, nil
+	}
+
+	response.Queue = &protogen.QueueDepth{
+		Pending:                 depth.Pending,
+		OldestPendingAgeSeconds: depth.OldestPendingAge.Seconds(),
+	}
+
+	return response, nil
 }
 
 func (handler *GrpcStatus) reportPostgres(ctx context.Context) error {
