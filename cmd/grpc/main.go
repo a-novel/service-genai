@@ -50,11 +50,11 @@ func main() {
 	// CATALOGS
 	// =================================================================================================================
 
-	// Before the server listens, and fatal: a service that came up with a hole in its price book
-	// would run generations it cannot price, and that charge is unrecoverable.
+	// Before the server listens, and fatal: a profile that resolves to nothing must fail the
+	// deployment rather than the first caller who names it.
 	catalogs := lo.Must(catalog.Load())
 
-	log.Println("Loaded price book " + catalogs.PriceBookVersion())
+	log.Printf("Loaded %d purposes and %d profiles", len(catalogs.Purposes()), len(catalogs.Profiles()))
 
 	// =================================================================================================================
 	// HANDLERS

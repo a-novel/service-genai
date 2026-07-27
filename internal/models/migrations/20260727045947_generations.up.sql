@@ -1,6 +1,6 @@
--- generations holds user content and is purged on a retention schedule. generation_ledger holds
--- none and is kept, so the cost history outlives the material it describes. That is why no foreign
--- key joins them: the purge deletes the parent while the ledger row must survive.
+-- generations holds user content and is purged on a retention schedule. generation_usage holds
+-- none and is kept, so the consumption record outlives the material it describes. That is why no
+-- foreign key joins them: the purge deletes the parent while the usage row must survive.
 CREATE TYPE generation_status AS ENUM(
   'pending',
   'running',
@@ -105,43 +105,38 @@ SET
     autovacuum_analyze_scale_factor = 0.02
   );
 
--- One row per attempt: a retry that burned tokens twice cost twice. owner_id, purpose and profile
--- are duplicated rather than joined because the row they would join to is purged.
-CREATE TABLE generation_ledger (
+-- What each attempt consumed. One row per attempt, because a retry burns tokens twice and both
+-- have to be recorded. owner_id, purpose and profile are duplicated rather than joined because the
+-- row they would join to is purged.
+--
+-- No money here. This service records consumption; whoever bills turns it into a price, using the
+-- provider and model recorded on the row.
+CREATE TABLE generation_usage (
   generation_id uuid NOT NULL,
   /* One-based: a row exists only once a run has begun. */
   attempt smallint NOT NULL CHECK (attempt >= 1),
   owner_id uuid NOT NULL,
   purpose text NOT NULL CHECK (purpose <> ''),
   profile text NOT NULL CHECK (profile <> ''),
-  /* What actually ran. Recorded, not derived: a profile resolves to different models over time. */
+  /* What actually ran. Recorded, not derived: a profile resolves to different models over time,
+  and a price cannot be reconstructed later without knowing which one ran. */
   provider text NOT NULL CHECK (provider <> ''),
   model text NOT NULL CHECK (model <> ''),
-  /* Totals include their detail counts below, mirroring the provider's accounting so a row reads
+  /* Totals include the detail counts below, mirroring the provider's own accounting so a row reads
   against an invoice line directly. */
   input_tokens bigint NOT NULL CHECK (input_tokens >= 0),
+  /* Billed at a discount by every provider we use, so it is recorded separately. */
   cached_input_tokens bigint NOT NULL DEFAULT 0 CHECK (cached_input_tokens >= 0),
   output_tokens bigint NOT NULL CHECK (output_tokens >= 0),
   reasoning_tokens bigint NOT NULL DEFAULT 0 CHECK (reasoning_tokens >= 0),
-  /* Rates in force when this attempt settled, per million tokens. Snapshotted rather than
-  referenced: a later price change must not rewrite what a past call cost. */
-  input_price_per_mtoken numeric(20, 12) NOT NULL CHECK (input_price_per_mtoken >= 0),
-  cached_input_price_per_mtoken numeric(20, 12) NOT NULL CHECK (cached_input_price_per_mtoken >= 0),
-  output_price_per_mtoken numeric(20, 12) NOT NULL CHECK (output_price_per_mtoken >= 0),
-  /* Traces a disputed row to the commit that set its rates. */
-  price_book_version text NOT NULL CHECK (price_book_version <> ''),
-  /* ISO 4217, constrained to the shape so a second currency needs no migration. */
-  currency text NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
-  /* Money, so numeric: a float cannot represent a cent. */
-  cost numeric(20, 8) NOT NULL CHECK (cost >= 0),
   created_at timestamp with time zone NOT NULL DEFAULT clock_timestamp(),
-  CONSTRAINT generation_ledger_pkey PRIMARY KEY (generation_id, attempt),
-  -- A count outside its total means the usage was mapped wrong, which misprices silently.
-  CONSTRAINT generation_ledger_cached_within_input CHECK (cached_input_tokens <= input_tokens),
-  CONSTRAINT generation_ledger_reasoning_within_output CHECK (reasoning_tokens <= output_tokens)
+  CONSTRAINT generation_usage_pkey PRIMARY KEY (generation_id, attempt),
+  -- A count outside its total means the provider's numbers were mapped wrong.
+  CONSTRAINT generation_usage_cached_within_input CHECK (cached_input_tokens <= input_tokens),
+  CONSTRAINT generation_usage_reasoning_within_output CHECK (reasoning_tokens <= output_tokens)
 );
 
 -- The two slices the usage read surface serves.
-CREATE INDEX generation_ledger_owner_idx ON generation_ledger (owner_id, created_at DESC);
+CREATE INDEX generation_usage_owner_idx ON generation_usage (owner_id, created_at DESC);
 
-CREATE INDEX generation_ledger_owner_purpose_idx ON generation_ledger (owner_id, purpose, created_at DESC);
+CREATE INDEX generation_usage_owner_purpose_idx ON generation_usage (owner_id, purpose, created_at DESC);

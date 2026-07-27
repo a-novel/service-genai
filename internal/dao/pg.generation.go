@@ -32,7 +32,7 @@ const (
 // Generation is the durable record of one AI generative call.
 //
 // Request and Output hold user content, so this row is purged on a retention schedule while the
-// cost rows describing it are kept. The generation_ledger table gains its model with the settle
+// usage rows describing it are kept. The generation_usage table gains its model with the settle
 // operation that writes it.
 type Generation struct {
 	bun.BaseModel `bun:"table:generations,alias:generations"`

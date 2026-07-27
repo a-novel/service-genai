@@ -1,5 +1,5 @@
 -- Seeds data the next migration must carry over. Two rows cover both sides of the terminal-fields
--- constraint, and the settled one's ledger row proves the ledger stands without its parent.
+-- constraint, and the settled one's usage row proves usage stands without its parent.
 INSERT INTO
   generations (
     id,
@@ -55,7 +55,7 @@ VALUES
   );
 
 INSERT INTO
-  generation_ledger (
+  generation_usage (
     generation_id,
     attempt,
     owner_id,
@@ -66,13 +66,7 @@ INSERT INTO
     input_tokens,
     cached_input_tokens,
     output_tokens,
-    reasoning_tokens,
-    input_price_per_mtoken,
-    cached_input_price_per_mtoken,
-    output_price_per_mtoken,
-    price_book_version,
-    currency,
-    cost
+    reasoning_tokens
   )
 VALUES
   (
@@ -86,11 +80,5 @@ VALUES
     1000,
     200,
     500,
-    100,
-    1.25,
-    0.125,
-    10,
-    'fixture',
-    'USD',
-    0.006
+    100
   );
