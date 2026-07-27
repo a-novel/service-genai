@@ -45,13 +45,13 @@ It is scheduled in the image's init SQL rather than in a migration: `postgres.Ru
 
 ## Provider retention
 
-Every request goes out with `store: false`, so the provider runs the call and keeps no copy of the user content. The value overwrites whatever the caller sent: this service is the platform's only path to a provider, so retention is settled here for every caller at once.
+`store` asks the provider to keep the response after the call ends. OpenAI holds a stored response for about thirty days: it can be read back with `GET /v1/responses/{id}`, and a later request can reference it through `previous_response_id` to continue a conversation without resending its history.
 
-The cost is chaining. A request that references a previous response's items fails with `Item not found`, so every submission carries a self-contained payload.
+Neither is worth thirty days of user content sitting with the provider. Output that outlives the call is already stored here, in `generations`, and chaining is ruled out by the request boundary — a caller hands over a self-contained payload, so there is no prior response to name.
 
-Re-attaching after a crash is unaffected, because `store` does not govern the polling window: a background response stays on the provider's disk for about ten minutes, and a restarted worker re-attaches within seconds.
+Every request goes out with `store: false`, overwriting whatever the caller sent, since this service is the platform's only path to a provider. A caller that chains anyway gets `Item not found` back.
 
-**Revisit this** if a re-attach starts failing with a not-found on an operation that should still be running, which means that window has moved. A 404 settles the generation as failed, so the cost of being wrong is one lost result rather than a second paid call.
+Re-attach does not depend on it: a background response stays on the provider's disk for about ten minutes so it can be polled, which `store` does not govern, and a restarted worker re-attaches within seconds. **Revisit this** if a re-attach starts failing with a not-found on an operation that should still be running — that window has moved. A 404 settles the generation as failed, so being wrong costs one result, not a second paid call.
 
 ---
 
