@@ -179,3 +179,31 @@ func TestClientGenerationWatch(t *testing.T) {
 	_, err = otherStream.Recv()
 	require.Equal(t, codes.NotFound, status.Code(err))
 }
+
+// The usage surface over the wire. A generation that has not run yet consumed nothing, so an owner
+// with only fresh submissions reports an empty set with a zero total — not an error, and not a nil
+// total a caller would have to guard.
+func TestClientUsageQuery(t *testing.T) {
+	t.Parallel()
+
+	client := newClient(t)
+
+	owner := uuid.Must(uuid.NewV7()).String()
+	submit(t, client, owner)
+
+	now := time.Now()
+
+	response, err := client.UsageQuery(t.Context(), &servicegenai.UsageQueryRequest{
+		OwnerId: owner,
+		From:    now.Add(-time.Hour).Format(time.RFC3339),
+		To:      now.Add(time.Hour).Format(time.RFC3339),
+	})
+	require.NoError(t, err)
+	require.Empty(t, response.GetGroups())
+	require.NotNil(t, response.GetTotal())
+	require.Zero(t, response.GetTotal().GetAttempts())
+
+	// The window is required: this record is never purged, so an unbounded scan grows without limit.
+	_, err = client.UsageQuery(t.Context(), &servicegenai.UsageQueryRequest{OwnerId: owner})
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+}
