@@ -1,0 +1,38 @@
+# Managed by `a-novel repo update` — edit the template in stack, not this copy.
+#
+# Lets a repo admin record the approval a PR author cannot give themselves: the
+# admin reviews the PR, then dispatches this with its number. The action fails
+# closed for anyone who is not a repo admin, which is what makes an open
+# workflow_dispatch safe here.
+name: approve-pr
+
+on:
+  workflow_dispatch:
+    inputs:
+      pull_request:
+        description: PR number or URL to approve (after reviewing it).
+        required: true
+        type: string
+
+run-name: "✅ approve-pr ${{ inputs.pull_request }} by @${{ github.actor }}"
+
+jobs:
+  approve:
+    runs-on: ubuntu-latest
+    # Default token is used only for the admin check (Metadata:read, always
+    # present) and the base checkout; the approval itself uses a minted
+    # least-privilege [Agent] token.
+    permissions:
+      contents: read
+    steps:
+      - uses: a-novel-kit/workflows/generic-actions/approve-pr@v1.28.0
+        with:
+          pull_request: ${{ inputs.pull_request }}
+          client_id: ${{ vars.AGENT_BOT_CLIENT_ID }}
+          app_private_key: ${{ secrets.AGENT_BOT_PRIVATE_KEY }}
+          # Org-level halt, fail-safe: automation keeps running only for an
+          # explicit off-token (empty/unset, 0, off, false, no, disabled), and
+          # anything else engages it, including a fat-fingered value. Engaged,
+          # the action aborts loudly before approving. Threaded from the org
+          # variable, which a composite action cannot read itself.
+          kill_switch: ${{ vars.AGENT_KILL_SWITCH }}

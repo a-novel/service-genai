@@ -1,0 +1,49 @@
+# Managed by `a-novel repo update` — edit the template in stack, not this copy.
+#
+# The required `epic-freeze` check: the per-PR half of the partial-landing detector.
+# It answers one question — "is this PR's epic frozen because it landed partially?"
+# A standalone PR, or a healthy epic member, passes; a member of a partially-landed
+# epic fails, which blocks the PR and, on a merge_group event, drops it from the
+# queue. The sweep half runs on the reconcile-board schedule and shares the same
+# predicate, so the two can never disagree on a PR.
+#
+# It lives in its own file so that, as a second required check, it has an
+# independent failure domain: a broken run here leaves merge-gate running, and the
+# reverse. It carries no auto-merge job, so a landing a human froze stays frozen.
+name: epic-freeze
+
+on:
+  # Triggers mirror merge-gate.yaml. labeled/unlabeled matter because an `epic:<N>`
+  # label flips a PR between the standalone fast-path and the epic check. A failure
+  # on merge_group drops the queued group, so the check must post on the group head
+  # too or a queued PR times out.
+  pull_request:
+    types: [opened, reopened, synchronize, labeled, unlabeled, ready_for_review, converted_to_draft]
+  pull_request_review:
+    types: [submitted, dismissed]
+  merge_group:
+
+jobs:
+  # Named `evaluate`: the [Agent] App posts the `epic-freeze` check-run itself, so
+  # the job name stays clear of it (as in merge-gate.yaml).
+  evaluate:
+    runs-on: ubuntu-latest
+    # No permissions of its own: the detector mints its own [Agent] tokens. In
+    # per-PR mode that is checks:write plus read scopes; the write token that rolls
+    # a stray forward is sweep-only, so a per-PR run can never re-enqueue.
+    permissions: {}
+    steps:
+      - uses: a-novel-kit/workflows/generic-actions/detect-partial-landing@v1.28.0
+        with:
+          client_id: ${{ vars.AGENT_BOT_CLIENT_ID }}
+          app_private_key: ${{ secrets.AGENT_BOT_PRIVATE_KEY }}
+          # Live: posts the epic-freeze check-run on this head, success by
+          # default and failure on a partial landing.
+          dry_run: "false"
+          # Org-level halt, fail-safe: automation keeps running only for an
+          # explicit off-token (empty/unset, 0, off, false, no, disabled), and
+          # anything else engages it, including a fat-fingered value. Engaged,
+          # a per-PR run posts a `failure` hold on this head, since a
+          # required-check poster must never skip. Threaded from the org
+          # variable.
+          kill_switch: ${{ vars.AGENT_KILL_SWITCH }}

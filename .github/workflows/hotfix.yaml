@@ -1,0 +1,65 @@
+name: hotfix
+
+# Managed by `a-novel repo update` — edit the template in stack, not this copy.
+# A thin dispatch caller: the whole hotfix engine lives in the reusable
+# a-novel-kit/workflows/.github/workflows/hotfix-run.yaml, whose pin Renovate bumps.
+#
+# It patches an already-released line without touching the default branch: cut
+# vX.Y.(Z+1) from the line's latest live tag, apply the fix, reconcile it forward to
+# master. Gated on admin plus the protected `release` environment, the human "who
+# may publish" gate. It is exempt from the kill switch, so the emergency patch path
+# stays open even when normal automation is halted.
+on:
+  workflow_dispatch:
+    inputs:
+      line:
+        description: 'X.Y line to patch (e.g. "1.4") — baseline auto-resolves to its latest live tag'
+        required: true
+        type: string
+      fix_ref:
+        description: "Git revision carrying the fix (a commit SHA, or an A..B range) to cherry-pick onto the baseline; empty = re-cut the baseline (drill)"
+        required: false
+        type: string
+        default: ""
+      severity:
+        description: Escalation severity if the hotfix fails
+        required: false
+        type: choice
+        options:
+          - sev2
+          - sev1
+        default: sev2
+      dry_run:
+        description: No tag, release, reconcile PR, or cleanup Task — but a transient ephemeral branch is still pushed then deleted (the cut checks it out from the remote)
+        required: false
+        type: boolean
+        default: true
+
+run-name: "🚑 hotfix v${{ inputs.line }}.x${{ inputs.dry_run && ' (dry-run)' || '' }}"
+
+# Hotfixes serialize on this repo: a second one waits, and cancel-in-progress:false
+# queues it behind the hotfix in flight. A hotfix racing a release is handled by the
+# reusable workflow's own lock.
+concurrency:
+  group: hotfix-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  hotfix:
+    # the callee pushes the ephemeral branch and reads in-flight runs; the caller sets the ceiling, so it must not hand down
+    # the repository default.
+    permissions:
+      contents: write
+      actions: read
+    uses: a-novel-kit/workflows/.github/workflows/hotfix-run.yaml@v1.28.0
+    with:
+      line: ${{ inputs.line }}
+      fix_ref: ${{ inputs.fix_ref }}
+      severity: ${{ inputs.severity }}
+      dry_run: ${{ inputs.dry_run }}
+      client_id: ${{ vars.AGENT_BOT_CLIENT_ID }}
+      project_id: ${{ github.repository_owner == 'a-novel' && 'PVT_kwDOB9MxdM4BMh8r' || 'PVT_kwDOCy-nAM4BbtKH' }}
+      mention: ${{ vars.SEV1_MENTION }}
+    secrets:
+      app_private_key: ${{ secrets.AGENT_BOT_PRIVATE_KEY }}
+      push_webhook: ${{ secrets.ESCALATE_PUSH_WEBHOOK }}
