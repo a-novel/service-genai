@@ -1,4 +1,4 @@
-package servicetemplate_test
+package servicegenai_test
 
 import (
 	"testing"
@@ -16,7 +16,7 @@ import (
 func TestClient(t *testing.T) {
 	t.Parallel()
 
-	client, err := servicetemplate.NewClient(env.GrpcUrl, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	client, err := servicegenai.NewClient(env.GrpcUrl, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
 
 	defer client.Close()

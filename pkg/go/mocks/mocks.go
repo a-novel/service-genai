@@ -73,423 +73,8 @@ func (_c *MockClient_Close_Call) RunAndReturn(run func()) *MockClient_Close_Call
 	return _c
 }
 
-// ItemCreate provides a mock function for the type MockClient
-func (_mock *MockClient) ItemCreate(ctx context.Context, req *servicetemplate.ItemCreateRequest, opts ...grpc.CallOption) (*servicetemplate.ItemCreateResponse, error) {
-	var tmpRet mock.Arguments
-	if len(opts) > 0 {
-		tmpRet = _mock.Called(ctx, req, opts)
-	} else {
-		tmpRet = _mock.Called(ctx, req)
-	}
-	ret := tmpRet
-
-	if len(ret) == 0 {
-		panic("no return value specified for ItemCreate")
-	}
-
-	var r0 *servicetemplate.ItemCreateResponse
-	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, *servicetemplate.ItemCreateRequest, ...grpc.CallOption) (*servicetemplate.ItemCreateResponse, error)); ok {
-		return returnFunc(ctx, req, opts...)
-	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, *servicetemplate.ItemCreateRequest, ...grpc.CallOption) *servicetemplate.ItemCreateResponse); ok {
-		r0 = returnFunc(ctx, req, opts...)
-	} else {
-		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*servicetemplate.ItemCreateResponse)
-		}
-	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, *servicetemplate.ItemCreateRequest, ...grpc.CallOption) error); ok {
-		r1 = returnFunc(ctx, req, opts...)
-	} else {
-		r1 = ret.Error(1)
-	}
-	return r0, r1
-}
-
-// MockClient_ItemCreate_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ItemCreate'
-type MockClient_ItemCreate_Call struct {
-	*mock.Call
-}
-
-// ItemCreate is a helper method to define mock.On call
-//   - ctx context.Context
-//   - req *servicetemplate.ItemCreateRequest
-//   - opts ...grpc.CallOption
-func (_e *MockClient_Expecter) ItemCreate(ctx any, req any, opts ...any) *MockClient_ItemCreate_Call {
-	return &MockClient_ItemCreate_Call{Call: _e.mock.On("ItemCreate",
-		append([]any{ctx, req}, opts...)...)}
-}
-
-func (_c *MockClient_ItemCreate_Call) Run(run func(ctx context.Context, req *servicetemplate.ItemCreateRequest, opts ...grpc.CallOption)) *MockClient_ItemCreate_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 context.Context
-		if args[0] != nil {
-			arg0 = args[0].(context.Context)
-		}
-		var arg1 *servicetemplate.ItemCreateRequest
-		if args[1] != nil {
-			arg1 = args[1].(*servicetemplate.ItemCreateRequest)
-		}
-		var arg2 []grpc.CallOption
-		var variadicArgs []grpc.CallOption
-		if len(args) > 2 {
-			variadicArgs = args[2].([]grpc.CallOption)
-		}
-		arg2 = variadicArgs
-		run(
-			arg0,
-			arg1,
-			arg2...,
-		)
-	})
-	return _c
-}
-
-func (_c *MockClient_ItemCreate_Call) Return(v *servicetemplate.ItemCreateResponse, err error) *MockClient_ItemCreate_Call {
-	_c.Call.Return(v, err)
-	return _c
-}
-
-func (_c *MockClient_ItemCreate_Call) RunAndReturn(run func(ctx context.Context, req *servicetemplate.ItemCreateRequest, opts ...grpc.CallOption) (*servicetemplate.ItemCreateResponse, error)) *MockClient_ItemCreate_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
-// ItemDelete provides a mock function for the type MockClient
-func (_mock *MockClient) ItemDelete(ctx context.Context, req *servicetemplate.ItemDeleteRequest, opts ...grpc.CallOption) (*servicetemplate.ItemDeleteResponse, error) {
-	var tmpRet mock.Arguments
-	if len(opts) > 0 {
-		tmpRet = _mock.Called(ctx, req, opts)
-	} else {
-		tmpRet = _mock.Called(ctx, req)
-	}
-	ret := tmpRet
-
-	if len(ret) == 0 {
-		panic("no return value specified for ItemDelete")
-	}
-
-	var r0 *servicetemplate.ItemDeleteResponse
-	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, *servicetemplate.ItemDeleteRequest, ...grpc.CallOption) (*servicetemplate.ItemDeleteResponse, error)); ok {
-		return returnFunc(ctx, req, opts...)
-	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, *servicetemplate.ItemDeleteRequest, ...grpc.CallOption) *servicetemplate.ItemDeleteResponse); ok {
-		r0 = returnFunc(ctx, req, opts...)
-	} else {
-		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*servicetemplate.ItemDeleteResponse)
-		}
-	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, *servicetemplate.ItemDeleteRequest, ...grpc.CallOption) error); ok {
-		r1 = returnFunc(ctx, req, opts...)
-	} else {
-		r1 = ret.Error(1)
-	}
-	return r0, r1
-}
-
-// MockClient_ItemDelete_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ItemDelete'
-type MockClient_ItemDelete_Call struct {
-	*mock.Call
-}
-
-// ItemDelete is a helper method to define mock.On call
-//   - ctx context.Context
-//   - req *servicetemplate.ItemDeleteRequest
-//   - opts ...grpc.CallOption
-func (_e *MockClient_Expecter) ItemDelete(ctx any, req any, opts ...any) *MockClient_ItemDelete_Call {
-	return &MockClient_ItemDelete_Call{Call: _e.mock.On("ItemDelete",
-		append([]any{ctx, req}, opts...)...)}
-}
-
-func (_c *MockClient_ItemDelete_Call) Run(run func(ctx context.Context, req *servicetemplate.ItemDeleteRequest, opts ...grpc.CallOption)) *MockClient_ItemDelete_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 context.Context
-		if args[0] != nil {
-			arg0 = args[0].(context.Context)
-		}
-		var arg1 *servicetemplate.ItemDeleteRequest
-		if args[1] != nil {
-			arg1 = args[1].(*servicetemplate.ItemDeleteRequest)
-		}
-		var arg2 []grpc.CallOption
-		var variadicArgs []grpc.CallOption
-		if len(args) > 2 {
-			variadicArgs = args[2].([]grpc.CallOption)
-		}
-		arg2 = variadicArgs
-		run(
-			arg0,
-			arg1,
-			arg2...,
-		)
-	})
-	return _c
-}
-
-func (_c *MockClient_ItemDelete_Call) Return(v *servicetemplate.ItemDeleteResponse, err error) *MockClient_ItemDelete_Call {
-	_c.Call.Return(v, err)
-	return _c
-}
-
-func (_c *MockClient_ItemDelete_Call) RunAndReturn(run func(ctx context.Context, req *servicetemplate.ItemDeleteRequest, opts ...grpc.CallOption) (*servicetemplate.ItemDeleteResponse, error)) *MockClient_ItemDelete_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
-// ItemGet provides a mock function for the type MockClient
-func (_mock *MockClient) ItemGet(ctx context.Context, req *servicetemplate.ItemGetRequest, opts ...grpc.CallOption) (*servicetemplate.ItemGetResponse, error) {
-	var tmpRet mock.Arguments
-	if len(opts) > 0 {
-		tmpRet = _mock.Called(ctx, req, opts)
-	} else {
-		tmpRet = _mock.Called(ctx, req)
-	}
-	ret := tmpRet
-
-	if len(ret) == 0 {
-		panic("no return value specified for ItemGet")
-	}
-
-	var r0 *servicetemplate.ItemGetResponse
-	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, *servicetemplate.ItemGetRequest, ...grpc.CallOption) (*servicetemplate.ItemGetResponse, error)); ok {
-		return returnFunc(ctx, req, opts...)
-	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, *servicetemplate.ItemGetRequest, ...grpc.CallOption) *servicetemplate.ItemGetResponse); ok {
-		r0 = returnFunc(ctx, req, opts...)
-	} else {
-		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*servicetemplate.ItemGetResponse)
-		}
-	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, *servicetemplate.ItemGetRequest, ...grpc.CallOption) error); ok {
-		r1 = returnFunc(ctx, req, opts...)
-	} else {
-		r1 = ret.Error(1)
-	}
-	return r0, r1
-}
-
-// MockClient_ItemGet_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ItemGet'
-type MockClient_ItemGet_Call struct {
-	*mock.Call
-}
-
-// ItemGet is a helper method to define mock.On call
-//   - ctx context.Context
-//   - req *servicetemplate.ItemGetRequest
-//   - opts ...grpc.CallOption
-func (_e *MockClient_Expecter) ItemGet(ctx any, req any, opts ...any) *MockClient_ItemGet_Call {
-	return &MockClient_ItemGet_Call{Call: _e.mock.On("ItemGet",
-		append([]any{ctx, req}, opts...)...)}
-}
-
-func (_c *MockClient_ItemGet_Call) Run(run func(ctx context.Context, req *servicetemplate.ItemGetRequest, opts ...grpc.CallOption)) *MockClient_ItemGet_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 context.Context
-		if args[0] != nil {
-			arg0 = args[0].(context.Context)
-		}
-		var arg1 *servicetemplate.ItemGetRequest
-		if args[1] != nil {
-			arg1 = args[1].(*servicetemplate.ItemGetRequest)
-		}
-		var arg2 []grpc.CallOption
-		var variadicArgs []grpc.CallOption
-		if len(args) > 2 {
-			variadicArgs = args[2].([]grpc.CallOption)
-		}
-		arg2 = variadicArgs
-		run(
-			arg0,
-			arg1,
-			arg2...,
-		)
-	})
-	return _c
-}
-
-func (_c *MockClient_ItemGet_Call) Return(v *servicetemplate.ItemGetResponse, err error) *MockClient_ItemGet_Call {
-	_c.Call.Return(v, err)
-	return _c
-}
-
-func (_c *MockClient_ItemGet_Call) RunAndReturn(run func(ctx context.Context, req *servicetemplate.ItemGetRequest, opts ...grpc.CallOption) (*servicetemplate.ItemGetResponse, error)) *MockClient_ItemGet_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
-// ItemList provides a mock function for the type MockClient
-func (_mock *MockClient) ItemList(ctx context.Context, req *servicetemplate.ItemListRequest, opts ...grpc.CallOption) (*servicetemplate.ItemListResponse, error) {
-	var tmpRet mock.Arguments
-	if len(opts) > 0 {
-		tmpRet = _mock.Called(ctx, req, opts)
-	} else {
-		tmpRet = _mock.Called(ctx, req)
-	}
-	ret := tmpRet
-
-	if len(ret) == 0 {
-		panic("no return value specified for ItemList")
-	}
-
-	var r0 *servicetemplate.ItemListResponse
-	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, *servicetemplate.ItemListRequest, ...grpc.CallOption) (*servicetemplate.ItemListResponse, error)); ok {
-		return returnFunc(ctx, req, opts...)
-	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, *servicetemplate.ItemListRequest, ...grpc.CallOption) *servicetemplate.ItemListResponse); ok {
-		r0 = returnFunc(ctx, req, opts...)
-	} else {
-		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*servicetemplate.ItemListResponse)
-		}
-	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, *servicetemplate.ItemListRequest, ...grpc.CallOption) error); ok {
-		r1 = returnFunc(ctx, req, opts...)
-	} else {
-		r1 = ret.Error(1)
-	}
-	return r0, r1
-}
-
-// MockClient_ItemList_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ItemList'
-type MockClient_ItemList_Call struct {
-	*mock.Call
-}
-
-// ItemList is a helper method to define mock.On call
-//   - ctx context.Context
-//   - req *servicetemplate.ItemListRequest
-//   - opts ...grpc.CallOption
-func (_e *MockClient_Expecter) ItemList(ctx any, req any, opts ...any) *MockClient_ItemList_Call {
-	return &MockClient_ItemList_Call{Call: _e.mock.On("ItemList",
-		append([]any{ctx, req}, opts...)...)}
-}
-
-func (_c *MockClient_ItemList_Call) Run(run func(ctx context.Context, req *servicetemplate.ItemListRequest, opts ...grpc.CallOption)) *MockClient_ItemList_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 context.Context
-		if args[0] != nil {
-			arg0 = args[0].(context.Context)
-		}
-		var arg1 *servicetemplate.ItemListRequest
-		if args[1] != nil {
-			arg1 = args[1].(*servicetemplate.ItemListRequest)
-		}
-		var arg2 []grpc.CallOption
-		var variadicArgs []grpc.CallOption
-		if len(args) > 2 {
-			variadicArgs = args[2].([]grpc.CallOption)
-		}
-		arg2 = variadicArgs
-		run(
-			arg0,
-			arg1,
-			arg2...,
-		)
-	})
-	return _c
-}
-
-func (_c *MockClient_ItemList_Call) Return(v *servicetemplate.ItemListResponse, err error) *MockClient_ItemList_Call {
-	_c.Call.Return(v, err)
-	return _c
-}
-
-func (_c *MockClient_ItemList_Call) RunAndReturn(run func(ctx context.Context, req *servicetemplate.ItemListRequest, opts ...grpc.CallOption) (*servicetemplate.ItemListResponse, error)) *MockClient_ItemList_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
-// ItemUpdate provides a mock function for the type MockClient
-func (_mock *MockClient) ItemUpdate(ctx context.Context, req *servicetemplate.ItemUpdateRequest, opts ...grpc.CallOption) (*servicetemplate.ItemUpdateResponse, error) {
-	var tmpRet mock.Arguments
-	if len(opts) > 0 {
-		tmpRet = _mock.Called(ctx, req, opts)
-	} else {
-		tmpRet = _mock.Called(ctx, req)
-	}
-	ret := tmpRet
-
-	if len(ret) == 0 {
-		panic("no return value specified for ItemUpdate")
-	}
-
-	var r0 *servicetemplate.ItemUpdateResponse
-	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, *servicetemplate.ItemUpdateRequest, ...grpc.CallOption) (*servicetemplate.ItemUpdateResponse, error)); ok {
-		return returnFunc(ctx, req, opts...)
-	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, *servicetemplate.ItemUpdateRequest, ...grpc.CallOption) *servicetemplate.ItemUpdateResponse); ok {
-		r0 = returnFunc(ctx, req, opts...)
-	} else {
-		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*servicetemplate.ItemUpdateResponse)
-		}
-	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, *servicetemplate.ItemUpdateRequest, ...grpc.CallOption) error); ok {
-		r1 = returnFunc(ctx, req, opts...)
-	} else {
-		r1 = ret.Error(1)
-	}
-	return r0, r1
-}
-
-// MockClient_ItemUpdate_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ItemUpdate'
-type MockClient_ItemUpdate_Call struct {
-	*mock.Call
-}
-
-// ItemUpdate is a helper method to define mock.On call
-//   - ctx context.Context
-//   - req *servicetemplate.ItemUpdateRequest
-//   - opts ...grpc.CallOption
-func (_e *MockClient_Expecter) ItemUpdate(ctx any, req any, opts ...any) *MockClient_ItemUpdate_Call {
-	return &MockClient_ItemUpdate_Call{Call: _e.mock.On("ItemUpdate",
-		append([]any{ctx, req}, opts...)...)}
-}
-
-func (_c *MockClient_ItemUpdate_Call) Run(run func(ctx context.Context, req *servicetemplate.ItemUpdateRequest, opts ...grpc.CallOption)) *MockClient_ItemUpdate_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 context.Context
-		if args[0] != nil {
-			arg0 = args[0].(context.Context)
-		}
-		var arg1 *servicetemplate.ItemUpdateRequest
-		if args[1] != nil {
-			arg1 = args[1].(*servicetemplate.ItemUpdateRequest)
-		}
-		var arg2 []grpc.CallOption
-		var variadicArgs []grpc.CallOption
-		if len(args) > 2 {
-			variadicArgs = args[2].([]grpc.CallOption)
-		}
-		arg2 = variadicArgs
-		run(
-			arg0,
-			arg1,
-			arg2...,
-		)
-	})
-	return _c
-}
-
-func (_c *MockClient_ItemUpdate_Call) Return(v *servicetemplate.ItemUpdateResponse, err error) *MockClient_ItemUpdate_Call {
-	_c.Call.Return(v, err)
-	return _c
-}
-
-func (_c *MockClient_ItemUpdate_Call) RunAndReturn(run func(ctx context.Context, req *servicetemplate.ItemUpdateRequest, opts ...grpc.CallOption) (*servicetemplate.ItemUpdateResponse, error)) *MockClient_ItemUpdate_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
 // Status provides a mock function for the type MockClient
-func (_mock *MockClient) Status(ctx context.Context, req *servicetemplate.StatusRequest, opts ...grpc.CallOption) (*servicetemplate.StatusResponse, error) {
+func (_mock *MockClient) Status(ctx context.Context, req *servicegenai.StatusRequest, opts ...grpc.CallOption) (*servicegenai.StatusResponse, error) {
 	var tmpRet mock.Arguments
 	if len(opts) > 0 {
 		tmpRet = _mock.Called(ctx, req, opts)
@@ -502,19 +87,19 @@ func (_mock *MockClient) Status(ctx context.Context, req *servicetemplate.Status
 		panic("no return value specified for Status")
 	}
 
-	var r0 *servicetemplate.StatusResponse
+	var r0 *servicegenai.StatusResponse
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, *servicetemplate.StatusRequest, ...grpc.CallOption) (*servicetemplate.StatusResponse, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *servicegenai.StatusRequest, ...grpc.CallOption) (*servicegenai.StatusResponse, error)); ok {
 		return returnFunc(ctx, req, opts...)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, *servicetemplate.StatusRequest, ...grpc.CallOption) *servicetemplate.StatusResponse); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *servicegenai.StatusRequest, ...grpc.CallOption) *servicegenai.StatusResponse); ok {
 		r0 = returnFunc(ctx, req, opts...)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*servicetemplate.StatusResponse)
+			r0 = ret.Get(0).(*servicegenai.StatusResponse)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, *servicetemplate.StatusRequest, ...grpc.CallOption) error); ok {
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *servicegenai.StatusRequest, ...grpc.CallOption) error); ok {
 		r1 = returnFunc(ctx, req, opts...)
 	} else {
 		r1 = ret.Error(1)
@@ -529,22 +114,22 @@ type MockClient_Status_Call struct {
 
 // Status is a helper method to define mock.On call
 //   - ctx context.Context
-//   - req *servicetemplate.StatusRequest
+//   - req *servicegenai.StatusRequest
 //   - opts ...grpc.CallOption
 func (_e *MockClient_Expecter) Status(ctx any, req any, opts ...any) *MockClient_Status_Call {
 	return &MockClient_Status_Call{Call: _e.mock.On("Status",
 		append([]any{ctx, req}, opts...)...)}
 }
 
-func (_c *MockClient_Status_Call) Run(run func(ctx context.Context, req *servicetemplate.StatusRequest, opts ...grpc.CallOption)) *MockClient_Status_Call {
+func (_c *MockClient_Status_Call) Run(run func(ctx context.Context, req *servicegenai.StatusRequest, opts ...grpc.CallOption)) *MockClient_Status_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 *servicetemplate.StatusRequest
+		var arg1 *servicegenai.StatusRequest
 		if args[1] != nil {
-			arg1 = args[1].(*servicetemplate.StatusRequest)
+			arg1 = args[1].(*servicegenai.StatusRequest)
 		}
 		var arg2 []grpc.CallOption
 		var variadicArgs []grpc.CallOption
@@ -561,12 +146,12 @@ func (_c *MockClient_Status_Call) Run(run func(ctx context.Context, req *service
 	return _c
 }
 
-func (_c *MockClient_Status_Call) Return(v *servicetemplate.StatusResponse, err error) *MockClient_Status_Call {
+func (_c *MockClient_Status_Call) Return(v *servicegenai.StatusResponse, err error) *MockClient_Status_Call {
 	_c.Call.Return(v, err)
 	return _c
 }
 
-func (_c *MockClient_Status_Call) RunAndReturn(run func(ctx context.Context, req *servicetemplate.StatusRequest, opts ...grpc.CallOption) (*servicetemplate.StatusResponse, error)) *MockClient_Status_Call {
+func (_c *MockClient_Status_Call) RunAndReturn(run func(ctx context.Context, req *servicegenai.StatusRequest, opts ...grpc.CallOption) (*servicegenai.StatusResponse, error)) *MockClient_Status_Call {
 	_c.Call.Return(run)
 	return _c
 }

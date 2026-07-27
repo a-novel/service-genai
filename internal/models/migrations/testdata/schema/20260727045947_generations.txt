@@ -1,0 +1,117 @@
+migration-history	sha256:78180b0fed318b42f8fa3c69d71f80a14cffaeded912d82316645e1b622e04b6
+column	generation_ledger.attempt	smallint NOT NULL
+column	generation_ledger.cached_input_price_per_mtoken	numeric(20,12) NOT NULL
+column	generation_ledger.cached_input_tokens	bigint NOT NULL DEFAULT 0
+column	generation_ledger.cost	numeric(20,8) NOT NULL
+column	generation_ledger.created_at	timestamp with time zone NOT NULL DEFAULT clock_timestamp()
+column	generation_ledger.currency	text NOT NULL
+column	generation_ledger.generation_id	uuid NOT NULL
+column	generation_ledger.input_price_per_mtoken	numeric(20,12) NOT NULL
+column	generation_ledger.input_tokens	bigint NOT NULL
+column	generation_ledger.model	text NOT NULL
+column	generation_ledger.output_price_per_mtoken	numeric(20,12) NOT NULL
+column	generation_ledger.output_tokens	bigint NOT NULL
+column	generation_ledger.owner_id	uuid NOT NULL
+column	generation_ledger.price_book_version	text NOT NULL
+column	generation_ledger.profile	text NOT NULL
+column	generation_ledger.provider	text NOT NULL
+column	generation_ledger.purpose	text NOT NULL
+column	generation_ledger.reasoning_tokens	bigint NOT NULL DEFAULT 0
+column	generations.attempt	smallint NOT NULL DEFAULT 0
+column	generations.cancel_requested_at	timestamp with time zone
+column	generations.claimed_by	text
+column	generations.created_at	timestamp with time zone NOT NULL DEFAULT clock_timestamp()
+column	generations.error	jsonb
+column	generations.expires_at	timestamp with time zone
+column	generations.id	uuid NOT NULL DEFAULT uuidv7()
+column	generations.idempotency_key	text NOT NULL
+column	generations.lease_expires_at	timestamp with time zone
+column	generations.max_attempts	smallint NOT NULL DEFAULT 1
+column	generations.output	jsonb
+column	generations.owner_id	uuid NOT NULL
+column	generations.profile	text NOT NULL
+column	generations.provider_call_id	text
+column	generations.purpose	text NOT NULL
+column	generations.request	jsonb NOT NULL
+column	generations.request_fingerprint	bytea NOT NULL
+column	generations.run_at	timestamp with time zone NOT NULL DEFAULT clock_timestamp()
+column	generations.settled_at	timestamp with time zone
+column	generations.status	generation_status NOT NULL DEFAULT 'pending'::generation_status
+column	generations.updated_at	timestamp with time zone NOT NULL DEFAULT clock_timestamp()
+comment	schema public	standard public schema
+constraint	generation_ledger.generation_ledger_attempt_check	CHECK ((attempt >= 1))
+constraint	generation_ledger.generation_ledger_attempt_not_null	NOT NULL attempt
+constraint	generation_ledger.generation_ledger_cached_input_price_per_mtoken_check	CHECK ((cached_input_price_per_mtoken >= (0)::numeric))
+constraint	generation_ledger.generation_ledger_cached_input_price_per_mtoken_not_null	NOT NULL cached_input_price_per_mtoken
+constraint	generation_ledger.generation_ledger_cached_input_tokens_check	CHECK ((cached_input_tokens >= 0))
+constraint	generation_ledger.generation_ledger_cached_input_tokens_not_null	NOT NULL cached_input_tokens
+constraint	generation_ledger.generation_ledger_cached_within_input	CHECK ((cached_input_tokens <= input_tokens))
+constraint	generation_ledger.generation_ledger_cost_check	CHECK ((cost >= (0)::numeric))
+constraint	generation_ledger.generation_ledger_cost_not_null	NOT NULL cost
+constraint	generation_ledger.generation_ledger_created_at_not_null	NOT NULL created_at
+constraint	generation_ledger.generation_ledger_currency_check	CHECK ((currency ~ '^[A-Z]{3}$'::text))
+constraint	generation_ledger.generation_ledger_currency_not_null	NOT NULL currency
+constraint	generation_ledger.generation_ledger_generation_id_not_null	NOT NULL generation_id
+constraint	generation_ledger.generation_ledger_input_price_per_mtoken_check	CHECK ((input_price_per_mtoken >= (0)::numeric))
+constraint	generation_ledger.generation_ledger_input_price_per_mtoken_not_null	NOT NULL input_price_per_mtoken
+constraint	generation_ledger.generation_ledger_input_tokens_check	CHECK ((input_tokens >= 0))
+constraint	generation_ledger.generation_ledger_input_tokens_not_null	NOT NULL input_tokens
+constraint	generation_ledger.generation_ledger_model_check	CHECK ((model <> ''::text))
+constraint	generation_ledger.generation_ledger_model_not_null	NOT NULL model
+constraint	generation_ledger.generation_ledger_output_price_per_mtoken_check	CHECK ((output_price_per_mtoken >= (0)::numeric))
+constraint	generation_ledger.generation_ledger_output_price_per_mtoken_not_null	NOT NULL output_price_per_mtoken
+constraint	generation_ledger.generation_ledger_output_tokens_check	CHECK ((output_tokens >= 0))
+constraint	generation_ledger.generation_ledger_output_tokens_not_null	NOT NULL output_tokens
+constraint	generation_ledger.generation_ledger_owner_id_not_null	NOT NULL owner_id
+constraint	generation_ledger.generation_ledger_pkey	PRIMARY KEY (generation_id, attempt)
+constraint	generation_ledger.generation_ledger_price_book_version_check	CHECK ((price_book_version <> ''::text))
+constraint	generation_ledger.generation_ledger_price_book_version_not_null	NOT NULL price_book_version
+constraint	generation_ledger.generation_ledger_profile_check	CHECK ((profile <> ''::text))
+constraint	generation_ledger.generation_ledger_profile_not_null	NOT NULL profile
+constraint	generation_ledger.generation_ledger_provider_check	CHECK ((provider <> ''::text))
+constraint	generation_ledger.generation_ledger_provider_not_null	NOT NULL provider
+constraint	generation_ledger.generation_ledger_purpose_check	CHECK ((purpose <> ''::text))
+constraint	generation_ledger.generation_ledger_purpose_not_null	NOT NULL purpose
+constraint	generation_ledger.generation_ledger_reasoning_tokens_check	CHECK ((reasoning_tokens >= 0))
+constraint	generation_ledger.generation_ledger_reasoning_tokens_not_null	NOT NULL reasoning_tokens
+constraint	generation_ledger.generation_ledger_reasoning_within_output	CHECK ((reasoning_tokens <= output_tokens))
+constraint	generations.generations_attempt_check	CHECK ((attempt >= 0))
+constraint	generations.generations_attempt_not_null	NOT NULL attempt
+constraint	generations.generations_claimed_by_check	CHECK (((claimed_by IS NULL) OR (claimed_by <> ''::text)))
+constraint	generations.generations_created_at_not_null	NOT NULL created_at
+constraint	generations.generations_error_check	CHECK (((error IS NULL) OR (jsonb_typeof(error) = 'object'::text)))
+constraint	generations.generations_id_not_null	NOT NULL id
+constraint	generations.generations_idempotency_key_check	CHECK ((idempotency_key <> ''::text))
+constraint	generations.generations_idempotency_key_not_null	NOT NULL idempotency_key
+constraint	generations.generations_lease_matches_status	CHECK (((status = 'running'::generation_status) = (lease_expires_at IS NOT NULL)))
+constraint	generations.generations_max_attempts_check	CHECK ((max_attempts >= 1))
+constraint	generations.generations_max_attempts_not_null	NOT NULL max_attempts
+constraint	generations.generations_output_check	CHECK (((output IS NULL) OR (jsonb_typeof(output) = 'object'::text)))
+constraint	generations.generations_owner_id_not_null	NOT NULL owner_id
+constraint	generations.generations_pkey	PRIMARY KEY (id)
+constraint	generations.generations_profile_check	CHECK ((profile <> ''::text))
+constraint	generations.generations_profile_not_null	NOT NULL profile
+constraint	generations.generations_provider_call_id_check	CHECK (((provider_call_id IS NULL) OR (provider_call_id <> ''::text)))
+constraint	generations.generations_purpose_check	CHECK ((purpose <> ''::text))
+constraint	generations.generations_purpose_not_null	NOT NULL purpose
+constraint	generations.generations_request_check	CHECK ((jsonb_typeof(request) = 'object'::text))
+constraint	generations.generations_request_fingerprint_not_null	NOT NULL request_fingerprint
+constraint	generations.generations_request_not_null	NOT NULL request
+constraint	generations.generations_run_at_not_null	NOT NULL run_at
+constraint	generations.generations_status_not_null	NOT NULL status
+constraint	generations.generations_terminal_fields	CHECK (((status = ANY (ARRAY['succeeded'::generation_status, 'failed'::generation_status, 'abandoned'::generation_status, 'cancelled'::generation_status])) = ((settled_at IS NOT NULL) AND (expires_at IS NOT NULL))))
+constraint	generations.generations_updated_at_not_null	NOT NULL updated_at
+extension	plpgsql	1.0
+index	generation_ledger_owner_idx	CREATE INDEX generation_ledger_owner_idx ON public.generation_ledger USING btree (owner_id, created_at DESC)
+index	generation_ledger_owner_purpose_idx	CREATE INDEX generation_ledger_owner_purpose_idx ON public.generation_ledger USING btree (owner_id, purpose, created_at DESC)
+index	generation_ledger_pkey	CREATE UNIQUE INDEX generation_ledger_pkey ON public.generation_ledger USING btree (generation_id, attempt)
+index	generations_dispatch_idx	CREATE INDEX generations_dispatch_idx ON public.generations USING btree (run_at) WHERE (status = 'pending'::generation_status)
+index	generations_idempotency_idx	CREATE UNIQUE INDEX generations_idempotency_idx ON public.generations USING btree (owner_id, purpose, idempotency_key)
+index	generations_lease_idx	CREATE INDEX generations_lease_idx ON public.generations USING btree (lease_expires_at) WHERE (status = 'running'::generation_status)
+index	generations_owner_idx	CREATE INDEX generations_owner_idx ON public.generations USING btree (owner_id, created_at DESC)
+index	generations_pkey	CREATE UNIQUE INDEX generations_pkey ON public.generations USING btree (id)
+index	generations_retention_idx	CREATE INDEX generations_retention_idx ON public.generations USING btree (expires_at) WHERE (expires_at IS NOT NULL)
+relation	generation_ledger	r
+relation	generations	r OPTIONS autovacuum_vacuum_scale_factor=0.02,autovacuum_vacuum_threshold=25,autovacuum_analyze_scale_factor=0.02
+schema	public	pg_database_owner=UC/pg_database_owner,=U/pg_database_owner
+type	generation_status	e pending,running,succeeded,failed,abandoned,cancelled
