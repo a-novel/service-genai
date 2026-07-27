@@ -28,6 +28,7 @@ import (
 	"github.com/a-novel/service-genai/internal/config/env"
 	"github.com/a-novel/service-genai/internal/handlers"
 	"github.com/a-novel/service-genai/internal/handlers/protogen"
+	"github.com/a-novel/service-genai/internal/models/catalog"
 )
 
 func main() {
@@ -44,6 +45,17 @@ func main() {
 	}
 
 	ctx = lo.Must(postgres.NewContext(ctx, config.PostgresPresetDefault))
+
+	// =================================================================================================================
+	// CATALOGS
+	// =================================================================================================================
+
+	// Loaded before the server listens, and fatal on failure. A service that came up with a hole in
+	// its price book would run generations it cannot price, and that charge is unrecoverable once
+	// the provider has executed them — so a bad catalog stops the deployment instead.
+	catalogs := lo.Must(catalog.Load())
+
+	log.Println("Loaded price book " + catalogs.PriceBookVersion())
 
 	// =================================================================================================================
 	// HANDLERS

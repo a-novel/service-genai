@@ -1,0 +1,18 @@
+# Why the platform spends money on a generation. This is the dimension a monetization layer groups
+# by, which is why it is closed: a free-form string means a typo becomes a silently unbilled
+# category, and categories proliferate with nobody deciding.
+#
+# Adding one is a one-line commit. Removing one is a migration of meaning, because ledger rows
+# already carry the name — so add sparingly and never repurpose an existing entry.
+purposes:
+  - name: studio.generation
+    description: Generating story content in the Studio. The monetized workload.
+
+  - name: studio.analysis
+    description: Analysing existing story content — completeness and coherence checks.
+
+  - name: discovery.recommendation
+    description: Recommending and ranking published work.
+
+  - name: safety.classification
+    description: Moderation and content-rating support.
