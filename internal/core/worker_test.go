@@ -1,6 +1,7 @@
 package core_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"testing"
@@ -21,7 +22,13 @@ import (
 
 var errFoo = errors.New("foo")
 
-const testWorkerID = "worker-1"
+const (
+	testWorkerID = "worker-1"
+	testCallID   = "resp_1"
+)
+
+// testResumeID stands in for an identifier a previous run already recorded.
+var testResumeID = "resp_resumed"
 
 func testWorkerConfig() core.WorkerConfig {
 	return core.WorkerConfig{
@@ -33,7 +40,62 @@ func testWorkerConfig() core.WorkerConfig {
 	}
 }
 
-func claimedGeneration(providerCallID *string, cancelRequested bool) *dao.Generation {
+// workerMocks is every dependency a worker takes, kept together so a case scripts one and asserts
+// on the rest without rebuilding the set.
+type workerMocks struct {
+	provider *libmocks.MockProvider
+	claim    *coremocks.MockWorkerClaimDao
+	record   *coremocks.MockWorkerRecordProviderCallDao
+	settle   *coremocks.MockWorkerSettleDao
+	requeue  *coremocks.MockWorkerRequeueDao
+	usage    *coremocks.MockWorkerUsageInsertDao
+}
+
+func newWorkerMocks(t *testing.T) *workerMocks {
+	t.Helper()
+
+	return &workerMocks{
+		provider: libmocks.NewMockProvider(t),
+		claim:    coremocks.NewMockWorkerClaimDao(t),
+		record:   coremocks.NewMockWorkerRecordProviderCallDao(t),
+		settle:   coremocks.NewMockWorkerSettleDao(t),
+		requeue:  coremocks.NewMockWorkerRequeueDao(t),
+		usage:    coremocks.NewMockWorkerUsageInsertDao(t),
+	}
+}
+
+func (mocks *workerMocks) daos() core.WorkerDaos {
+	return core.WorkerDaos{
+		Claim: mocks.claim, Record: mocks.record, Settle: mocks.settle,
+		Requeue: mocks.requeue, Usage: mocks.usage,
+	}
+}
+
+func (mocks *workerMocks) worker(t *testing.T) *core.Worker {
+	t.Helper()
+
+	worker, err := core.NewWorker(
+		testWorkerConfig(), mocks.provider, transactiontest.NewTransactor(), mocks.daos(),
+	)
+	if err != nil {
+		panic(err)
+	}
+
+	return worker
+}
+
+func (mocks *workerMocks) assertExpectations(t *testing.T) {
+	t.Helper()
+
+	mocks.provider.AssertExpectations(t)
+	mocks.claim.AssertExpectations(t)
+	mocks.record.AssertExpectations(t)
+	mocks.settle.AssertExpectations(t)
+	mocks.requeue.AssertExpectations(t)
+	mocks.usage.AssertExpectations(t)
+}
+
+func claimedGeneration(providerCallID *string, cancelRequested bool, maxAttempts int16) *dao.Generation {
 	generation := &dao.Generation{
 		ID:             uuid.MustParse("01999999-0000-7000-8000-000000000001"),
 		OwnerID:        uuid.MustParse("00000000-0000-0000-0000-000000000001"),
@@ -41,7 +103,7 @@ func claimedGeneration(providerCallID *string, cancelRequested bool) *dao.Genera
 		Request:        json.RawMessage(`{"model": "a-model"}`),
 		Status:         dao.GenerationStatusRunning,
 		Attempt:        1,
-		MaxAttempts:    1,
+		MaxAttempts:    maxAttempts,
 		ProviderCallID: providerCallID,
 	}
 
@@ -53,167 +115,246 @@ func claimedGeneration(providerCallID *string, cancelRequested bool) *dao.Genera
 	return generation
 }
 
+func call(state lib.ProviderCallState) *lib.ProviderCall {
+	return &lib.ProviderCall{ID: testCallID, State: state, Model: "a-model-snapshot"}
+}
+
 func succeededCall() *lib.ProviderCall {
-	return &lib.ProviderCall{
-		ID:     "resp_1",
-		State:  lib.ProviderCallSucceeded,
-		Model:  "a-model-snapshot",
-		Output: json.RawMessage(`{"text": "done"}`),
-		Usage: &lib.ProviderUsage{
-			InputTokens: 1000, CachedInputTokens: 200,
-			OutputTokens: 500, ReasoningTokens: 100,
-		},
+	succeeded := call(lib.ProviderCallSucceeded)
+	succeeded.Output = json.RawMessage(`{"text": "done"}`)
+	succeeded.Usage = &lib.ProviderUsage{
+		InputTokens: 1000, CachedInputTokens: 200, OutputTokens: 500, ReasoningTokens: 100,
 	}
+
+	return succeeded
 }
 
 func TestWorker(t *testing.T) {
 	t.Parallel()
 
-	resumeID := "resp_resumed"
+	incomplete := call(lib.ProviderCallIncomplete)
+	incomplete.Reason = "max_output_tokens"
+	incomplete.Usage = &lib.ProviderUsage{InputTokens: 10, OutputTokens: 4096}
 
-	type providerMock struct {
-		start  *lib.ProviderCall
-		get    *lib.ProviderCall
-		cancel *lib.ProviderCall
-		err    error
-	}
+	cancelled := call(lib.ProviderCallCancelled)
+	cancelled.Usage = &lib.ProviderUsage{InputTokens: 10, OutputTokens: 5}
 
 	testCases := []struct {
 		name string
 
-		claimed []*dao.Generation
+		generation *dao.Generation
+		claimErr   error
 
-		provider *providerMock
+		// The provider script. gets are returned in order, so a case can hold a call running for a
+		// tick before it finishes.
+		start     *lib.ProviderCall
+		startErr  error
+		gets      []*lib.ProviderCall
+		getErr    error
+		cancel    *lib.ProviderCall
+		cancelErr error
 
-		// expectStart and expectGet pin which path the worker took. Getting these the wrong way
-		// round is what a crash re-attach exists to prevent.
-		expectStart  bool
-		expectGet    bool
-		expectCancel bool
-		// expectRecord is true when a fresh provider call had its id recorded.
-		expectRecord bool
+		// Data-access failures, injected one at a time.
+		recordErr, settleErr, requeueErr, usageErr error
 
+		// An empty expectSettle asserts the generation is NOT settled.
 		expectSettle  dao.GenerationStatus
-		expectUsage   bool
 		expectRequeue bool
+		expectUsage   bool
+		expectWorked  bool
+		expectErr     error
 	}{
 		{
 			name: "Success/FreshCall",
 
-			claimed:  []*dao.Generation{claimedGeneration(nil, false)},
-			provider: &providerMock{start: succeededCall()},
+			generation: claimedGeneration(nil, false, 1),
+			start:      succeededCall(),
 
-			expectStart:  true,
-			expectRecord: true,
 			expectSettle: dao.GenerationStatusSucceeded,
 			expectUsage:  true,
+			expectWorked: true,
 		},
 		{
 			// The whole point of recording the identifier: a generation that already has one is
 			// resumed, so a crash costs a poll rather than a second priced call.
 			name: "Success/ResumesInsteadOfStartingAgain",
 
-			claimed:  []*dao.Generation{claimedGeneration(&resumeID, false)},
-			provider: &providerMock{get: succeededCall()},
+			generation: claimedGeneration(&testResumeID, false, 1),
+			gets:       []*lib.ProviderCall{succeededCall()},
 
-			expectGet:    true,
 			expectSettle: dao.GenerationStatusSucceeded,
 			expectUsage:  true,
+			expectWorked: true,
 		},
 		{
 			name: "Success/EmptyQueue",
+		},
+		{
+			// A single running poll has to be followed by another, or a generation settles on a
+			// state the provider never reached.
+			name: "Success/PollsUntilTerminal",
 
-			claimed: nil,
+			generation: claimedGeneration(nil, false, 1),
+			start:      call(lib.ProviderCallRunning),
+			gets:       []*lib.ProviderCall{call(lib.ProviderCallRunning), succeededCall()},
+
+			expectSettle: dao.GenerationStatusSucceeded,
+			expectUsage:  true,
+			expectWorked: true,
 		},
 		{
 			// An output cap or a refusal is a failed generation but a real call: the tokens it
 			// consumed still have to be recorded.
 			name: "Success/IncompleteStillRecordsUsage",
 
-			claimed: []*dao.Generation{claimedGeneration(nil, false)},
-			provider: &providerMock{start: &lib.ProviderCall{
-				ID: "resp_1", State: lib.ProviderCallIncomplete, Model: "a-model-snapshot",
-				Reason: "max_output_tokens",
-				Usage:  &lib.ProviderUsage{InputTokens: 10, OutputTokens: 4096},
-			}},
+			generation: claimedGeneration(nil, false, 1),
+			start:      incomplete,
 
-			expectStart:  true,
-			expectRecord: true,
 			expectSettle: dao.GenerationStatusFailed,
 			expectUsage:  true,
+			expectWorked: true,
 		},
 		{
 			// A cancelled call is not a free call.
 			name: "Success/CancelStopsTheCallAndRecordsWhatItSpent",
 
-			claimed: []*dao.Generation{claimedGeneration(nil, true)},
-			provider: &providerMock{
-				start: &lib.ProviderCall{ID: "resp_1", State: lib.ProviderCallRunning},
-				cancel: &lib.ProviderCall{
-					ID: "resp_1", State: lib.ProviderCallCancelled, Model: "a-model-snapshot",
-					Usage: &lib.ProviderUsage{InputTokens: 10, OutputTokens: 5},
-				},
-			},
+			generation: claimedGeneration(nil, true, 1),
+			start:      call(lib.ProviderCallRunning),
+			cancel:     cancelled,
 
-			expectStart:  true,
-			expectRecord: true,
-			expectCancel: true,
 			expectSettle: dao.GenerationStatusCancelled,
 			expectUsage:  true,
+			expectWorked: true,
 		},
 		{
 			// Nothing reached the model, so there is nothing to account for.
 			name: "Success/NoUsageWhenTheCallNeverRan",
 
-			claimed: []*dao.Generation{claimedGeneration(nil, false)},
-			provider: &providerMock{start: &lib.ProviderCall{
-				ID: "resp_1", State: lib.ProviderCallFailed, Reason: "the model failed",
-			}},
+			generation: claimedGeneration(nil, false, 1),
+			start:      call(lib.ProviderCallFailed),
 
-			expectStart:  true,
-			expectRecord: true,
 			expectSettle: dao.GenerationStatusFailed,
+			expectWorked: true,
+		},
+		{
+			// A state this worker does not treat as terminal must not strand the generation.
+			name: "Success/SettlesAnUnrecognisedProviderState",
+
+			generation: claimedGeneration(nil, true, 1),
+			start:      call(lib.ProviderCallRunning),
+			cancel:     call(lib.ProviderCallRunning),
+
+			expectSettle: dao.GenerationStatusFailed,
+			expectWorked: true,
+		},
+		{
+			// A settle landing twice must not double-count; the row already being there is the
+			// idempotent outcome, not a failure.
+			name: "Success/ToleratesAReplayedUsageRow",
+
+			generation: claimedGeneration(nil, false, 1),
+			start:      succeededCall(),
+			usageErr:   dao.ErrGenerationUsageExists,
+
+			expectSettle: dao.GenerationStatusSucceeded,
+			expectUsage:  true,
+			expectWorked: true,
 		},
 		{
 			// Retryable with an attempt left goes back to the queue, which clears the provider call
 			// so the next run starts fresh.
 			name: "Success/RetryableWithAttemptsLeftRequeues",
 
-			claimed: []*dao.Generation{func() *dao.Generation {
-				generation := claimedGeneration(nil, false)
-				generation.MaxAttempts = 3
+			generation: claimedGeneration(nil, false, 3),
+			startErr:   lib.ErrProviderRetryable,
 
-				return generation
-			}()},
-			provider: &providerMock{err: lib.ErrProviderRetryable},
-
-			expectStart:   true,
 			expectRequeue: true,
+			expectWorked:  true,
 		},
 		{
 			// Nothing left to spend, so it settles rather than looping.
 			name: "Success/RetryableWithNoAttemptLeftSettles",
 
-			claimed:  []*dao.Generation{claimedGeneration(nil, false)},
-			provider: &providerMock{err: lib.ErrProviderRetryable},
+			generation: claimedGeneration(nil, false, 1),
+			startErr:   lib.ErrProviderRetryable,
 
-			expectStart:  true,
 			expectSettle: dao.GenerationStatusFailed,
+			expectWorked: true,
 		},
 		{
 			// Terminal: retrying only spends an attempt to be rejected again.
 			name: "Success/TerminalFailureSettlesEvenWithAttemptsLeft",
 
-			claimed: []*dao.Generation{func() *dao.Generation {
-				generation := claimedGeneration(nil, false)
-				generation.MaxAttempts = 3
+			generation: claimedGeneration(nil, false, 3),
+			startErr:   errFoo,
 
-				return generation
-			}()},
-			provider: &providerMock{err: errFoo},
-
-			expectStart:  true,
 			expectSettle: dao.GenerationStatusFailed,
+			expectWorked: true,
+		},
+		{
+			// The orphan window. The provider accepted the call — it is running and will be billed
+			// — and the write recording its identifier failed. Nothing can recover that operation,
+			// so it settles rather than being retried into a second paid call.
+			name: "Success/OrphansAPaidCallWhenTheRecordFails",
+
+			generation: claimedGeneration(nil, false, 3),
+			start:      call(lib.ProviderCallRunning),
+			recordErr:  errFoo,
+
+			expectSettle: dao.GenerationStatusFailed,
+			expectWorked: true,
+		},
+		{
+			// The provider may simply be unreachable, so with an attempt left it goes back.
+			name: "Success/FailedReAttachRequeues",
+
+			generation: claimedGeneration(&testResumeID, false, 3),
+			getErr:     lib.ErrProviderRetryable,
+
+			expectRequeue: true,
+			expectWorked:  true,
+		},
+		{
+			name: "Success/FailedCancelFallsBackToTheFailurePath",
+
+			generation: claimedGeneration(nil, true, 1),
+			start:      call(lib.ProviderCallRunning),
+			cancelErr:  errFoo,
+
+			expectSettle: dao.GenerationStatusFailed,
+			expectWorked: true,
+		},
+		{
+			// The usage row is never attempted once the transition failed; they are one unit.
+			name: "Success/SettleFailureSkipsTheUsageRow",
+
+			generation: claimedGeneration(nil, false, 1),
+			start:      succeededCall(),
+			settleErr:  errFoo,
+
+			expectSettle: dao.GenerationStatusSucceeded,
+			expectWorked: true,
+		},
+		{
+			// The generation stays claimed; its lease lapses and the reaper recovers it, so the
+			// failure costs a lease rather than the work.
+			name: "Success/RequeueFailureLeavesItClaimed",
+
+			generation: claimedGeneration(nil, false, 3),
+			startErr:   lib.ErrProviderRetryable,
+			requeueErr: errFoo,
+
+			expectRequeue: true,
+			expectWorked:  true,
+		},
+		{
+			// The loop's own failure, not a generation's: it reports no work and tries again on the
+			// next tick.
+			name: "Error/ClaimFails",
+
+			claimErr: errFoo,
+
+			expectErr: errFoo,
 		},
 	}
 
@@ -221,187 +362,151 @@ func TestWorker(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			provider := libmocks.NewMockProvider(t)
-			claimDao := coremocks.NewMockWorkerClaimDao(t)
-			recordDao := coremocks.NewMockWorkerRecordProviderCallDao(t)
-			settleDao := coremocks.NewMockWorkerSettleDao(t)
-			requeueDao := coremocks.NewMockWorkerRequeueDao(t)
-			usageDao := coremocks.NewMockWorkerUsageInsertDao(t)
+			mocks := newWorkerMocks(t)
 
-			claimDao.EXPECT().
+			var claimed []*dao.Generation
+			if testCase.generation != nil {
+				claimed = []*dao.Generation{testCase.generation}
+			}
+
+			mocks.claim.EXPECT().
 				Exec(mock.Anything, &dao.GenerationClaimRequest{
 					WorkerID: testWorkerID, Limit: 10, Lease: time.Minute,
 				}).
-				Return(testCase.claimed, nil)
+				Return(claimed, testCase.claimErr)
 
-			if testCase.expectStart {
-				provider.EXPECT().
+			if testCase.start != nil || testCase.startErr != nil {
+				mocks.provider.EXPECT().
 					Start(mock.Anything, mock.Anything).
-					Return(testCase.provider.start, testCase.provider.err)
+					Return(testCase.start, testCase.startErr)
 			}
 
-			if testCase.expectGet {
-				provider.EXPECT().Get(mock.Anything, resumeID).Return(testCase.provider.get, nil)
+			for _, get := range testCase.gets {
+				mocks.provider.EXPECT().Get(mock.Anything, mock.Anything).Return(get, nil).Once()
 			}
 
-			if testCase.expectCancel {
-				provider.EXPECT().Cancel(mock.Anything, "resp_1").Return(testCase.provider.cancel, nil)
+			if testCase.getErr != nil {
+				mocks.provider.EXPECT().Get(mock.Anything, mock.Anything).Return(nil, testCase.getErr)
 			}
 
-			if testCase.expectRecord {
-				recordDao.EXPECT().
+			if testCase.cancel != nil || testCase.cancelErr != nil {
+				mocks.provider.EXPECT().
+					Cancel(mock.Anything, testCallID).
+					Return(testCase.cancel, testCase.cancelErr)
+			}
+
+			// Recorded whenever a fresh call was started and accepted.
+			if testCase.start != nil {
+				mocks.record.EXPECT().
 					Exec(mock.Anything, mock.Anything).
-					Return(testCase.claimed[0], nil)
+					Return(testCase.generation, testCase.recordErr)
 			}
 
 			if testCase.expectSettle != "" {
-				settleDao.EXPECT().
+				mocks.settle.EXPECT().
 					Exec(mock.Anything, mock.MatchedBy(func(request *dao.GenerationSettleRequest) bool {
 						return request.Status == testCase.expectSettle && request.WorkerID == testWorkerID
 					})).
-					Return(testCase.claimed[0], nil)
+					Return(testCase.generation, testCase.settleErr)
 			}
 
 			if testCase.expectUsage {
-				provider.EXPECT().Name().Return("openai")
-				usageDao.EXPECT().
+				mocks.provider.EXPECT().Name().Return("openai")
+				mocks.usage.EXPECT().
 					Exec(mock.Anything, mock.MatchedBy(func(request *dao.GenerationUsageInsertRequest) bool {
 						// The model that actually billed, not the alias the request asked for.
 						return request.Model == "a-model-snapshot" && request.Provider == "openai"
 					})).
-					Return(&dao.GenerationUsage{}, nil)
+					Return(&dao.GenerationUsage{}, testCase.usageErr)
 			}
 
 			if testCase.expectRequeue {
-				requeueDao.EXPECT().
+				mocks.requeue.EXPECT().
 					Exec(mock.Anything, mock.Anything).
-					Return(testCase.claimed[0], nil)
+					Return(testCase.generation, testCase.requeueErr)
 			}
 
-			worker, err := core.NewWorker(
-				testWorkerConfig(), provider, transactiontest.NewTransactor(),
-				claimDao, recordDao, settleDao, requeueDao, usageDao,
-			)
-			require.NoError(t, err)
+			worked, err := mocks.worker(t).RunOnce(t.Context())
+			require.ErrorIs(t, err, testCase.expectErr)
+			require.Equal(t, testCase.expectWorked, worked)
 
-			worked, err := worker.RunOnce(t.Context())
-			require.NoError(t, err)
-			require.Equal(t, len(testCase.claimed) > 0, worked)
+			if testCase.expectSettle == "" {
+				mocks.settle.AssertNotCalled(t, "Exec", mock.Anything, mock.Anything)
+			}
 
-			provider.AssertExpectations(t)
-			claimDao.AssertExpectations(t)
-			recordDao.AssertExpectations(t)
-			settleDao.AssertExpectations(t)
-			requeueDao.AssertExpectations(t)
-			usageDao.AssertExpectations(t)
+			if !testCase.expectRequeue {
+				mocks.requeue.AssertNotCalled(t, "Exec", mock.Anything, mock.Anything)
+			}
+
+			if !testCase.expectUsage {
+				mocks.usage.AssertNotCalled(t, "Exec", mock.Anything, mock.Anything)
+			}
+
+			mocks.assertExpectations(t)
 		})
 	}
 }
 
-// The settle and the usage row are one unit of work. A transition that lands without its usage row
-// is a charge nothing accounts for, so a failing usage write must take the settle with it.
-func TestWorkerSettleIsAtomic(t *testing.T) {
+// Shutting down mid-run must neither settle nor requeue. Settling throws away an operation already
+// paid for; a requeue clears the identifier that lets the next run resume it. Leaving the claim
+// alone is what makes a rolling deploy free — the lease lapses, the reaper recovers the generation
+// with its provider call preserved, and the next claim re-attaches.
+//
+// Out of the table because it cancels the context from inside a mock, mid-run.
+func TestWorkerStopsCleanlyOnShutdown(t *testing.T) {
 	t.Parallel()
 
-	generation := claimedGeneration(nil, false)
+	generation := claimedGeneration(nil, false, 3)
+	mocks := newWorkerMocks(t)
 
-	provider := libmocks.NewMockProvider(t)
-	claimDao := coremocks.NewMockWorkerClaimDao(t)
-	recordDao := coremocks.NewMockWorkerRecordProviderCallDao(t)
-	settleDao := coremocks.NewMockWorkerSettleDao(t)
-	requeueDao := coremocks.NewMockWorkerRequeueDao(t)
-	usageDao := coremocks.NewMockWorkerUsageInsertDao(t)
+	ctx, cancel := context.WithCancel(t.Context())
 
-	claimDao.EXPECT().Exec(mock.Anything, mock.Anything).Return([]*dao.Generation{generation}, nil)
-	provider.EXPECT().Start(mock.Anything, mock.Anything).Return(succeededCall(), nil)
-	provider.EXPECT().Name().Return("openai")
-	recordDao.EXPECT().Exec(mock.Anything, mock.Anything).Return(generation, nil)
-	settleDao.EXPECT().Exec(mock.Anything, mock.Anything).Return(generation, nil)
-	usageDao.EXPECT().Exec(mock.Anything, mock.Anything).Return(nil, errFoo)
+	mocks.claim.EXPECT().Exec(mock.Anything, mock.Anything).Return([]*dao.Generation{generation}, nil)
+	mocks.provider.EXPECT().
+		Start(mock.Anything, mock.Anything).
+		Return(call(lib.ProviderCallRunning), nil)
+	mocks.record.EXPECT().
+		Exec(mock.Anything, mock.Anything).
+		RunAndReturn(func(context.Context, *dao.GenerationRecordProviderCallRequest) (*dao.Generation, error) {
+			// The identifier is recorded, and only then does the process go away. This is the
+			// window the whole re-attach design exists to survive.
+			cancel()
 
-	worker, err := core.NewWorker(
-		testWorkerConfig(), provider, transactiontest.NewTransactor(),
-		claimDao, recordDao, settleDao, requeueDao, usageDao,
-	)
+			return generation, nil
+		})
+
+	_, err := mocks.worker(t).RunOnce(ctx)
 	require.NoError(t, err)
 
-	// The run reports work found; the failure is recorded on the generation, and the transaction
-	// the settle ran in is the thing that rolls back.
-	_, err = worker.RunOnce(t.Context())
-	require.NoError(t, err)
-
-	usageDao.AssertExpectations(t)
-	settleDao.AssertExpectations(t)
-}
-
-// A settle landing twice must not double-count. The usage insert reports the row already exists,
-// and that is the idempotent outcome rather than a failure.
-func TestWorkerSettleToleratesAReplayedUsageRow(t *testing.T) {
-	t.Parallel()
-
-	generation := claimedGeneration(nil, false)
-
-	provider := libmocks.NewMockProvider(t)
-	claimDao := coremocks.NewMockWorkerClaimDao(t)
-	recordDao := coremocks.NewMockWorkerRecordProviderCallDao(t)
-	settleDao := coremocks.NewMockWorkerSettleDao(t)
-	requeueDao := coremocks.NewMockWorkerRequeueDao(t)
-	usageDao := coremocks.NewMockWorkerUsageInsertDao(t)
-
-	claimDao.EXPECT().Exec(mock.Anything, mock.Anything).Return([]*dao.Generation{generation}, nil)
-	provider.EXPECT().Start(mock.Anything, mock.Anything).Return(succeededCall(), nil)
-	provider.EXPECT().Name().Return("openai")
-	recordDao.EXPECT().Exec(mock.Anything, mock.Anything).Return(generation, nil)
-	settleDao.EXPECT().Exec(mock.Anything, mock.Anything).Return(generation, nil)
-	usageDao.EXPECT().Exec(mock.Anything, mock.Anything).Return(nil, dao.ErrGenerationUsageExists)
-
-	worker, err := core.NewWorker(
-		testWorkerConfig(), provider, transactiontest.NewTransactor(),
-		claimDao, recordDao, settleDao, requeueDao, usageDao,
-	)
-	require.NoError(t, err)
-
-	worked, err := worker.RunOnce(t.Context())
-	require.NoError(t, err)
-	require.True(t, worked)
+	mocks.settle.AssertNotCalled(t, "Exec", mock.Anything, mock.Anything)
+	mocks.requeue.AssertNotCalled(t, "Exec", mock.Anything, mock.Anything)
+	mocks.assertExpectations(t)
 }
 
 // A batch is already claimed, so one generation failing must not strand the others until their
-// leases lapse.
+// leases lapse. Out of the table because it is the only case with more than one generation.
 func TestWorkerContinuesTheBatchAfterOneFailure(t *testing.T) {
 	t.Parallel()
 
-	first := claimedGeneration(nil, false)
-	second := claimedGeneration(nil, false)
+	first := claimedGeneration(nil, false, 1)
+	second := claimedGeneration(nil, false, 1)
 	second.ID = uuid.MustParse("01999999-0000-7000-8000-000000000002")
 
-	provider := libmocks.NewMockProvider(t)
-	claimDao := coremocks.NewMockWorkerClaimDao(t)
-	recordDao := coremocks.NewMockWorkerRecordProviderCallDao(t)
-	settleDao := coremocks.NewMockWorkerSettleDao(t)
-	requeueDao := coremocks.NewMockWorkerRequeueDao(t)
-	usageDao := coremocks.NewMockWorkerUsageInsertDao(t)
+	mocks := newWorkerMocks(t)
 
-	claimDao.EXPECT().Exec(mock.Anything, mock.Anything).Return([]*dao.Generation{first, second}, nil)
-	provider.EXPECT().Start(mock.Anything, mock.Anything).Return(nil, errFoo).Once()
-	provider.EXPECT().Start(mock.Anything, mock.Anything).Return(succeededCall(), nil).Once()
-	provider.EXPECT().Name().Return("openai")
-	recordDao.EXPECT().Exec(mock.Anything, mock.Anything).Return(second, nil).Once()
-	settleDao.EXPECT().Exec(mock.Anything, mock.Anything).Return(first, nil).Twice()
-	usageDao.EXPECT().Exec(mock.Anything, mock.Anything).Return(&dao.GenerationUsage{}, nil).Once()
+	mocks.claim.EXPECT().Exec(mock.Anything, mock.Anything).Return([]*dao.Generation{first, second}, nil)
+	mocks.provider.EXPECT().Start(mock.Anything, mock.Anything).Return(nil, errFoo).Once()
+	mocks.provider.EXPECT().Start(mock.Anything, mock.Anything).Return(succeededCall(), nil).Once()
+	mocks.provider.EXPECT().Name().Return("openai")
+	mocks.record.EXPECT().Exec(mock.Anything, mock.Anything).Return(second, nil).Once()
+	mocks.settle.EXPECT().Exec(mock.Anything, mock.Anything).Return(first, nil).Twice()
+	mocks.usage.EXPECT().Exec(mock.Anything, mock.Anything).Return(&dao.GenerationUsage{}, nil).Once()
 
-	worker, err := core.NewWorker(
-		testWorkerConfig(), provider, transactiontest.NewTransactor(),
-		claimDao, recordDao, settleDao, requeueDao, usageDao,
-	)
-	require.NoError(t, err)
-
-	worked, err := worker.RunOnce(t.Context())
+	worked, err := mocks.worker(t).RunOnce(t.Context())
 	require.NoError(t, err)
 	require.True(t, worked)
 
-	provider.AssertExpectations(t)
-	settleDao.AssertExpectations(t)
+	mocks.assertExpectations(t)
 }
 
 func TestNewWorker(t *testing.T) {
@@ -420,34 +525,27 @@ func TestNewWorker(t *testing.T) {
 		},
 		{
 			name: "Error/NoID",
-			config: func() core.WorkerConfig {
-				config := testWorkerConfig()
-				config.ID = ""
-
-				return config
-			}(),
+			config: core.WorkerConfig{
+				Lease: time.Minute, BatchSize: 10, PollInterval: time.Second, Retention: time.Hour,
+			},
 			expectErr: core.ErrInvalidRequest,
 		},
 		{
 			// The ceiling the data access no longer enforces. A lease longer than any generation we
 			// run leaves a stranded claim invisible for an hour.
 			name: "Error/LeaseOverCeiling",
-			config: func() core.WorkerConfig {
-				config := testWorkerConfig()
-				config.Lease = core.ClaimLeaseCeiling + time.Second
-
-				return config
-			}(),
+			config: core.WorkerConfig{
+				ID: testWorkerID, Lease: core.ClaimLeaseCeiling + time.Second,
+				BatchSize: 10, PollInterval: time.Second, Retention: time.Hour,
+			},
 			expectErr: core.ErrInvalidRequest,
 		},
 		{
 			name: "Error/BatchOverCeiling",
-			config: func() core.WorkerConfig {
-				config := testWorkerConfig()
-				config.BatchSize = core.ClaimLimitCeiling + 1
-
-				return config
-			}(),
+			config: core.WorkerConfig{
+				ID: testWorkerID, Lease: time.Minute,
+				BatchSize: core.ClaimLimitCeiling + 1, PollInterval: time.Second, Retention: time.Hour,
+			},
 			expectErr: core.ErrInvalidRequest,
 		},
 	}
@@ -456,15 +554,10 @@ func TestNewWorker(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
+			mocks := newWorkerMocks(t)
+
 			worker, err := core.NewWorker(
-				testCase.config,
-				libmocks.NewMockProvider(t),
-				transactiontest.NewTransactor(),
-				coremocks.NewMockWorkerClaimDao(t),
-				coremocks.NewMockWorkerRecordProviderCallDao(t),
-				coremocks.NewMockWorkerSettleDao(t),
-				coremocks.NewMockWorkerRequeueDao(t),
-				coremocks.NewMockWorkerUsageInsertDao(t),
+				testCase.config, mocks.provider, transactiontest.NewTransactor(), mocks.daos(),
 			)
 			require.ErrorIs(t, err, testCase.expectErr)
 

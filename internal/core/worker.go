@@ -39,6 +39,16 @@ type (
 	}
 )
 
+// WorkerDaos are the data-access dependencies of a [Worker]. Grouped, because passing five of them
+// positionally is a swap waiting to happen — they all take a request and return a generation.
+type WorkerDaos struct {
+	Claim   WorkerClaimDao
+	Record  WorkerRecordProviderCallDao
+	Settle  WorkerSettleDao
+	Requeue WorkerRequeueDao
+	Usage   WorkerUsageInsertDao
+}
+
 // WorkerConfig is what a [Worker] needs to run.
 type WorkerConfig struct {
 	// ID identifies this worker on the claims it holds, so a stranded one can be traced.
@@ -64,23 +74,14 @@ type Worker struct {
 
 	provider   lib.Provider
 	transactor transaction.Transactor
-
-	claimDao   WorkerClaimDao
-	recordDao  WorkerRecordProviderCallDao
-	settleDao  WorkerSettleDao
-	requeueDao WorkerRequeueDao
-	usageDao   WorkerUsageInsertDao
+	daos       WorkerDaos
 }
 
 func NewWorker(
 	config WorkerConfig,
 	provider lib.Provider,
 	transactor transaction.Transactor,
-	claimDao WorkerClaimDao,
-	recordDao WorkerRecordProviderCallDao,
-	settleDao WorkerSettleDao,
-	requeueDao WorkerRequeueDao,
-	usageDao WorkerUsageInsertDao,
+	daos WorkerDaos,
 ) (*Worker, error) {
 	err := validate.Struct(config)
 	if err != nil {
@@ -91,11 +92,7 @@ func NewWorker(
 		return nil, fmt.Errorf("%w: lease %s exceeds %s", ErrInvalidRequest, config.Lease, ClaimLeaseCeiling)
 	}
 
-	return &Worker{
-		config: config, provider: provider, transactor: transactor,
-		claimDao: claimDao, recordDao: recordDao, settleDao: settleDao,
-		requeueDao: requeueDao, usageDao: usageDao,
-	}, nil
+	return &Worker{config: config, provider: provider, transactor: transactor, daos: daos}, nil
 }
 
 // RunOnce claims a batch and runs it to completion, reporting whether it found work. It is the
@@ -104,7 +101,7 @@ func (worker *Worker) RunOnce(ctx context.Context) (bool, error) {
 	ctx, span := otel.Tracer().Start(ctx, "core.Worker.RunOnce")
 	defer span.End()
 
-	claimed, err := worker.claimDao.Exec(ctx, &dao.GenerationClaimRequest{
+	claimed, err := worker.daos.Claim.Exec(ctx, &dao.GenerationClaimRequest{
 		WorkerID: worker.config.ID,
 		Limit:    worker.config.BatchSize,
 		Lease:    worker.config.Lease,
@@ -180,7 +177,7 @@ func (worker *Worker) start(ctx context.Context, generation *dao.Generation) (*l
 		return nil, otel.ReportError(span, fmt.Errorf("start provider call: %w", err))
 	}
 
-	_, err = worker.recordDao.Exec(ctx, &dao.GenerationRecordProviderCallRequest{
+	_, err = worker.daos.Record.Exec(ctx, &dao.GenerationRecordProviderCallRequest{
 		ID:             generation.ID,
 		WorkerID:       worker.config.ID,
 		ProviderCallID: call.ID,
@@ -251,7 +248,7 @@ func (worker *Worker) settle(ctx context.Context, generation *dao.Generation, ca
 	)
 
 	return otel.ReportSuccess(span, worker.transactor.WithinTx(ctx, func(ctx context.Context) error {
-		_, err := worker.settleDao.Exec(ctx, &dao.GenerationSettleRequest{
+		_, err := worker.daos.Settle.Exec(ctx, &dao.GenerationSettleRequest{
 			ID:        generation.ID,
 			WorkerID:  worker.config.ID,
 			Status:    status,
@@ -269,7 +266,7 @@ func (worker *Worker) settle(ctx context.Context, generation *dao.Generation, ca
 			return nil
 		}
 
-		_, err = worker.usageDao.Exec(ctx, &dao.GenerationUsageInsertRequest{
+		_, err = worker.daos.Usage.Exec(ctx, &dao.GenerationUsageInsertRequest{
 			GenerationID:      generation.ID,
 			Attempt:           generation.Attempt,
 			OwnerID:           generation.OwnerID,
@@ -297,9 +294,21 @@ func (worker *Worker) settle(ctx context.Context, generation *dao.Generation, ca
 // A retryable failure with attempts left goes back to the queue, which clears the provider call so
 // the next run starts a fresh one. Anything else settles as failed. A retryable failure with no
 // attempt left settles too: there is nothing left to spend.
+//
+// Shutdown is neither. The process is going away mid-run, and both branches would be wrong: settling
+// throws away an operation already paid for, and requeueing clears the identifier that would have
+// let the next run resume it. Leaving the claim alone is what makes a rolling deploy free — the
+// lease lapses, the reaper recovers the generation with its provider call preserved, and the next
+// claim re-attaches.
 func (worker *Worker) fail(ctx context.Context, generation *dao.Generation, cause error) error {
 	ctx, span := otel.Tracer().Start(ctx, "core.Worker.fail")
 	defer span.End()
+
+	if errors.Is(cause, context.Canceled) || errors.Is(cause, context.DeadlineExceeded) {
+		span.SetAttributes(attribute.Bool("failure.shutdown", true))
+
+		return otel.ReportSuccess(span, cause)
+	}
 
 	retryable := errors.Is(cause, lib.ErrProviderRetryable)
 	hasAttemptsLeft := generation.Attempt < generation.MaxAttempts
@@ -311,7 +320,7 @@ func (worker *Worker) fail(ctx context.Context, generation *dao.Generation, caus
 	)
 
 	if retryable && hasAttemptsLeft {
-		_, err := worker.requeueDao.Exec(ctx, &dao.GenerationRequeueRequest{
+		_, err := worker.daos.Requeue.Exec(ctx, &dao.GenerationRequeueRequest{
 			ID: generation.ID, WorkerID: worker.config.ID,
 		})
 		if err != nil {
@@ -323,7 +332,7 @@ func (worker *Worker) fail(ctx context.Context, generation *dao.Generation, caus
 
 	reason := cause.Error()
 
-	_, err := worker.settleDao.Exec(ctx, &dao.GenerationSettleRequest{
+	_, err := worker.daos.Settle.Exec(ctx, &dao.GenerationSettleRequest{
 		ID:        generation.ID,
 		WorkerID:  worker.config.ID,
 		Status:    dao.GenerationStatusFailed,

@@ -80,7 +80,13 @@ func main() {
 		},
 		provider,
 		postgres.NewTransactor(nil),
-		daoClaim, daoRecordProviderCall, daoSettle, daoRequeue, daoUsageInsert,
+		core.WorkerDaos{
+			Claim:   daoClaim,
+			Record:  daoRecordProviderCall,
+			Settle:  daoSettle,
+			Requeue: daoRequeue,
+			Usage:   daoUsageInsert,
+		},
 	))
 
 	reaper := lo.Must(core.NewReaper(
