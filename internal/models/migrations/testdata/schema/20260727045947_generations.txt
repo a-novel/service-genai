@@ -1,4 +1,4 @@
-migration-history	sha256:0cee785553315f1a42f6746f2141782a34101cc7ceb7ae56a949a5cc2679f0cc
+migration-history	sha256:88fcf49f273079b8b3ccfa32daf366043dc6474d3f2b5d786540c726ce3ab5d1
 column	generation_ledger.attempt	smallint NOT NULL
 column	generation_ledger.cached_input_price_per_mtoken	numeric(20,12) NOT NULL
 column	generation_ledger.cached_input_tokens	bigint NOT NULL DEFAULT 0
