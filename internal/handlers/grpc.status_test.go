@@ -2,7 +2,9 @@ package handlers_test
 
 import (
 	"testing"
+	"time"
 
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -10,7 +12,9 @@ import (
 	"github.com/a-novel-kit/golib/postgres"
 
 	"github.com/a-novel/service-genai/internal/config/configtest"
+	"github.com/a-novel/service-genai/internal/core"
 	"github.com/a-novel/service-genai/internal/handlers"
+	handlersmocks "github.com/a-novel/service-genai/internal/handlers/mocks"
 	"github.com/a-novel/service-genai/internal/handlers/protogen"
 )
 
@@ -32,6 +36,7 @@ func TestStatus(t *testing.T) {
 				Postgres: &protogen.DependencyHealth{
 					Status: protogen.DependencyStatus_DEPENDENCY_STATUS_UP,
 				},
+				Queue: &protogen.QueueDepth{Pending: 2, OldestPendingAgeSeconds: 90},
 			},
 		},
 		{
@@ -42,6 +47,8 @@ func TestStatus(t *testing.T) {
 
 			skipPostgres: true,
 
+			// The backlog cannot be measured without the database, and postgres already reports
+			// down — so a missing queue is a consequence of that, not a second failure.
 			expect: &protogen.StatusResponse{
 				Postgres: &protogen.DependencyHealth{
 					Status: protogen.DependencyStatus_DEPENDENCY_STATUS_DOWN,
@@ -54,7 +61,17 @@ func TestStatus(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			handler := handlers.NewGrpcStatus()
+			queueDepth := handlersmocks.NewMockGrpcStatusQueueDepthService(t)
+
+			if testCase.skipPostgres {
+				queueDepth.EXPECT().Exec(mock.Anything).Return(nil, errFoo)
+			} else {
+				queueDepth.EXPECT().
+					Exec(mock.Anything).
+					Return(&core.QueueDepthResult{Pending: 2, OldestPendingAge: 90 * time.Second}, nil)
+			}
+
+			handler := handlers.NewGrpcStatus(queueDepth)
 
 			ctx := t.Context()
 

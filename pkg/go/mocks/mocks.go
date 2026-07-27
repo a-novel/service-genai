@@ -73,6 +73,338 @@ func (_c *MockClient_Close_Call) RunAndReturn(run func()) *MockClient_Close_Call
 	return _c
 }
 
+// GenerationCancel provides a mock function for the type MockClient
+func (_mock *MockClient) GenerationCancel(ctx context.Context, req *servicegenai.GenerationCancelRequest, opts ...grpc.CallOption) (*servicegenai.GenerationCancelResponse, error) {
+	var tmpRet mock.Arguments
+	if len(opts) > 0 {
+		tmpRet = _mock.Called(ctx, req, opts)
+	} else {
+		tmpRet = _mock.Called(ctx, req)
+	}
+	ret := tmpRet
+
+	if len(ret) == 0 {
+		panic("no return value specified for GenerationCancel")
+	}
+
+	var r0 *servicegenai.GenerationCancelResponse
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *servicegenai.GenerationCancelRequest, ...grpc.CallOption) (*servicegenai.GenerationCancelResponse, error)); ok {
+		return returnFunc(ctx, req, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *servicegenai.GenerationCancelRequest, ...grpc.CallOption) *servicegenai.GenerationCancelResponse); ok {
+		r0 = returnFunc(ctx, req, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*servicegenai.GenerationCancelResponse)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *servicegenai.GenerationCancelRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, req, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockClient_GenerationCancel_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GenerationCancel'
+type MockClient_GenerationCancel_Call struct {
+	*mock.Call
+}
+
+// GenerationCancel is a helper method to define mock.On call
+//   - ctx context.Context
+//   - req *servicegenai.GenerationCancelRequest
+//   - opts ...grpc.CallOption
+func (_e *MockClient_Expecter) GenerationCancel(ctx any, req any, opts ...any) *MockClient_GenerationCancel_Call {
+	return &MockClient_GenerationCancel_Call{Call: _e.mock.On("GenerationCancel",
+		append([]any{ctx, req}, opts...)...)}
+}
+
+func (_c *MockClient_GenerationCancel_Call) Run(run func(ctx context.Context, req *servicegenai.GenerationCancelRequest, opts ...grpc.CallOption)) *MockClient_GenerationCancel_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *servicegenai.GenerationCancelRequest
+		if args[1] != nil {
+			arg1 = args[1].(*servicegenai.GenerationCancelRequest)
+		}
+		var arg2 []grpc.CallOption
+		var variadicArgs []grpc.CallOption
+		if len(args) > 2 {
+			variadicArgs = args[2].([]grpc.CallOption)
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockClient_GenerationCancel_Call) Return(v *servicegenai.GenerationCancelResponse, err error) *MockClient_GenerationCancel_Call {
+	_c.Call.Return(v, err)
+	return _c
+}
+
+func (_c *MockClient_GenerationCancel_Call) RunAndReturn(run func(ctx context.Context, req *servicegenai.GenerationCancelRequest, opts ...grpc.CallOption) (*servicegenai.GenerationCancelResponse, error)) *MockClient_GenerationCancel_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GenerationGet provides a mock function for the type MockClient
+func (_mock *MockClient) GenerationGet(ctx context.Context, req *servicegenai.GenerationGetRequest, opts ...grpc.CallOption) (*servicegenai.GenerationGetResponse, error) {
+	var tmpRet mock.Arguments
+	if len(opts) > 0 {
+		tmpRet = _mock.Called(ctx, req, opts)
+	} else {
+		tmpRet = _mock.Called(ctx, req)
+	}
+	ret := tmpRet
+
+	if len(ret) == 0 {
+		panic("no return value specified for GenerationGet")
+	}
+
+	var r0 *servicegenai.GenerationGetResponse
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *servicegenai.GenerationGetRequest, ...grpc.CallOption) (*servicegenai.GenerationGetResponse, error)); ok {
+		return returnFunc(ctx, req, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *servicegenai.GenerationGetRequest, ...grpc.CallOption) *servicegenai.GenerationGetResponse); ok {
+		r0 = returnFunc(ctx, req, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*servicegenai.GenerationGetResponse)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *servicegenai.GenerationGetRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, req, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockClient_GenerationGet_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GenerationGet'
+type MockClient_GenerationGet_Call struct {
+	*mock.Call
+}
+
+// GenerationGet is a helper method to define mock.On call
+//   - ctx context.Context
+//   - req *servicegenai.GenerationGetRequest
+//   - opts ...grpc.CallOption
+func (_e *MockClient_Expecter) GenerationGet(ctx any, req any, opts ...any) *MockClient_GenerationGet_Call {
+	return &MockClient_GenerationGet_Call{Call: _e.mock.On("GenerationGet",
+		append([]any{ctx, req}, opts...)...)}
+}
+
+func (_c *MockClient_GenerationGet_Call) Run(run func(ctx context.Context, req *servicegenai.GenerationGetRequest, opts ...grpc.CallOption)) *MockClient_GenerationGet_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *servicegenai.GenerationGetRequest
+		if args[1] != nil {
+			arg1 = args[1].(*servicegenai.GenerationGetRequest)
+		}
+		var arg2 []grpc.CallOption
+		var variadicArgs []grpc.CallOption
+		if len(args) > 2 {
+			variadicArgs = args[2].([]grpc.CallOption)
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockClient_GenerationGet_Call) Return(v *servicegenai.GenerationGetResponse, err error) *MockClient_GenerationGet_Call {
+	_c.Call.Return(v, err)
+	return _c
+}
+
+func (_c *MockClient_GenerationGet_Call) RunAndReturn(run func(ctx context.Context, req *servicegenai.GenerationGetRequest, opts ...grpc.CallOption) (*servicegenai.GenerationGetResponse, error)) *MockClient_GenerationGet_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GenerationSubmit provides a mock function for the type MockClient
+func (_mock *MockClient) GenerationSubmit(ctx context.Context, req *servicegenai.GenerationSubmitRequest, opts ...grpc.CallOption) (*servicegenai.GenerationSubmitResponse, error) {
+	var tmpRet mock.Arguments
+	if len(opts) > 0 {
+		tmpRet = _mock.Called(ctx, req, opts)
+	} else {
+		tmpRet = _mock.Called(ctx, req)
+	}
+	ret := tmpRet
+
+	if len(ret) == 0 {
+		panic("no return value specified for GenerationSubmit")
+	}
+
+	var r0 *servicegenai.GenerationSubmitResponse
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *servicegenai.GenerationSubmitRequest, ...grpc.CallOption) (*servicegenai.GenerationSubmitResponse, error)); ok {
+		return returnFunc(ctx, req, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *servicegenai.GenerationSubmitRequest, ...grpc.CallOption) *servicegenai.GenerationSubmitResponse); ok {
+		r0 = returnFunc(ctx, req, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*servicegenai.GenerationSubmitResponse)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *servicegenai.GenerationSubmitRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, req, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockClient_GenerationSubmit_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GenerationSubmit'
+type MockClient_GenerationSubmit_Call struct {
+	*mock.Call
+}
+
+// GenerationSubmit is a helper method to define mock.On call
+//   - ctx context.Context
+//   - req *servicegenai.GenerationSubmitRequest
+//   - opts ...grpc.CallOption
+func (_e *MockClient_Expecter) GenerationSubmit(ctx any, req any, opts ...any) *MockClient_GenerationSubmit_Call {
+	return &MockClient_GenerationSubmit_Call{Call: _e.mock.On("GenerationSubmit",
+		append([]any{ctx, req}, opts...)...)}
+}
+
+func (_c *MockClient_GenerationSubmit_Call) Run(run func(ctx context.Context, req *servicegenai.GenerationSubmitRequest, opts ...grpc.CallOption)) *MockClient_GenerationSubmit_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *servicegenai.GenerationSubmitRequest
+		if args[1] != nil {
+			arg1 = args[1].(*servicegenai.GenerationSubmitRequest)
+		}
+		var arg2 []grpc.CallOption
+		var variadicArgs []grpc.CallOption
+		if len(args) > 2 {
+			variadicArgs = args[2].([]grpc.CallOption)
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockClient_GenerationSubmit_Call) Return(v *servicegenai.GenerationSubmitResponse, err error) *MockClient_GenerationSubmit_Call {
+	_c.Call.Return(v, err)
+	return _c
+}
+
+func (_c *MockClient_GenerationSubmit_Call) RunAndReturn(run func(ctx context.Context, req *servicegenai.GenerationSubmitRequest, opts ...grpc.CallOption) (*servicegenai.GenerationSubmitResponse, error)) *MockClient_GenerationSubmit_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GenerationWatch provides a mock function for the type MockClient
+func (_mock *MockClient) GenerationWatch(ctx context.Context, req *servicegenai.GenerationWatchRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[servicegenai.GenerationWatchResponse], error) {
+	var tmpRet mock.Arguments
+	if len(opts) > 0 {
+		tmpRet = _mock.Called(ctx, req, opts)
+	} else {
+		tmpRet = _mock.Called(ctx, req)
+	}
+	ret := tmpRet
+
+	if len(ret) == 0 {
+		panic("no return value specified for GenerationWatch")
+	}
+
+	var r0 grpc.ServerStreamingClient[servicegenai.GenerationWatchResponse]
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *servicegenai.GenerationWatchRequest, ...grpc.CallOption) (grpc.ServerStreamingClient[servicegenai.GenerationWatchResponse], error)); ok {
+		return returnFunc(ctx, req, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *servicegenai.GenerationWatchRequest, ...grpc.CallOption) grpc.ServerStreamingClient[servicegenai.GenerationWatchResponse]); ok {
+		r0 = returnFunc(ctx, req, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(grpc.ServerStreamingClient[servicegenai.GenerationWatchResponse])
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *servicegenai.GenerationWatchRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, req, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockClient_GenerationWatch_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GenerationWatch'
+type MockClient_GenerationWatch_Call struct {
+	*mock.Call
+}
+
+// GenerationWatch is a helper method to define mock.On call
+//   - ctx context.Context
+//   - req *servicegenai.GenerationWatchRequest
+//   - opts ...grpc.CallOption
+func (_e *MockClient_Expecter) GenerationWatch(ctx any, req any, opts ...any) *MockClient_GenerationWatch_Call {
+	return &MockClient_GenerationWatch_Call{Call: _e.mock.On("GenerationWatch",
+		append([]any{ctx, req}, opts...)...)}
+}
+
+func (_c *MockClient_GenerationWatch_Call) Run(run func(ctx context.Context, req *servicegenai.GenerationWatchRequest, opts ...grpc.CallOption)) *MockClient_GenerationWatch_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *servicegenai.GenerationWatchRequest
+		if args[1] != nil {
+			arg1 = args[1].(*servicegenai.GenerationWatchRequest)
+		}
+		var arg2 []grpc.CallOption
+		var variadicArgs []grpc.CallOption
+		if len(args) > 2 {
+			variadicArgs = args[2].([]grpc.CallOption)
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockClient_GenerationWatch_Call) Return(serverStreamingClient grpc.ServerStreamingClient[servicegenai.GenerationWatchResponse], err error) *MockClient_GenerationWatch_Call {
+	_c.Call.Return(serverStreamingClient, err)
+	return _c
+}
+
+func (_c *MockClient_GenerationWatch_Call) RunAndReturn(run func(ctx context.Context, req *servicegenai.GenerationWatchRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[servicegenai.GenerationWatchResponse], error)) *MockClient_GenerationWatch_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Status provides a mock function for the type MockClient
 func (_mock *MockClient) Status(ctx context.Context, req *servicegenai.StatusRequest, opts ...grpc.CallOption) (*servicegenai.StatusResponse, error) {
 	var tmpRet mock.Arguments

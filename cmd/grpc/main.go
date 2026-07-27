@@ -63,6 +63,10 @@ func main() {
 	daoRequeue := dao.NewGenerationRequeue()
 	daoUsageInsert := dao.NewGenerationUsageInsert()
 	daoReap := dao.NewGenerationReap()
+	daoSubmit := dao.NewGenerationSubmit()
+	daoGet := dao.NewGenerationGet()
+	daoRequestCancel := dao.NewGenerationRequestCancel()
+	daoQueueDepth := dao.NewGenerationQueueDepth()
 
 	// =================================================================================================================
 	// SERVICES
@@ -89,6 +93,11 @@ func main() {
 		},
 	))
 
+	serviceSubmit := core.NewGenerationSubmit(daoSubmit)
+	serviceGet := core.NewGenerationGet(daoGet)
+	serviceCancel := core.NewGenerationCancel(daoRequestCancel)
+	serviceQueueDepth := core.NewQueueDepth(daoQueueDepth)
+
 	reaper := lo.Must(core.NewReaper(
 		core.ReaperConfig{
 			Grace:     cfg.Reaper.Grace,
@@ -102,7 +111,11 @@ func main() {
 	// HANDLERS
 	// =================================================================================================================
 
-	handlerStatus := handlers.NewGrpcStatus()
+	handlerStatus := handlers.NewGrpcStatus(serviceQueueDepth)
+	handlerSubmit := handlers.NewGrpcGenerationSubmit(serviceSubmit)
+	handlerGet := handlers.NewGrpcGenerationGet(serviceGet)
+	handlerCancel := handlers.NewGrpcGenerationCancel(serviceCancel)
+	handlerWatch := handlers.NewGrpcGenerationWatch(handlerGet)
 
 	// =================================================================================================================
 	// SERVER
@@ -132,6 +145,10 @@ func main() {
 	grpcf.SetEchoServersContext(ctx, server, cfg.Grpc.Ping)
 
 	protogen.RegisterStatusServiceServer(server, handlerStatus)
+	protogen.RegisterGenerationSubmitServiceServer(server, handlerSubmit)
+	protogen.RegisterGenerationGetServiceServer(server, handlerGet)
+	protogen.RegisterGenerationCancelServiceServer(server, handlerCancel)
+	protogen.RegisterGenerationWatchServiceServer(server, handlerWatch)
 
 	reflection.Register(server)
 

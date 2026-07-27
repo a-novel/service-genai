@@ -123,6 +123,65 @@ func (x *DependencyHealth) GetStatus() DependencyStatus {
 	return DependencyStatus_DEPENDENCY_STATUS_UNSPECIFIED
 }
 
+// QueueDepth reports the queue's own backlog: how many generations are due to run and still
+// waiting, and how long the oldest of them has waited. Two numbers rather than one — a count alone
+// cannot tell a queue absorbing a burst from a stalled one, and the oldest-pending age is what
+// separates them.
+type QueueDepth struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// pending is the number of generations due to run that no worker has claimed yet.
+	Pending int64 `protobuf:"varint,1,opt,name=pending,proto3" json:"pending,omitempty"`
+	// oldest_pending_age_seconds is how long the oldest due-and-unclaimed generation has waited.
+	// Zero when nothing is pending.
+	OldestPendingAgeSeconds float64 `protobuf:"fixed64,2,opt,name=oldest_pending_age_seconds,json=oldestPendingAgeSeconds,proto3" json:"oldest_pending_age_seconds,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
+}
+
+func (x *QueueDepth) Reset() {
+	*x = QueueDepth{}
+	mi := &file_status_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *QueueDepth) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*QueueDepth) ProtoMessage() {}
+
+func (x *QueueDepth) ProtoReflect() protoreflect.Message {
+	mi := &file_status_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use QueueDepth.ProtoReflect.Descriptor instead.
+func (*QueueDepth) Descriptor() ([]byte, []int) {
+	return file_status_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *QueueDepth) GetPending() int64 {
+	if x != nil {
+		return x.Pending
+	}
+	return 0
+}
+
+func (x *QueueDepth) GetOldestPendingAgeSeconds() float64 {
+	if x != nil {
+		return x.OldestPendingAgeSeconds
+	}
+	return 0
+}
+
 // StatusRequest takes no parameters.
 type StatusRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -132,7 +191,7 @@ type StatusRequest struct {
 
 func (x *StatusRequest) Reset() {
 	*x = StatusRequest{}
-	mi := &file_status_proto_msgTypes[1]
+	mi := &file_status_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -144,7 +203,7 @@ func (x *StatusRequest) String() string {
 func (*StatusRequest) ProtoMessage() {}
 
 func (x *StatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_status_proto_msgTypes[1]
+	mi := &file_status_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -157,20 +216,23 @@ func (x *StatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatusRequest.ProtoReflect.Descriptor instead.
 func (*StatusRequest) Descriptor() ([]byte, []int) {
-	return file_status_proto_rawDescGZIP(), []int{1}
+	return file_status_proto_rawDescGZIP(), []int{2}
 }
 
-// StatusResponse reports the health of each dependency the service relies on.
+// StatusResponse reports the health of each dependency the service relies on, and the backlog.
 type StatusResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Postgres      *DependencyHealth      `protobuf:"bytes,1,opt,name=postgres,proto3" json:"postgres,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Postgres *DependencyHealth      `protobuf:"bytes,1,opt,name=postgres,proto3" json:"postgres,omitempty"`
+	// queue is the backlog report. Absent when the database is unreachable, since it cannot be
+	// measured — postgres reports down in that case.
+	Queue         *QueueDepth `protobuf:"bytes,2,opt,name=queue,proto3" json:"queue,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *StatusResponse) Reset() {
 	*x = StatusResponse{}
-	mi := &file_status_proto_msgTypes[2]
+	mi := &file_status_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -182,7 +244,7 @@ func (x *StatusResponse) String() string {
 func (*StatusResponse) ProtoMessage() {}
 
 func (x *StatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_status_proto_msgTypes[2]
+	mi := &file_status_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -195,12 +257,19 @@ func (x *StatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatusResponse.ProtoReflect.Descriptor instead.
 func (*StatusResponse) Descriptor() ([]byte, []int) {
-	return file_status_proto_rawDescGZIP(), []int{2}
+	return file_status_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *StatusResponse) GetPostgres() *DependencyHealth {
 	if x != nil {
 		return x.Postgres
+	}
+	return nil
+}
+
+func (x *StatusResponse) GetQueue() *QueueDepth {
+	if x != nil {
+		return x.Queue
 	}
 	return nil
 }
@@ -211,10 +280,15 @@ const file_status_proto_rawDesc = "" +
 	"\n" +
 	"\fstatus.proto\"H\n" +
 	"\x10DependencyHealth\x12)\n" +
-	"\x06status\x18\x01 \x01(\x0e2\x11.DependencyStatusR\x06statusJ\x04\b\x02\x10\x03R\x03err\"\x0f\n" +
-	"\rStatusRequest\"?\n" +
+	"\x06status\x18\x01 \x01(\x0e2\x11.DependencyStatusR\x06statusJ\x04\b\x02\x10\x03R\x03err\"c\n" +
+	"\n" +
+	"QueueDepth\x12\x18\n" +
+	"\apending\x18\x01 \x01(\x03R\apending\x12;\n" +
+	"\x1aoldest_pending_age_seconds\x18\x02 \x01(\x01R\x17oldestPendingAgeSeconds\"\x0f\n" +
+	"\rStatusRequest\"b\n" +
 	"\x0eStatusResponse\x12-\n" +
-	"\bpostgres\x18\x01 \x01(\v2\x11.DependencyHealthR\bpostgres*k\n" +
+	"\bpostgres\x18\x01 \x01(\v2\x11.DependencyHealthR\bpostgres\x12!\n" +
+	"\x05queue\x18\x02 \x01(\v2\v.QueueDepthR\x05queue*k\n" +
 	"\x10DependencyStatus\x12!\n" +
 	"\x1dDEPENDENCY_STATUS_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14DEPENDENCY_STATUS_UP\x10\x01\x12\x1a\n" +
@@ -235,23 +309,25 @@ func file_status_proto_rawDescGZIP() []byte {
 }
 
 var file_status_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_status_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_status_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_status_proto_goTypes = []any{
 	(DependencyStatus)(0),    // 0: DependencyStatus
 	(*DependencyHealth)(nil), // 1: DependencyHealth
-	(*StatusRequest)(nil),    // 2: StatusRequest
-	(*StatusResponse)(nil),   // 3: StatusResponse
+	(*QueueDepth)(nil),       // 2: QueueDepth
+	(*StatusRequest)(nil),    // 3: StatusRequest
+	(*StatusResponse)(nil),   // 4: StatusResponse
 }
 var file_status_proto_depIdxs = []int32{
 	0, // 0: DependencyHealth.status:type_name -> DependencyStatus
 	1, // 1: StatusResponse.postgres:type_name -> DependencyHealth
-	2, // 2: StatusService.Status:input_type -> StatusRequest
-	3, // 3: StatusService.Status:output_type -> StatusResponse
-	3, // [3:4] is the sub-list for method output_type
-	2, // [2:3] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	2, // 2: StatusResponse.queue:type_name -> QueueDepth
+	3, // 3: StatusService.Status:input_type -> StatusRequest
+	4, // 4: StatusService.Status:output_type -> StatusResponse
+	4, // [4:5] is the sub-list for method output_type
+	3, // [3:4] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_status_proto_init() }
@@ -265,7 +341,7 @@ func file_status_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_status_proto_rawDesc), len(file_status_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   3,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

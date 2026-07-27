@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+// A Generation is one AI generative call as this service records it.
+//
+// The service is a crash-safe metering proxy: the caller composes the provider request and owns
+// every parameter in it, and this service executes it durably, never pays for it twice, and records
+// what it consumed.
+message Generation {
+  // Unique identifier, formatted as a UUID.
+  string id = 1;
+  // OwnerID is the user this acts for, formatted as a UUID. Supplied by the calling service.
+  string owner_id = 2;
+  // Purpose is the caller's own label for what this spend is attributed to. Opaque here.
+  string purpose = 3;
+  // Status is where the generation sits in its lifecycle.
+  GenerationStatus status = 4;
+  // Attempt counts runs already begun.
+  int32 attempt = 5;
+  // MaxAttempts caps the value Attempt may reach.
+  int32 max_attempts = 6;
+  // Output is the provider's response on success, as JSON bytes. Empty until it succeeds.
+  bytes output = 7;
+  // Error is the serialised failure on a terminal failure. Empty otherwise.
+  string error = 8;
+  // Creation timestamp, formatted as RFC 3339.
+  string created_at = 9;
+  // Timestamp of the most recent update, formatted as RFC 3339.
+  string updated_at = 10;
+  // Timestamp the generation reached a terminal status, formatted as RFC 3339. Empty until then.
+  string settled_at = 11;
+  // Timestamp the settled generation's content may be purged, formatted as RFC 3339. Its usage
+  // record carries no content and is kept regardless.
+  string expires_at = 12;
+
+  // The provider's own identifier for the operation is deliberately absent: it is this service's
+  // recovery mechanism, not a caller's concern, and exposing it would invite a caller to act on it.
+  reserved 13;
+  reserved "provider_call_id";
+}
+
+// GenerationStatus is where a generation sits in its lifecycle.
+enum GenerationStatus {
+  // GENERATION_STATUS_UNSPECIFIED means the status was not set. Never a value the service stores.
+  GENERATION_STATUS_UNSPECIFIED = 0;
+  // GENERATION_STATUS_PENDING means the generation is waiting to be picked up.
+  GENERATION_STATUS_PENDING = 1;
+  // GENERATION_STATUS_RUNNING means a worker holds a lease and is executing it.
+  GENERATION_STATUS_RUNNING = 2;
+  // GENERATION_STATUS_SUCCEEDED means the provider returned a usable output.
+  GENERATION_STATUS_SUCCEEDED = 3;
+  // GENERATION_STATUS_FAILED means the generation failed with no attempt left to retry.
+  GENERATION_STATUS_FAILED = 4;
+  // GENERATION_STATUS_ABANDONED means the lease expired with no attempt remaining — the worker
+  // running it died mid-run.
+  GENERATION_STATUS_ABANDONED = 5;
+  // GENERATION_STATUS_CANCELLED means the generation was stopped on the owner's request.
+  GENERATION_STATUS_CANCELLED = 6;
+}
