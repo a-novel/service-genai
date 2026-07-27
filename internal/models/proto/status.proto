@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+// StatusService reports the health of the gRPC server's dependencies.
+service StatusService {
+  rpc Status(StatusRequest) returns (StatusResponse);
+}
+
+// DependencyStatus reports whether a single dependency is reachable and serving.
+enum DependencyStatus {
+  // DEPENDENCY_STATUS_UNSPECIFIED means the status has not yet been assessed, or the assessment failed.
+  DEPENDENCY_STATUS_UNSPECIFIED = 0;
+  // DEPENDENCY_STATUS_UP means the dependency was successfully pinged and should serve normally.
+  DEPENDENCY_STATUS_UP = 1;
+  // DEPENDENCY_STATUS_DOWN means the dependency was reached but did not report a healthy status.
+  DEPENDENCY_STATUS_DOWN = 2;
+}
+
+// DependencyHealth reports the health of a single external dependency.
+//
+// The message carries the state alone. A dependency health-check error routinely embeds
+// internal hostnames, ports, or schema names. The error is recorded on the trace span for
+// operators.
+message DependencyHealth {
+  // Number 2 and name "err" are reserved so a future field cannot re-introduce a raw error
+  // string.
+  reserved 2;
+  reserved "err";
+
+  DependencyStatus status = 1;
+}
+
+// StatusRequest takes no parameters.
+message StatusRequest {}
+
+// StatusResponse reports the health of each dependency the service relies on.
+message StatusResponse {
+  DependencyHealth postgres = 1;
+}

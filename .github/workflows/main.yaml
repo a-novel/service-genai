@@ -1,0 +1,384 @@
+name: main
+
+on:
+  push:
+    tags-ignore:
+      - "**"
+    branches:
+      - master
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+  merge_group:
+
+jobs:
+  check-migration-snapshots:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check schema snapshots
+        uses: a-novel-kit/workflows/generic-actions/check-append-only@v1.27.1
+        with:
+          path: internal/models/migrations/testdata/schema
+          base: ${{ github.event.pull_request.base.sha }}
+      - name: Check migration SQL
+        uses: a-novel-kit/workflows/generic-actions/check-append-only@v1.27.1
+        with:
+          path: ":(glob)internal/models/migrations/*.sql"
+          base: ${{ github.event.pull_request.base.sha }}
+
+  generated-go:
+    needs: [build-database]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: ghcr.io/a-novel/service-genai/database@${{ needs.build-database.outputs.digest }}
+        ports:
+          - "5432:5432"
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: postgres
+          POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+          POSTGRES_INITDB_ARGS: --auth=scram-sha-256
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      POSTGRES_DSN: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: "go.mod"
+      - name: go generate
+        shell: bash
+        run: go generate ./...
+      - uses: a-novel-kit/workflows/generic-actions/check-changes@v1.27.1
+        with:
+          fail_message: go generate definitions are not up-to-date, please run 'go generate ./...' and commit the changes
+
+  lint-go:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: a-novel-kit/workflows/go-actions/lint-go@v1.27.1
+
+  lint-proto:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: bufbuild/buf-action@v1
+        with:
+          pr_comment: false
+
+  lint-js:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: a-novel-kit/workflows/node-actions/lint-node@v1.27.1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          app_private_key: ${{ secrets.DEPENDENCY_BOT_PRIVATE_KEY }}
+          client_id: ${{ vars.DEPENDENCY_BOT_CLIENT_ID }}
+          lint_action: "lint:ci"
+
+  lint-dockerfile:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: a-novel-kit/workflows/generic-actions/lint-dockerfile@v1.27.1
+        with:
+          # renovate: datasource=github-releases depName=hadolint/hadolint
+          version: "2.14.0"
+
+  # Structural conventions golangci-lint cannot express.
+  lint-semgrep:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: a-novel-kit/workflows/security-actions/lint-semgrep@v1.27.1
+        with:
+          ruleset: service
+          # renovate: datasource=docker depName=semgrep/semgrep
+          version: "1.171.0"
+
+  # Replaces GitGuardian, which gated on a hosted service: when it saturated,
+  # every PR in the fleet became unmergeable. This runs offline.
+  scan-secrets:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: a-novel-kit/workflows/security-actions/scan-secrets@v1.27.1
+        with:
+          # renovate: datasource=github-releases depName=gitleaks/gitleaks
+          version: "8.30.1"
+
+  # Replaces CodeQL's actions analysis: excessive-permissions is the class it
+  # reported as actions/missing-workflow-permissions.
+  lint-workflows:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: a-novel-kit/workflows/security-actions/lint-workflows@v1.27.1
+        with:
+          # renovate: datasource=docker depName=ghcr.io/zizmorcore/zizmor
+          version: "1.28.0"
+
+  test-go:
+    needs: [build-database]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      artifact-id: ${{ steps.test.outputs.artifact-id }}
+    services:
+      postgres:
+        image: ghcr.io/a-novel/service-genai/database@${{ needs.build-database.outputs.digest }}
+        ports:
+          - "5432:5432"
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: postgres
+          POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+          POSTGRES_INITDB_ARGS: --auth=scram-sha-256
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      POSTGRES_DSN: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/run-migrations
+      - uses: a-novel-kit/workflows/go-actions/test-go@v1.27.1
+        id: test
+        with:
+          filter_extra_patterns: "| grep /internal | grep -v /protogen"
+          skip_setup: true
+          test_artifact: gotest
+          coverage_artifact: gocover
+          coverage_file: coverage.txt
+          modfile: gotestsum.mod
+
+  test-pkg:
+    needs: [build-database, build-standalone-grpc]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      artifact-id: ${{ steps.test.outputs.artifact-id }}
+    services:
+      postgres-template:
+        image: ghcr.io/a-novel/service-genai/database@${{ needs.build-database.outputs.digest }}
+        ports:
+          - "5432:5432"
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: postgres
+          POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+          POSTGRES_INITDB_ARGS: --auth=scram-sha-256
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      service-genai:
+        image: ghcr.io/a-novel/service-genai/standalone-grpc@${{ needs.build-standalone-grpc.outputs.digest }}
+        ports:
+          - "8080:8080"
+        credentials:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          POSTGRES_DSN: postgres://postgres:postgres@postgres-template:5432/postgres?sslmode=disable
+    env:
+      GRPC_URL: "localhost:8080"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: a-novel-kit/workflows/go-actions/test-go@v1.27.1
+        id: test
+        with:
+          filter_extra_patterns: "| grep /pkg"
+          skip_setup: true
+          test_artifact: gotestpkg
+          coverage_artifact: gocoverpkg
+          coverage_file: coverage_pkg.txt
+          modfile: gotestsum.mod
+
+  build-database:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    env:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
+      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+      POSTGRES_INITDB_ARGS: --auth=scram-sha-256
+    steps:
+      - uses: a-novel-kit/workflows/build-actions/docker@v1.27.1
+        id: build
+        with:
+          file: builds/database.Dockerfile
+          image_name: ${{ github.repository }}/database
+          cache: false
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          run_args: >-
+            -e POSTGRES_PASSWORD="${POSTGRES_PASSWORD}" 
+            -e POSTGRES_USER="${POSTGRES_USER}" 
+            -e POSTGRES_DB="${POSTGRES_DB}"
+            -e POSTGRES_HOST_AUTH_METHOD="${POSTGRES_HOST_AUTH_METHOD}"
+            -e POSTGRES_INITDB_ARGS="${POSTGRES_INITDB_ARGS}"
+
+  build-migrations:
+    runs-on: ubuntu-latest
+    needs: [build-database]
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    services:
+      postgres-template:
+        image: ghcr.io/a-novel/service-genai/database@${{ needs.build-database.outputs.digest }}
+        ports:
+          - "5432:5432"
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: postgres
+          POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+          POSTGRES_INITDB_ARGS: --auth=scram-sha-256
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      POSTGRES_DSN: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
+    steps:
+      - uses: a-novel-kit/workflows/build-actions/docker-job@v1.27.1
+        with:
+          file: builds/migrations.Dockerfile
+          image_name: ${{ github.repository }}/jobs/migrations
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          run_args: -e POSTGRES_DSN="${POSTGRES_DSN}"
+
+  build-grpc:
+    needs: [build-database]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    services:
+      postgres-template:
+        image: ghcr.io/a-novel/service-genai/database@${{ needs.build-database.outputs.digest }}
+        ports:
+          - "5432:5432"
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: postgres
+          POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+          POSTGRES_INITDB_ARGS: --auth=scram-sha-256
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      POSTGRES_DSN: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/run-migrations
+      - uses: a-novel-kit/workflows/build-actions/docker@v1.27.1
+        with:
+          file: builds/grpc.Dockerfile
+          image_name: ${{ github.repository }}/grpc
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          run_args: -e POSTGRES_DSN="${POSTGRES_DSN}"
+
+  build-standalone-grpc:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    # This image is booted and exercised by test-pkg (a full
+    # integration run), so this job only builds + pushes it. skip_healthcheck
+    # drops the redundant smoke run and the container constellation it needed.
+    steps:
+      - uses: a-novel-kit/workflows/build-actions/docker@v1.27.1
+        id: build
+        with:
+          file: builds/standalone.grpc.Dockerfile
+          image_name: ${{ github.repository }}/standalone-grpc
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          skip_healthcheck: true
+
+  report-codecov:
+    runs-on: ubuntu-latest
+    needs: [test-go, test-pkg]
+    permissions:
+      contents: read
+    steps:
+      - uses: a-novel-kit/workflows/generic-actions/codecov@v1.27.1
+        with:
+          codecov_token: ${{ secrets.CODECOV_TOKEN }}
+          coverage_files: coverage.txt,coverage_pkg.txt
+          coverage_artifact_ids: ${{ needs.test-go.outputs.artifact-id }},${{ needs.test-pkg.outputs.artifact-id }}

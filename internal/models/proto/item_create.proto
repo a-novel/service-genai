@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+import "item.proto";
+
+// ItemCreateService creates a new item from the supplied attributes.
+service ItemCreateService {
+  rpc ItemCreate(ItemCreateRequest) returns (ItemCreateResponse);
+}
+
+// ItemCreateRequest carries the attributes of the item to create. The server assigns the ID and timestamps.
+message ItemCreateRequest {
+  string name = 1;
+  string description = 2;
+}
+
+// ItemCreateResponse returns the newly created item, including its server-assigned fields.
+message ItemCreateResponse {
+  Item item = 1;
+}

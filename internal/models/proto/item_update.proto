@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+import "item.proto";
+
+// ItemUpdateService replaces the mutable attributes of an existing item.
+service ItemUpdateService {
+  rpc ItemUpdate(ItemUpdateRequest) returns (ItemUpdateResponse);
+}
+
+// ItemUpdateRequest identifies the item to update and carries its new attributes.
+message ItemUpdateRequest {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+}
+
+// ItemUpdateResponse returns the item with its updated attributes.
+message ItemUpdateResponse {
+  Item item = 1;
+}
