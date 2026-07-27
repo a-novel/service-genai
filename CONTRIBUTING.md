@@ -45,14 +45,13 @@ It is scheduled in the image's init SQL rather than in a migration: `postgres.Ru
 
 ## Provider retention
 
-Every request goes out with `store: false`, overriding the caller: retention is a platform posture,
-and this service is the one egress where it can be decided once. Nothing here needs the provider to
-keep the prose, and a background response stays retrievable for roughly ten minutes regardless, where
-re-attach only has to outlive a pod restart.
+Every request goes out with `store: false`, so the provider runs the call and keeps no copy of the user content. The value overwrites whatever the caller sent: this service is the platform's only path to a provider, so retention is settled here for every caller at once.
 
-**Reopen this if** re-attach starts failing with a not-found on an operation that should still be
-live, meaning the ten-minute floor no longer holds. Being wrong costs a generation, not a double
-charge: a 404 settles it as failed rather than starting a second paid call.
+The cost is chaining. A request that references a previous response's items fails with `Item not found`, so every submission carries a self-contained payload.
+
+Re-attaching after a crash is unaffected, because `store` does not govern the polling window: a background response stays on the provider's disk for about ten minutes, and a restarted worker re-attaches within seconds.
+
+**Revisit this** if a re-attach starts failing with a not-found on an operation that should still be running, which means that window has moved. A 404 settles the generation as failed, so the cost of being wrong is one lost result rather than a second paid call.
 
 ---
 

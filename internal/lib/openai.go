@@ -98,11 +98,11 @@ func (provider *OpenAI) Cancel(ctx context.Context, id string) (*ProviderCall, e
 
 // mergeProviderFields adds the three fields this service owns, overwriting whatever the caller set.
 //
-// background is what makes crash-safety possible: the call returns an identifier immediately, so a
-// restarted worker can resume it rather than burning the whole spend. store is false because nothing
-// here needs the provider to keep the prose, and a background response stays retrievable for roughly
-// ten minutes regardless, where re-attach only has to outlive a pod restart. metadata identifies an
-// operation orphaned between the provider accepting a call and its identifier reaching the database.
+// background makes crash-safety possible: the call returns an identifier immediately, so a restarted
+// worker resumes an operation already paid for. store keeps the provider from retaining user content,
+// and leaves re-attach intact because it reads the operation back inside the polling window. metadata
+// identifies an operation orphaned between the provider accepting a call and its identifier reaching
+// the database.
 func mergeProviderFields(request *ProviderStartRequest) (json.RawMessage, error) {
 	fields := map[string]json.RawMessage{}
 
