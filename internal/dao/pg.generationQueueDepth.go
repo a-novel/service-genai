@@ -4,7 +4,6 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
-	"time"
 
 	"go.opentelemetry.io/otel/attribute"
 
@@ -21,11 +20,6 @@ type GenerationQueueDepth struct {
 	Pending int64 `bun:"pending"`
 	// OldestPendingAgeSeconds is how long the oldest of them has waited. Zero when nothing pends.
 	OldestPendingAgeSeconds float64 `bun:"oldest_pending_age_seconds"`
-}
-
-// OldestPendingAge returns the wait as a duration.
-func (depth GenerationQueueDepth) OldestPendingAge() time.Duration {
-	return time.Duration(depth.OldestPendingAgeSeconds * float64(time.Second))
 }
 
 // GenerationQueueDepthDao reads the backlog for the health report.

@@ -3,6 +3,9 @@
 --
 -- The grace period is a head start for a late settle over the sweep. It is applied in the predicate
 -- rather than at boot, because other replicas would sweep straight through a boot-only grace.
+--
+-- Bounded: a sweep that found every stranded claim at once would materialise the whole set back to
+-- the caller. The caller repeats until a sweep comes back short.
 WITH
   reapable AS (
     SELECT
@@ -12,6 +15,10 @@ WITH
     WHERE
       status = 'running'
       AND lease_expires_at < clock_timestamp() - make_interval(secs => ?0)
+    ORDER BY
+      lease_expires_at
+    LIMIT
+      ?2
     FOR UPDATE
       SKIP LOCKED
   )

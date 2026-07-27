@@ -3,7 +3,6 @@ package dao
 import (
 	"context"
 	_ "embed"
-	"errors"
 	"fmt"
 	"time"
 
@@ -16,25 +15,14 @@ import (
 //go:embed pg.generationClaim.sql
 var generationClaimQuery string
 
-// Ceilings on what a caller may ask for. A lease longer than an hour outlives any generation we run,
-// and an unbounded batch would let one worker take the whole queue.
-const (
-	GenerationClaimMaxLease = time.Hour
-	GenerationClaimMaxLimit = 100
-)
-
-// ErrGenerationClaimInvalid is returned by [GenerationClaim.Exec] for a request outside those
-// ceilings.
-var ErrGenerationClaimInvalid = errors.New("invalid claim request")
-
 // GenerationClaimRequest is the input to [GenerationClaim.Exec].
 type GenerationClaimRequest struct {
 	// WorkerID is recorded on each claimed generation so a stranded claim can be traced.
 	WorkerID string
-	// Limit caps how many generations one claim takes.
+	// Limit caps how many generations one claim takes. Bounded by the caller.
 	Limit int
-	// Lease is how long the claim holds before the reaper may recover the generation. Size it to the
-	// expected run: an outrun lease is recoverable, but every lapse burns an attempt.
+	// Lease is how long the claim holds before the reaper may recover the generation. Bounded by the
+	// caller, which sizes it to the expected run.
 	Lease time.Duration
 }
 
@@ -54,15 +42,6 @@ func (dao *GenerationClaim) Exec(ctx context.Context, request *GenerationClaimRe
 		attribute.Int("claim.limit", request.Limit),
 		attribute.Float64("claim.lease_seconds", request.Lease.Seconds()),
 	)
-
-	switch {
-	case request.WorkerID == "":
-		return nil, otel.ReportError(span, fmt.Errorf("%w: no worker id", ErrGenerationClaimInvalid))
-	case request.Limit <= 0, request.Limit > GenerationClaimMaxLimit:
-		return nil, otel.ReportError(span, fmt.Errorf("%w: limit %d", ErrGenerationClaimInvalid, request.Limit))
-	case request.Lease <= 0, request.Lease > GenerationClaimMaxLease:
-		return nil, otel.ReportError(span, fmt.Errorf("%w: lease %s", ErrGenerationClaimInvalid, request.Lease))
-	}
 
 	tx, err := postgres.GetContext(ctx)
 	if err != nil {

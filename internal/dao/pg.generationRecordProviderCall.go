@@ -17,9 +17,6 @@ import (
 //go:embed pg.generationRecordProviderCall.sql
 var generationRecordProviderCallQuery string
 
-// ErrGenerationInvalidStatus is returned when a transition names a status it cannot land in.
-var ErrGenerationInvalidStatus = errors.New("invalid generation status")
-
 // GenerationRecordProviderCallRequest is the input to [GenerationRecordProviderCall.Exec].
 type GenerationRecordProviderCallRequest struct {
 	ID       uuid.UUID
@@ -46,10 +43,6 @@ func (dao *GenerationRecordProviderCall) Exec(
 		attribute.String("generation.id", request.ID.String()),
 		attribute.String("generation.worker_id", request.WorkerID),
 	)
-
-	if request.ProviderCallID == "" {
-		return nil, otel.ReportError(span, fmt.Errorf("%w: empty provider call id", ErrGenerationNotHeld))
-	}
 
 	tx, err := postgres.GetContext(ctx)
 	if err != nil {

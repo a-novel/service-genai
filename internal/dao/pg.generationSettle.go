@@ -29,7 +29,8 @@ var ErrGenerationNotHeld = errors.New("generation is not held by this worker")
 type GenerationSettleRequest struct {
 	ID       uuid.UUID
 	WorkerID string
-	// Status is the terminal state to land in.
+	// Status is the terminal state to land in. The caller supplies a terminal one; the
+	// terminal-fields constraint rejects anything else.
 	Status GenerationStatus
 	// Output is the provider's structured output on success.
 	Output json.RawMessage
@@ -60,14 +61,6 @@ func (dao *GenerationSettle) Exec(ctx context.Context, request *GenerationSettle
 		attribute.String("generation.worker_id", request.WorkerID),
 		attribute.String("generation.status", string(request.Status)),
 	)
-
-	switch request.Status {
-	case GenerationStatusSucceeded, GenerationStatusFailed, GenerationStatusCancelled, GenerationStatusAbandoned:
-	case GenerationStatusPending, GenerationStatusRunning:
-		fallthrough
-	default:
-		return nil, otel.ReportError(span, fmt.Errorf("%w: %q is not terminal", ErrGenerationInvalidStatus, request.Status))
-	}
 
 	tx, err := postgres.GetContext(ctx)
 	if err != nil {

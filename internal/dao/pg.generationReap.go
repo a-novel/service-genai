@@ -21,6 +21,8 @@ type GenerationReapRequest struct {
 	Grace time.Duration
 	// Retention applies to the generations this sweep abandons, which are terminal.
 	Retention time.Duration
+	// Limit caps one sweep. Bounded by the caller, which repeats until a sweep comes back short.
+	Limit int
 }
 
 // GenerationReap recovers generations whose worker died mid-run.
@@ -34,7 +36,10 @@ func (dao *GenerationReap) Exec(ctx context.Context, request *GenerationReapRequ
 	ctx, span := otel.Tracer().Start(ctx, "dao.GenerationReap")
 	defer span.End()
 
-	span.SetAttributes(attribute.Float64("reap.grace_seconds", request.Grace.Seconds()))
+	span.SetAttributes(
+		attribute.Float64("reap.grace_seconds", request.Grace.Seconds()),
+		attribute.Int("reap.limit", request.Limit),
+	)
 
 	tx, err := postgres.GetContext(ctx)
 	if err != nil {
@@ -44,7 +49,7 @@ func (dao *GenerationReap) Exec(ctx context.Context, request *GenerationReapRequ
 	var entities []*Generation
 
 	err = tx.NewRaw(
-		generationReapQuery, request.Grace.Seconds(), request.Retention.Seconds(),
+		generationReapQuery, request.Grace.Seconds(), request.Retention.Seconds(), request.Limit,
 	).Scan(ctx, &entities)
 	if err != nil {
 		return nil, otel.ReportError(span, fmt.Errorf("execute query: %w", err))
