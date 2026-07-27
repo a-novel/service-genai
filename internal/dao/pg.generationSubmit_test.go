@@ -16,193 +16,225 @@ import (
 	"github.com/a-novel/service-genai/internal/models/migrations"
 )
 
+var (
+	submitOwner      = uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	submitOtherOwner = uuid.MustParse("00000000-0000-0000-0000-000000000002")
+)
+
+// submission is one call in a case's sequence. Empty override fields take the base request's value,
+// so a case only states what it changes.
+type submission struct {
+	ownerID     uuid.UUID
+	purpose     string
+	fingerprint []byte
+	request     json.RawMessage
+
+	expectCreated bool
+	// expectReplayOf is the 1-based index of an earlier submission whose generation this one must
+	// return. Zero means the assertion does not apply.
+	expectReplayOf int
+	expectErr      error
+}
+
+func (sub submission) build() *dao.GenerationSubmitRequest {
+	base := &dao.GenerationSubmitRequest{
+		ID:                 uuid.Must(uuid.NewV7()),
+		OwnerID:            submitOwner,
+		Purpose:            "studio.generation",
+		Profile:            "standard",
+		IdempotencyKey:     "the-key",
+		RequestFingerprint: []byte{0x01},
+		Request:            json.RawMessage(`{"instructions": "write"}`),
+		MaxAttempts:        1,
+	}
+
+	if sub.ownerID != uuid.Nil {
+		base.OwnerID = sub.ownerID
+	}
+
+	if sub.purpose != "" {
+		base.Purpose = sub.purpose
+	}
+
+	if sub.fingerprint != nil {
+		base.RequestFingerprint = sub.fingerprint
+	}
+
+	if sub.request != nil {
+		base.Request = sub.request
+	}
+
+	return base
+}
+
 func TestGenerationSubmit(t *testing.T) {
 	t.Parallel()
 
-	owner := uuid.MustParse("00000000-0000-0000-0000-000000000001")
-	otherOwner := uuid.MustParse("00000000-0000-0000-0000-000000000002")
+	testCases := []struct {
+		name string
 
-	submitRequest := func(id uuid.UUID) *dao.GenerationSubmitRequest {
-		return &dao.GenerationSubmitRequest{
-			ID:                 id,
-			OwnerID:            owner,
-			Purpose:            "studio.generation",
-			Profile:            "draft",
-			IdempotencyKey:     "the-key",
-			RequestFingerprint: []byte{0x01},
-			Request:            json.RawMessage(`{"instructions": "write"}`),
-			MaxAttempts:        1,
-		}
+		// Each case is a sequence of submissions against one database, because what submit
+		// guarantees is only observable across more than one call.
+		submissions []submission
+	}{
+		{
+			name: "Created",
+
+			submissions: []submission{{expectCreated: true}},
+		},
+		{
+			// A retry mints a fresh identifier, exactly as a caller that never saw the first answer
+			// would. The stored generation wins, and the caller is told it did.
+			name: "Replayed",
+
+			submissions: []submission{
+				{expectCreated: true},
+				{expectCreated: false, expectReplayOf: 1},
+			},
+		},
+		{
+			// purpose is part of the key: without it one owner's keys collide across features.
+			name: "SameKeyDifferentPurpose",
+
+			submissions: []submission{
+				{expectCreated: true},
+				{purpose: "discovery.recommendation", expectCreated: true},
+			},
+		},
+		{
+			name: "SameKeyDifferentOwner",
+
+			submissions: []submission{
+				{expectCreated: true},
+				{ownerID: submitOtherOwner, expectCreated: true},
+			},
+		},
+		{
+			// Same key, different request. A caller bug, not a replay — answering with the earlier
+			// generation would answer a question that was never asked.
+			name: "Error/Conflict",
+
+			submissions: []submission{
+				{expectCreated: true},
+				{
+					fingerprint: []byte{0x02},
+					request:     json.RawMessage(`{"instructions": "something else"}`),
+					expectErr:   dao.ErrGenerationSubmitConflict,
+				},
+			},
+		},
 	}
 
-	t.Run("Success/Created", func(t *testing.T) {
-		t.Parallel()
+	daoGenerationSubmit := dao.NewGenerationSubmit()
 
-		postgres.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
-			t.Helper()
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
 
-			id := uuid.Must(uuid.NewV7())
+			postgres.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
+				t.Helper()
 
-			result, err := dao.NewGenerationSubmit().Exec(ctx, submitRequest(id))
-			require.NoError(t, err)
-			require.True(t, result.Created)
-			require.Equal(t, id, result.Generation.ID)
-			require.Equal(t, dao.GenerationStatusPending, result.Generation.Status)
-			require.Zero(t, result.Generation.Attempt)
+				results := make([]*dao.GenerationSubmitResult, 0, len(testCase.submissions))
 
-			// The database owns these, and a caller must never have to supply them.
-			require.False(t, result.Generation.CreatedAt.IsZero())
-			require.False(t, result.Generation.RunAt.IsZero())
-			require.Nil(t, result.Generation.SettledAt)
-			require.Nil(t, result.Generation.LeaseExpiresAt)
-		})
-	})
+				for index, sub := range testCase.submissions {
+					request := sub.build()
 
-	t.Run("Success/Replayed", func(t *testing.T) {
-		t.Parallel()
+					result, err := daoGenerationSubmit.Exec(ctx, request)
+					require.ErrorIsf(t, err, sub.expectErr, "submission %d", index+1)
 
-		postgres.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
-			t.Helper()
+					if sub.expectErr != nil {
+						require.Nilf(t, result, "submission %d", index+1)
 
-			daoSubmit := dao.NewGenerationSubmit()
+						results = append(results, nil)
 
-			first := uuid.Must(uuid.NewV7())
-			created, err := daoSubmit.Exec(ctx, submitRequest(first))
-			require.NoError(t, err)
-			require.True(t, created.Created)
-
-			// A retry mints a fresh identifier, exactly as a caller that never saw the first
-			// answer would. The stored generation must win, and the caller must be told it did.
-			replayed, err := daoSubmit.Exec(ctx, submitRequest(uuid.Must(uuid.NewV7())))
-			require.NoError(t, err)
-			require.False(t, replayed.Created)
-			require.Equal(t, first, replayed.Generation.ID)
-		})
-	})
-
-	t.Run("Success/SameKeyDifferentPurpose", func(t *testing.T) {
-		t.Parallel()
-
-		postgres.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
-			t.Helper()
-
-			daoSubmit := dao.NewGenerationSubmit()
-
-			_, err := daoSubmit.Exec(ctx, submitRequest(uuid.Must(uuid.NewV7())))
-			require.NoError(t, err)
-
-			// Purpose is part of the key: without it, one owner's keys collide across features and
-			// a submission from another feature is mistaken for a replay.
-			other := submitRequest(uuid.Must(uuid.NewV7()))
-			other.Purpose = "discovery.recommendation"
-
-			result, err := daoSubmit.Exec(ctx, other)
-			require.NoError(t, err)
-			require.True(t, result.Created)
-		})
-	})
-
-	t.Run("Success/SameKeyDifferentOwner", func(t *testing.T) {
-		t.Parallel()
-
-		postgres.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
-			t.Helper()
-
-			daoSubmit := dao.NewGenerationSubmit()
-
-			_, err := daoSubmit.Exec(ctx, submitRequest(uuid.Must(uuid.NewV7())))
-			require.NoError(t, err)
-
-			other := submitRequest(uuid.Must(uuid.NewV7()))
-			other.OwnerID = otherOwner
-
-			result, err := daoSubmit.Exec(ctx, other)
-			require.NoError(t, err)
-			require.True(t, result.Created)
-		})
-	})
-
-	t.Run("Error/Conflict", func(t *testing.T) {
-		t.Parallel()
-
-		postgres.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
-			t.Helper()
-
-			daoSubmit := dao.NewGenerationSubmit()
-
-			_, err := daoSubmit.Exec(ctx, submitRequest(uuid.Must(uuid.NewV7())))
-			require.NoError(t, err)
-
-			// Same key, different request. This is a caller bug, not a replay, and answering with
-			// the earlier generation would answer a question that was never asked.
-			conflicting := submitRequest(uuid.Must(uuid.NewV7()))
-			conflicting.RequestFingerprint = []byte{0x02}
-			conflicting.Request = json.RawMessage(`{"instructions": "something else"}`)
-
-			result, err := daoSubmit.Exec(ctx, conflicting)
-			require.ErrorIs(t, err, dao.ErrGenerationSubmitConflict)
-			require.Nil(t, result)
-		})
-	})
-
-	t.Run("Success/ConcurrentSubmitsResolveToOneWinner", func(t *testing.T) {
-		t.Parallel()
-
-		postgres.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
-			t.Helper()
-
-			const concurrency = 8
-
-			daoSubmit := dao.NewGenerationSubmit()
-
-			var (
-				wg      sync.WaitGroup
-				mu      sync.Mutex
-				results []*dao.GenerationSubmitResult
-			)
-
-			// The whole point of the operation is that a race cannot produce two priced calls, so
-			// the race is what the test exercises: exactly one submission may report Created, and
-			// every one of them must come back pointing at that same generation.
-			for range concurrency {
-				wg.Add(1)
-
-				go func() {
-					defer wg.Done()
-
-					result, err := daoSubmit.Exec(ctx, submitRequest(uuid.Must(uuid.NewV7())))
-					if err != nil {
-						return
+						continue
 					}
 
-					mu.Lock()
-					defer mu.Unlock()
+					require.Equalf(t, sub.expectCreated, result.Created, "submission %d", index+1)
+
+					if sub.expectCreated {
+						require.Equalf(t, request.ID, result.Generation.ID, "submission %d", index+1)
+						require.Equal(t, dao.GenerationStatusPending, result.Generation.Status)
+						require.Zero(t, result.Generation.Attempt)
+
+						// The database owns these, and a caller must never supply them.
+						require.False(t, result.Generation.CreatedAt.IsZero())
+						require.False(t, result.Generation.RunAt.IsZero())
+						require.Nil(t, result.Generation.SettledAt)
+						require.Nil(t, result.Generation.LeaseExpiresAt)
+					}
+
+					if sub.expectReplayOf > 0 {
+						require.Equalf(t,
+							results[sub.expectReplayOf-1].Generation.ID, result.Generation.ID,
+							"submission %d", index+1,
+						)
+					}
 
 					results = append(results, result)
-				}()
-			}
-
-			wg.Wait()
-
-			require.Len(t, results, concurrency)
-
-			var (
-				createdCount int
-				winner       uuid.UUID
-			)
-
-			for _, result := range results {
-				if result.Created {
-					createdCount++
-					winner = result.Generation.ID
 				}
-			}
-
-			require.Equal(t, 1, createdCount)
-
-			for _, result := range results {
-				require.Equal(t, winner, result.Generation.ID)
-			}
+			})
 		})
+	}
+}
+
+// Kept out of the table above because it asserts a property of a set of concurrent calls rather
+// than a sequence of outcomes. It is the case that matters most: submit exists so a race cannot
+// produce two priced calls, so the race is what it is tested against.
+func TestGenerationSubmitConcurrent(t *testing.T) {
+	t.Parallel()
+
+	const concurrency = 8
+
+	postgres.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
+		t.Helper()
+
+		daoGenerationSubmit := dao.NewGenerationSubmit()
+
+		var (
+			wg      sync.WaitGroup
+			mu      sync.Mutex
+			results []*dao.GenerationSubmitResult
+		)
+
+		for range concurrency {
+			wg.Add(1)
+
+			go func() {
+				defer wg.Done()
+
+				result, err := daoGenerationSubmit.Exec(ctx, submission{}.build())
+				if err != nil {
+					return
+				}
+
+				mu.Lock()
+				defer mu.Unlock()
+
+				results = append(results, result)
+			}()
+		}
+
+		wg.Wait()
+
+		require.Len(t, results, concurrency)
+
+		var (
+			createdCount int
+			winner       uuid.UUID
+		)
+
+		for _, result := range results {
+			if result.Created {
+				createdCount++
+				winner = result.Generation.ID
+			}
+		}
+
+		require.Equal(t, 1, createdCount)
+
+		for _, result := range results {
+			require.Equal(t, winner, result.Generation.ID)
+		}
 	})
 }

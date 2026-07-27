@@ -1,6 +1,5 @@
--- The owner is part of the predicate, not checked after the fact. A caller that omits it fails to
--- scan rather than returning another owner's row, and a generation belonging to someone else is
--- indistinguishable from one that does not exist — so an identifier cannot be probed for existence.
+-- The owner is in the predicate, not checked after the fact, so another owner's generation is
+-- indistinguishable from one that does not exist and an identifier cannot be probed.
 SELECT
   *
 FROM
