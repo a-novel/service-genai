@@ -465,3 +465,29 @@ func TestOpenAIMalformedRequest(t *testing.T) {
 	require.Error(t, err)
 	require.NotErrorIs(t, err, lib.ErrProviderRetryable)
 }
+
+// Name is what the usage record stores as the provider, so it is part of the contract rather than a
+// label.
+func TestOpenAIName(t *testing.T) {
+	t.Parallel()
+
+	provider := lib.NewOpenAI(option.WithAPIKey("test-key"))
+	require.Equal(t, lib.ProviderNameOpenAI, provider.Name())
+}
+
+// A status this adapter has never seen is treated as still running, not as terminal. Polling again
+// is cheap; settling on a state we do not understand throws away work already paid for.
+func TestOpenAIUnknownStatus(t *testing.T) {
+	t.Parallel()
+
+	script := &scriptedProvider{
+		status: http.StatusOK,
+		body:   `{"id": "resp_1", "status": "something_new", "model": "gpt-5.6-terra"}`,
+	}
+	provider := newTestProvider(t, script)
+
+	call, err := provider.Get(t.Context(), "resp_1")
+	require.NoError(t, err)
+	require.Equal(t, lib.ProviderCallRunning, call.State)
+	require.False(t, call.State.Terminal())
+}

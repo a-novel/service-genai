@@ -18,12 +18,41 @@ func getEnv(name string) string {
 	return os.Getenv(prefix + name)
 }
 
+// defaultWorkerID falls back to the hostname, which a container orchestrator already makes unique
+// per replica. A worker without an identifier could not be told apart on a stranded claim.
+func defaultWorkerID() string {
+	host, err := os.Hostname()
+	if err != nil {
+		return "worker"
+	}
+
+	return host
+}
+
 // Default values applied when an environment variable is unset.
 const (
 	AppNameDefault = "service-genai"
 
 	GrpcPortDefault = 8080
 	GrpcDefaultPing = time.Second * 5
+
+	// WorkerIntervalDefault and the values below configure the generation worker. The lease is
+	// sized to an expected run rather than a multiple of it: an outrun lease is recoverable, and
+	// every lapse burns an attempt.
+	WorkerIntervalDefault     = 5 * time.Second
+	WorkerLeaseDefault        = 5 * time.Minute
+	WorkerBatchSizeDefault    = 10
+	WorkerPollIntervalDefault = 2 * time.Second
+
+	// RetentionDefault is how long a settled generation's user content survives. Short on purpose:
+	// it covers client retrieval, and the usage rows describing it are kept regardless.
+	RetentionDefault = 7 * 24 * time.Hour
+
+	// ReaperIntervalDefault and the values below configure the recovery sweep. The grace is the
+	// head start a late settle gets over it.
+	ReaperIntervalDefault  = 30 * time.Second
+	ReaperGraceDefault     = 30 * time.Second
+	ReaperBatchSizeDefault = 100
 
 	// PostgresMaxOpenConnsDefault keeps the pool well under a stock PostgreSQL
 	// max_connections of 100 once multiplied by a service's replica count, leaving
@@ -51,6 +80,18 @@ var (
 
 	openaiAPIKey  = getEnv("OPENAI_API_KEY")
 	openaiBaseURL = getEnv("OPENAI_BASE_URL")
+
+	workerID           = getEnv("WORKER_ID")
+	workerInterval     = getEnv("WORKER_INTERVAL")
+	workerLease        = getEnv("WORKER_LEASE")
+	workerBatchSize    = getEnv("WORKER_BATCH_SIZE")
+	workerPollInterval = getEnv("WORKER_POLL_INTERVAL")
+
+	retention = getEnv("RETENTION")
+
+	reaperInterval  = getEnv("REAPER_INTERVAL")
+	reaperGrace     = getEnv("REAPER_GRACE")
+	reaperBatchSize = getEnv("REAPER_BATCH_SIZE")
 
 	gcloudProjectId = getEnv("GCLOUD_PROJECT_ID")
 )
@@ -86,6 +127,28 @@ var (
 	// OpenAIBaseURL overrides the provider endpoint. Empty uses the SDK default; a value points at
 	// an OpenAI-compatible provider or a local stand-in.
 	OpenAIBaseURL = openaiBaseURL
+
+	// WorkerID identifies this replica on the claims it holds. Empty takes the hostname, which is
+	// what a container orchestrator already makes unique.
+	WorkerID = config.LoadEnv(workerID, defaultWorkerID(), config.StringParser)
+	// WorkerInterval is how often the worker looks for work when the queue is empty.
+	WorkerInterval = config.LoadEnv(workerInterval, WorkerIntervalDefault, config.DurationParser)
+	// WorkerLease is how long a claim holds before the reaper may recover it.
+	WorkerLease = config.LoadEnv(workerLease, WorkerLeaseDefault, config.DurationParser)
+	// WorkerBatchSize caps one claim.
+	WorkerBatchSize = config.LoadEnv(workerBatchSize, WorkerBatchSizeDefault, config.IntParser)
+	// WorkerPollInterval is how long the provider is given between polls of a running operation.
+	WorkerPollInterval = config.LoadEnv(workerPollInterval, WorkerPollIntervalDefault, config.DurationParser)
+
+	// Retention is how long a settled generation's user content survives before the purge.
+	Retention = config.LoadEnv(retention, RetentionDefault, config.DurationParser)
+
+	// ReaperInterval is how often the reaper sweeps for lapsed leases.
+	ReaperInterval = config.LoadEnv(reaperInterval, ReaperIntervalDefault, config.DurationParser)
+	// ReaperGrace is how long past its lease a claim is left alone, so a late settle beats the sweep.
+	ReaperGrace = config.LoadEnv(reaperGrace, ReaperGraceDefault, config.DurationParser)
+	// ReaperBatchSize caps one sweep.
+	ReaperBatchSize = config.LoadEnv(reaperBatchSize, ReaperBatchSizeDefault, config.IntParser)
 
 	// GcloudProjectId names the Google Cloud project the service runs in. Setting
 	// it switches logging and tracing from the local console to Google Cloud.

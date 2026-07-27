@@ -14,20 +14,28 @@ import (
 	"os/signal"
 	"strconv"
 	"syscall"
+	"time"
 
+	"github.com/openai/openai-go/v3/option"
 	"github.com/samber/lo"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/otel/attribute"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 
 	"github.com/a-novel-kit/golib/grpcf"
+	"github.com/a-novel-kit/golib/logging"
 	"github.com/a-novel-kit/golib/otel"
 	"github.com/a-novel-kit/golib/postgres"
+	"github.com/a-novel-kit/golib/worker"
 
 	"github.com/a-novel/service-genai/internal/config"
 	"github.com/a-novel/service-genai/internal/config/env"
+	"github.com/a-novel/service-genai/internal/core"
+	"github.com/a-novel/service-genai/internal/dao"
 	"github.com/a-novel/service-genai/internal/handlers"
 	"github.com/a-novel/service-genai/internal/handlers/protogen"
+	"github.com/a-novel/service-genai/internal/lib"
 )
 
 func main() {
@@ -44,6 +52,51 @@ func main() {
 	}
 
 	ctx = lo.Must(postgres.NewContext(ctx, config.PostgresPresetDefault))
+
+	// =================================================================================================================
+	// DAO
+	// =================================================================================================================
+
+	daoClaim := dao.NewGenerationClaim()
+	daoRecordProviderCall := dao.NewGenerationRecordProviderCall()
+	daoSettle := dao.NewGenerationSettle()
+	daoRequeue := dao.NewGenerationRequeue()
+	daoUsageInsert := dao.NewGenerationUsageInsert()
+	daoReap := dao.NewGenerationReap()
+
+	// =================================================================================================================
+	// SERVICES
+	// =================================================================================================================
+
+	provider := lib.NewOpenAI(providerOptions(cfg.Provider)...)
+
+	generationWorker := lo.Must(core.NewWorker(
+		core.WorkerConfig{
+			ID:           cfg.Worker.ID,
+			Lease:        cfg.Worker.Lease,
+			BatchSize:    cfg.Worker.BatchSize,
+			PollInterval: cfg.Worker.PollInterval,
+			Retention:    cfg.Retention,
+		},
+		provider,
+		postgres.NewTransactor(nil),
+		core.WorkerDaos{
+			Claim:   daoClaim,
+			Record:  daoRecordProviderCall,
+			Settle:  daoSettle,
+			Requeue: daoRequeue,
+			Usage:   daoUsageInsert,
+		},
+	))
+
+	reaper := lo.Must(core.NewReaper(
+		core.ReaperConfig{
+			Grace:     cfg.Reaper.Grace,
+			BatchSize: cfg.Reaper.BatchSize,
+			Retention: cfg.Retention,
+		},
+		daoReap,
+	))
 
 	// =================================================================================================================
 	// HANDLERS
@@ -86,6 +139,15 @@ func main() {
 	// RUN
 	// =================================================================================================================
 
+	// The worker and the reaper run in this process. Neither needs a network hop, and an always-on
+	// container is already paid for.
+	//
+	// They take the boot context, not a request one: a request context dies at the server's own
+	// timeout, and a generation outlives that by design. The stagger keeps two loops sharing an
+	// interval from waking together.
+	go runLoop(ctx, cfg.Log, "generation-worker", cfg.Worker.Interval, 0, generationWorker.RunOnce)
+	go runLoop(ctx, cfg.Log, "generation-reaper", cfg.Reaper.Interval, time.Second, reaper.RunOnce)
+
 	log.Println("Starting gRPC server on :" + strconv.Itoa(cfg.Grpc.Port))
 
 	go func() {
@@ -101,4 +163,36 @@ func main() {
 
 	log.Println("Shutting down gRPC server...")
 	server.GracefulStop()
+}
+
+// runLoop drives a background loop under panic recovery.
+//
+// The OpenTelemetry SDK does not recover panics, and a panic escaping a goroutine takes the whole
+// process with it — including the gRPC server, which had nothing to do with the fault.
+func runLoop(
+	ctx context.Context,
+	logger logging.Log,
+	name string,
+	interval, stagger time.Duration,
+	fn func(context.Context) (bool, error),
+) {
+	ctx, span := otel.Tracer().Start(ctx, "cmd.runLoop")
+	defer span.End()
+	defer otel.RecoverPanic(ctx, span)
+
+	span.SetAttributes(attribute.String("loop.name", name))
+
+	worker.Poll(ctx, logger, name, interval, stagger, fn)
+}
+
+// providerOptions builds the client options from configuration. An empty base URL leaves the
+// client's own default, so only a deployment pointing at another endpoint sets one.
+func providerOptions(provider config.Provider) []option.RequestOption {
+	opts := []option.RequestOption{option.WithAPIKey(provider.APIKey)}
+
+	if provider.BaseURL != "" {
+		opts = append(opts, option.WithBaseURL(provider.BaseURL))
+	}
+
+	return opts
 }

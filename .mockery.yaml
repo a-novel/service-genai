@@ -1,4 +1,10 @@
 packages:
+  github.com/a-novel/service-genai/internal/lib:
+    config:
+      all: true
+      pkgname: libmocks
+      dir: internal/lib/mocks
+      filename: mocks.go
   github.com/a-novel/service-genai/internal/core:
     config:
       all: true

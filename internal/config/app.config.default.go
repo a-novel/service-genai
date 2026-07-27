@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"time"
 
 	"github.com/samber/lo"
@@ -27,6 +28,13 @@ var LoggerProd = loggingpresets.GRPCGcloud{
 // LoggerDev pretty-prints logs to the console for local development.
 var LoggerDev = loggingpresets.GRPCLocal{}
 
+// LogDev and LogProd are what the background loops write to.
+var (
+	LogDev = &loggingpresets.LogLocal{Out: os.Stdout}
+
+	LogProd = &loggingpresets.LogGcloud{ProjectId: env.GcloudProjectId}
+)
+
 // AppPresetDefault is the configuration the service starts with. It reads every
 // value from the environment, and picks the Google Cloud logging and tracing
 // backends once a project ID is set.
@@ -39,6 +47,24 @@ var AppPresetDefault = App{
 		Ping: env.GrpcPing,
 	},
 
+	Worker: Worker{
+		ID:           env.WorkerID,
+		Interval:     env.WorkerInterval,
+		Lease:        env.WorkerLease,
+		BatchSize:    env.WorkerBatchSize,
+		PollInterval: env.WorkerPollInterval,
+	},
+	Reaper: Reaper{
+		Interval:  env.ReaperInterval,
+		Grace:     env.ReaperGrace,
+		BatchSize: env.ReaperBatchSize,
+	},
+	Provider: Provider{
+		APIKey:  env.OpenAIAPIKey,
+		BaseURL: env.OpenAIBaseURL,
+	},
+	Retention: env.Retention,
+
 	Otel: lo.If[otel.Config](!env.Otel, &otelpresets.Disabled{}).
 		ElseIf(env.GcloudProjectId == "", &otelpresets.Local{
 			FlushTimeout: OtelFlushTimeout,
@@ -48,5 +74,6 @@ var AppPresetDefault = App{
 			FlushTimeout: OtelFlushTimeout,
 		}),
 	Logger:   lo.Ternary[logging.RPCConfig](env.GcloudProjectId == "", &LoggerDev, &LoggerProd),
+	Log:      lo.Ternary[logging.Log](env.GcloudProjectId == "", LogDev, LogProd),
 	Postgres: PostgresPresetDefault,
 }
