@@ -33,6 +33,16 @@ There is no REST surface: callers are other services on the internal network, so
 
 ---
 
+## Retention purge
+
+The `database` image schedules a `pg_cron` job that deletes settled generations once `expires_at` has passed. Their usage rows carry no user content and are never purged.
+
+It is scheduled in the image's init SQL rather than in a migration: `postgres.RunDBTest` clones a database with no `cron` schema, so a migration calling `cron.schedule` would fail every data-access test.
+
+**A bring-your-own-Postgres deployment must schedule it itself** — the statement is in [`builds/database.sql`](./builds/database.sql).
+
+---
+
 ## Transactions
 
 Two or more writes that must land together are wrapped in a `transaction.Transactor`, taken as a constructor dependency by the service that needs one and injected in `cmd`. It names no database, so business code says "these writes are one unit" without knowing what stores them:
