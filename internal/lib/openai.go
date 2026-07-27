@@ -96,16 +96,13 @@ func (provider *OpenAI) Cancel(ctx context.Context, id string) (*ProviderCall, e
 	return otel.ReportSuccess(span, providerCallOf(response)), nil
 }
 
-// mergeProviderFields adds background mode and the correlation metadata to the caller's request.
+// mergeProviderFields adds the three fields this service owns, overwriting whatever the caller set.
 //
-// background is what makes crash-safety possible: the call returns an identifier immediately and
-// the model runs on the provider's side, so a restarted worker can resume it. A blocking call
-// cannot be resumed and a crash burns the whole spend.
-//
-// The metadata cannot close the window between the provider accepting a call and its identifier
-// reaching the database, but it makes an operation orphaned in that window identifiable afterwards.
-//
-// Both overwrite whatever the caller set. They are the two fields this service owns.
+// background makes crash-safety possible: the call returns an identifier immediately, so a restarted
+// worker resumes an operation already paid for. store keeps the provider from retaining user content,
+// and leaves re-attach intact because it reads the operation back inside the polling window. metadata
+// identifies an operation orphaned between the provider accepting a call and its identifier reaching
+// the database.
 func mergeProviderFields(request *ProviderStartRequest) (json.RawMessage, error) {
 	fields := map[string]json.RawMessage{}
 
@@ -123,6 +120,7 @@ func mergeProviderFields(request *ProviderStartRequest) (json.RawMessage, error)
 	}
 
 	fields["background"] = json.RawMessage("true")
+	fields["store"] = json.RawMessage("false")
 	fields["metadata"] = metadata
 
 	body, err := json.Marshal(fields)

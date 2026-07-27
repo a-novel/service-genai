@@ -43,6 +43,18 @@ It is scheduled in the image's init SQL rather than in a migration: `postgres.Ru
 
 ---
 
+## Provider retention
+
+`store` asks the provider to keep the response after the call ends. OpenAI holds a stored response for about thirty days: it can be read back with `GET /v1/responses/{id}`, and a later request can reference it through `previous_response_id` to continue a conversation without resending its history.
+
+Neither is worth thirty days of user content sitting with the provider. Output that outlives the call is already stored here, in `generations`, and chaining is ruled out by the request boundary — a caller hands over a self-contained payload, so there is no prior response to name.
+
+Every request goes out with `store: false`, overwriting whatever the caller sent, since this service is the platform's only path to a provider. A caller that chains anyway gets `Item not found` back.
+
+Re-attach does not depend on it: a background response stays on the provider's disk for about ten minutes so it can be polled, which `store` does not govern, and a restarted worker re-attaches within seconds. **Revisit this** if a re-attach starts failing with a not-found on an operation that should still be running — that window has moved. A 404 settles the generation as failed, so being wrong costs one result, not a second paid call.
+
+---
+
 ## Transactions
 
 Two or more writes that must land together are wrapped in a `transaction.Transactor`, taken as a constructor dependency by the service that needs one and injected in `cmd`. It names no database, so business code says "these writes are one unit" without knowing what stores them:

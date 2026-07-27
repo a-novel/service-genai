@@ -274,6 +274,14 @@ func TestOpenAIRequestPassThrough(t *testing.T) {
 
 			expectKept: map[string]any{"model": "gpt-5.6-terra"},
 		},
+		{
+			// Retention is not the caller's to set either.
+			name: "OverridesStoreEvenWhenTheCallerSetIt",
+
+			request: json.RawMessage(`{"model": "gpt-5.6-terra", "store": true}`),
+
+			expectKept: map[string]any{"model": "gpt-5.6-terra"},
+		},
 	}
 
 	for _, testCase := range testCases {
@@ -295,6 +303,7 @@ func TestOpenAIRequestPassThrough(t *testing.T) {
 			}
 
 			require.Equal(t, true, script.lastBody["background"])
+			require.Equal(t, false, script.lastBody["store"])
 			require.Equal(t, map[string]any{
 				"generation_id": "01999999-0000-7000-8000-000000000001",
 				"attempt":       "2",
