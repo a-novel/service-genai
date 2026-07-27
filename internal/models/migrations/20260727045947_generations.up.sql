@@ -54,10 +54,12 @@ CREATE TABLE generations (
     output IS NULL
     OR jsonb_typeof(output) = 'object'
   ),
-  /* The structured failure on a terminal failure. Null otherwise. */
-  error jsonb CHECK (
+  /* The failure on a terminal failure, serialised. Null otherwise. Text rather than jsonb: nothing
+  queries inside it, so the structure buys no lookup and only costs a shape constraint to maintain.
+  A caller that wants the fields back parses them. */
+  error text CHECK (
     error IS NULL
-    OR jsonb_typeof(error) = 'object'
+    OR error <> ''
   ),
   status generation_status NOT NULL DEFAULT 'pending',
   attempt smallint NOT NULL DEFAULT 0 CHECK (attempt >= 0),

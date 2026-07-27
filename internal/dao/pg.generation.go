@@ -49,7 +49,8 @@ type Generation struct {
 	RequestFingerprint []byte          `bun:"request_fingerprint"`
 	Request            json.RawMessage `bun:"request,type:jsonb"`
 	Output             json.RawMessage `bun:"output,type:jsonb,nullzero"`
-	Error              json.RawMessage `bun:"error,type:jsonb,nullzero"`
+	// Error is the serialised failure. Opaque here: nothing queries inside it.
+	Error *string `bun:"error,nullzero"`
 
 	Status      GenerationStatus `bun:"status"`
 	Attempt     int16            `bun:"attempt"`

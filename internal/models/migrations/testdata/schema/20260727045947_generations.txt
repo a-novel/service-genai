@@ -1,4 +1,4 @@
-migration-history	sha256:78180b0fed318b42f8fa3c69d71f80a14cffaeded912d82316645e1b622e04b6
+migration-history	sha256:0cee785553315f1a42f6746f2141782a34101cc7ceb7ae56a949a5cc2679f0cc
 column	generation_ledger.attempt	smallint NOT NULL
 column	generation_ledger.cached_input_price_per_mtoken	numeric(20,12) NOT NULL
 column	generation_ledger.cached_input_tokens	bigint NOT NULL DEFAULT 0
@@ -21,7 +21,7 @@ column	generations.attempt	smallint NOT NULL DEFAULT 0
 column	generations.cancel_requested_at	timestamp with time zone
 column	generations.claimed_by	text
 column	generations.created_at	timestamp with time zone NOT NULL DEFAULT clock_timestamp()
-column	generations.error	jsonb
+column	generations.error	text
 column	generations.expires_at	timestamp with time zone
 column	generations.id	uuid NOT NULL DEFAULT uuidv7()
 column	generations.idempotency_key	text NOT NULL
@@ -79,7 +79,7 @@ constraint	generations.generations_attempt_check	CHECK ((attempt >= 0))
 constraint	generations.generations_attempt_not_null	NOT NULL attempt
 constraint	generations.generations_claimed_by_check	CHECK (((claimed_by IS NULL) OR (claimed_by <> ''::text)))
 constraint	generations.generations_created_at_not_null	NOT NULL created_at
-constraint	generations.generations_error_check	CHECK (((error IS NULL) OR (jsonb_typeof(error) = 'object'::text)))
+constraint	generations.generations_error_check	CHECK (((error IS NULL) OR (error <> ''::text)))
 constraint	generations.generations_id_not_null	NOT NULL id
 constraint	generations.generations_idempotency_key_check	CHECK ((idempotency_key <> ''::text))
 constraint	generations.generations_idempotency_key_not_null	NOT NULL idempotency_key
