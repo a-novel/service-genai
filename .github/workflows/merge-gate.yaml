@@ -1,0 +1,42 @@
+# Managed by `a-novel repo update` — edit the template in stack, not this copy.
+#
+# The required "may this PR merge?" gate, plus the landing coordinator for epic
+# members. Two jobs:
+#
+#   evaluate   — posts the required `merge-gate` check on every PR and on the merge
+#                queue's group. The queue validates required checks on the group, so
+#                the gate must post there too or a queued PR waits out the timeout
+#                and drops. The [Agent] App posts the check itself through the Checks
+#                API, under the stable integration id the ruleset requires, leaving
+#                this job as the runner, under an id kept clear of the check name.
+#                A standalone PR passes; an epic member holds until every sibling
+#                is ready (epic atomicity).
+#
+#   auto-merge — enables native auto-merge on an epic member so the whole set lands
+#                together once the gate and approval go green. Enabling it while the
+#                gate is still red is safe: GitHub parks it and merges when green.
+name: merge-gate
+
+on:
+  pull_request:
+    # labeled/unlabeled fire on any label change, which is what makes an `epic:<N>`
+    # add or remove re-evaluate membership; other label churn just re-posts the same
+    # result. ready_for_review and converted_to_draft flip this PR's own readiness.
+    types: [opened, reopened, synchronize, labeled, unlabeled, ready_for_review, converted_to_draft]
+  # A review changing (approve/dismiss) can flip this PR's atomicity readiness, so
+  # re-evaluate the gate on review events too.
+  pull_request_review:
+    types: [submitted, dismissed]
+  merge_group:
+
+jobs:
+  merge-gate:
+    # the callee mints its own App token and declares permissions: {}; the caller sets the ceiling, so it must not hand down
+    # the repository default.
+    permissions: {}
+    uses: a-novel-kit/workflows/.github/workflows/merge-gate-run.yaml@v1.28.0
+    with:
+      client_id: ${{ vars.AGENT_BOT_CLIENT_ID }}
+      kill_switch: ${{ vars.AGENT_KILL_SWITCH }}
+    secrets:
+      app_private_key: ${{ secrets.AGENT_BOT_PRIVATE_KEY }}
