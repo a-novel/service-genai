@@ -1,0 +1,81 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "docker-compose": {
+    "managerFilePatterns": ["/(^|/)(?:podman-)?compose[^/]*\\.ya?ml$/"]
+  },
+  "gomod": {
+    "managerFilePatterns": [
+      "/(^|/)go\\.mod$/",
+      "/(^|/)golangci-lint\\.mod$/",
+      "/(^|/)gotestsum\\.mod$/",
+      "/(^|/)buf\\.mod$/",
+      "/(^|/)mockery\\.mod$/"
+    ]
+  },
+  "packageRules": [
+    {
+      "matchFileNames": ["golangci-lint.mod"],
+      "additionalBranchPrefix": "golangci-lint-",
+      "goGetDirs": ["."],
+      "postUpgradeTasks": {
+        "commands": [
+          "rm -f golangci-lint.sum",
+          "go get -modfile=golangci-lint.mod -tool github.com/golangci/golangci-lint/v2/cmd/golangci-lint",
+          "go tool -modfile=golangci-lint.mod golangci-lint run ./... --fix"
+        ],
+        "executionMode": "branch"
+      }
+    },
+    {
+      "matchFileNames": ["gotestsum.mod"],
+      "additionalBranchPrefix": "gotestsum-",
+      "goGetDirs": ["."],
+      "postUpgradeTasks": {
+        "commands": ["rm -f gotestsum.sum", "go get -modfile=gotestsum.mod -tool gotest.tools/gotestsum"],
+        "executionMode": "branch"
+      }
+    },
+    {
+      "matchFileNames": ["buf.mod"],
+      "additionalBranchPrefix": "buf-",
+      "goGetDirs": ["."],
+      "postUpgradeTasks": {
+        "commands": [
+          "rm -f buf.sum",
+          "go get -modfile=buf.mod -tool github.com/bufbuild/buf/cmd/buf",
+          "rm -rf internal/handlers/protogen",
+          "go tool -modfile=buf.mod buf generate",
+          "go tool -modfile=buf.mod buf format -w",
+          "go tool -modfile=buf.mod buf dep update"
+        ],
+        "executionMode": "branch"
+      }
+    },
+    {
+      "matchFileNames": ["mockery.mod"],
+      "additionalBranchPrefix": "mockery-",
+      "goGetDirs": ["."],
+      "postUpgradeTasks": {
+        "commands": [
+          "rm -f mockery.sum",
+          "go get -modfile=mockery.mod -tool github.com/vektra/mockery/v3",
+          "go tool -modfile=mockery.mod mockery"
+        ],
+        "executionMode": "branch"
+      }
+    },
+    {
+      "matchFileNames": ["go.mod"],
+      "postUpdateOptions": ["gomodTidy"]
+    },
+    {
+      "matchManagers": ["npm"],
+      "postUpdateOptions": ["pnpmDedupe"],
+      "postUpgradeTasks": {
+        "commands": ["pnpm format:js"],
+        "executionMode": "branch"
+      }
+    }
+  ],
+  "extends": ["config:recommended"]
+}

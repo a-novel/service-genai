@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+import "item.proto";
+
+// ItemGetService retrieves a single item by its ID.
+service ItemGetService {
+  rpc ItemGet(ItemGetRequest) returns (ItemGetResponse);
+}
+
+// ItemGetRequest identifies the item to retrieve.
+message ItemGetRequest {
+  string id = 1;
+}
+
+// ItemGetResponse returns the requested item.
+message ItemGetResponse {
+  Item item = 1;
+}
