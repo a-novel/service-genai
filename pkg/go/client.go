@@ -27,6 +27,11 @@ type (
 	GenerationWatchRequest   = protogen.GenerationWatchRequest
 	GenerationWatchResponse  = protogen.GenerationWatchResponse
 
+	UsageQueryRequest  = protogen.UsageQueryRequest
+	UsageQueryResponse = protogen.UsageQueryResponse
+	UsageGroup         = protogen.UsageGroup
+	UsageTotal         = protogen.UsageTotal
+
 	Generation       = protogen.Generation
 	GenerationStatus = protogen.GenerationStatus
 )
@@ -69,6 +74,12 @@ type Client interface {
 	GenerationWatch(
 		ctx context.Context, req *GenerationWatchRequest, opts ...grpc.CallOption,
 	) (grpc.ServerStreamingClient[GenerationWatchResponse], error)
+	// UsageQuery reports what an owner consumed over a window, grouped by purpose and model. It
+	// returns tokens, never money: what a token costs is the caller's decision, which is why the
+	// model that actually billed is on every group.
+	UsageQuery(
+		ctx context.Context, req *UsageQueryRequest, opts ...grpc.CallOption,
+	) (*UsageQueryResponse, error)
 
 	// Close releases the underlying gRPC connection. Call it once the client is
 	// no longer needed.
@@ -82,6 +93,7 @@ type client struct {
 	protogen.GenerationGetServiceClient
 	protogen.GenerationCancelServiceClient
 	protogen.GenerationWatchServiceClient
+	protogen.UsageQueryServiceClient
 
 	conn *grpc.ClientConn
 }
@@ -106,6 +118,7 @@ func NewClient(addr string, opts ...grpc.DialOption) (Client, error) {
 		GenerationGetServiceClient:    protogen.NewGenerationGetServiceClient(conn),
 		GenerationCancelServiceClient: protogen.NewGenerationCancelServiceClient(conn),
 		GenerationWatchServiceClient:  protogen.NewGenerationWatchServiceClient(conn),
+		UsageQueryServiceClient:       protogen.NewUsageQueryServiceClient(conn),
 		conn:                          conn,
 	}, nil
 }

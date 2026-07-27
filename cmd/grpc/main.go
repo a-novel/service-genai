@@ -67,6 +67,7 @@ func main() {
 	daoGet := dao.NewGenerationGet()
 	daoRequestCancel := dao.NewGenerationRequestCancel()
 	daoQueueDepth := dao.NewGenerationQueueDepth()
+	daoUsageQuery := dao.NewGenerationUsageQuery()
 
 	// =================================================================================================================
 	// SERVICES
@@ -97,6 +98,7 @@ func main() {
 	serviceGet := core.NewGenerationGet(daoGet)
 	serviceCancel := core.NewGenerationCancel(daoRequestCancel)
 	serviceQueueDepth := core.NewQueueDepth(daoQueueDepth)
+	serviceUsageQuery := core.NewUsageQuery(daoUsageQuery)
 
 	reaper := lo.Must(core.NewReaper(
 		core.ReaperConfig{
@@ -116,6 +118,7 @@ func main() {
 	handlerGet := handlers.NewGrpcGenerationGet(serviceGet)
 	handlerCancel := handlers.NewGrpcGenerationCancel(serviceCancel)
 	handlerWatch := handlers.NewGrpcGenerationWatch(handlerGet)
+	handlerUsageQuery := handlers.NewGrpcUsageQuery(serviceUsageQuery)
 
 	// =================================================================================================================
 	// SERVER
@@ -149,6 +152,7 @@ func main() {
 	protogen.RegisterGenerationGetServiceServer(server, handlerGet)
 	protogen.RegisterGenerationCancelServiceServer(server, handlerCancel)
 	protogen.RegisterGenerationWatchServiceServer(server, handlerWatch)
+	protogen.RegisterUsageQueryServiceServer(server, handlerUsageQuery)
 
 	reflection.Register(server)
 

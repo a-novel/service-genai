@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+// UsageQueryService reports what an owner consumed over a window.
+//
+// It returns tokens, never money. What a token costs is a downstream decision, which is why the
+// model that actually billed is carried on every group.
+service UsageQueryService {
+  rpc UsageQuery(UsageQueryRequest) returns (UsageQueryResponse);
+}
+
+// UsageQueryRequest scopes the read to one owner and one window.
+message UsageQueryRequest {
+  // OwnerID whose consumption to report, formatted as a UUID.
+  string owner_id = 1;
+  // From is inclusive, formatted as RFC 3339. Required: this record is never purged, so an
+  // unbounded scan grows without limit and a caller has no way to know it asked for one.
+  string from = 2;
+  // To is exclusive, formatted as RFC 3339, so adjacent windows neither overlap nor skip a row.
+  string to = 3;
+  // Purpose narrows the result to one attribution label. Empty means no filter.
+  string purpose = 4;
+  // Model narrows the result to one model. Empty means no filter.
+  string model = 5;
+}
+
+// UsageGroup is what one purpose and model consumed over the window.
+message UsageGroup {
+  string purpose = 1;
+  // Model that actually billed, as the provider reported it — not the alias a request asked for.
+  string model = 2;
+  // Totals include their detail counts, as the provider counts them.
+  int64 input_tokens = 3;
+  int64 cached_input_tokens = 4;
+  int64 output_tokens = 5;
+  int64 reasoning_tokens = 6;
+  // Attempts counts the runs behind the group. A retried generation contributes more than one,
+  // because it consumed more than once.
+  int64 attempts = 7;
+}
+
+// UsageTotal is consumption with the dimensions collapsed.
+message UsageTotal {
+  int64 input_tokens = 1;
+  int64 cached_input_tokens = 2;
+  int64 output_tokens = 3;
+  int64 reasoning_tokens = 4;
+  int64 attempts = 5;
+}
+
+// UsageQueryResponse reports consumption grouped by purpose and model, and summed.
+message UsageQueryResponse {
+  // Groups is one entry per purpose and model, ordered by both. A pricing layer needs these,
+  // because a rate applies per model.
+  repeated UsageGroup groups = 1;
+  // Total is every group summed. A quota layer wants only this.
+  UsageTotal total = 2;
+}

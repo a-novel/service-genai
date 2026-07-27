@@ -570,3 +570,86 @@ func (_c *MockClient_UnaryEcho_Call) RunAndReturn(run func(ctx context.Context, 
 	_c.Call.Return(run)
 	return _c
 }
+
+// UsageQuery provides a mock function for the type MockClient
+func (_mock *MockClient) UsageQuery(ctx context.Context, req *servicegenai.UsageQueryRequest, opts ...grpc.CallOption) (*servicegenai.UsageQueryResponse, error) {
+	var tmpRet mock.Arguments
+	if len(opts) > 0 {
+		tmpRet = _mock.Called(ctx, req, opts)
+	} else {
+		tmpRet = _mock.Called(ctx, req)
+	}
+	ret := tmpRet
+
+	if len(ret) == 0 {
+		panic("no return value specified for UsageQuery")
+	}
+
+	var r0 *servicegenai.UsageQueryResponse
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *servicegenai.UsageQueryRequest, ...grpc.CallOption) (*servicegenai.UsageQueryResponse, error)); ok {
+		return returnFunc(ctx, req, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *servicegenai.UsageQueryRequest, ...grpc.CallOption) *servicegenai.UsageQueryResponse); ok {
+		r0 = returnFunc(ctx, req, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*servicegenai.UsageQueryResponse)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *servicegenai.UsageQueryRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, req, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockClient_UsageQuery_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UsageQuery'
+type MockClient_UsageQuery_Call struct {
+	*mock.Call
+}
+
+// UsageQuery is a helper method to define mock.On call
+//   - ctx context.Context
+//   - req *servicegenai.UsageQueryRequest
+//   - opts ...grpc.CallOption
+func (_e *MockClient_Expecter) UsageQuery(ctx any, req any, opts ...any) *MockClient_UsageQuery_Call {
+	return &MockClient_UsageQuery_Call{Call: _e.mock.On("UsageQuery",
+		append([]any{ctx, req}, opts...)...)}
+}
+
+func (_c *MockClient_UsageQuery_Call) Run(run func(ctx context.Context, req *servicegenai.UsageQueryRequest, opts ...grpc.CallOption)) *MockClient_UsageQuery_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *servicegenai.UsageQueryRequest
+		if args[1] != nil {
+			arg1 = args[1].(*servicegenai.UsageQueryRequest)
+		}
+		var arg2 []grpc.CallOption
+		var variadicArgs []grpc.CallOption
+		if len(args) > 2 {
+			variadicArgs = args[2].([]grpc.CallOption)
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockClient_UsageQuery_Call) Return(v *servicegenai.UsageQueryResponse, err error) *MockClient_UsageQuery_Call {
+	_c.Call.Return(v, err)
+	return _c
+}
+
+func (_c *MockClient_UsageQuery_Call) RunAndReturn(run func(ctx context.Context, req *servicegenai.UsageQueryRequest, opts ...grpc.CallOption) (*servicegenai.UsageQueryResponse, error)) *MockClient_UsageQuery_Call {
+	_c.Call.Return(run)
+	return _c
+}
