@@ -28,7 +28,6 @@ import (
 	"github.com/a-novel/service-genai/internal/config/env"
 	"github.com/a-novel/service-genai/internal/handlers"
 	"github.com/a-novel/service-genai/internal/handlers/protogen"
-	"github.com/a-novel/service-genai/internal/models/catalog"
 )
 
 func main() {
@@ -45,16 +44,6 @@ func main() {
 	}
 
 	ctx = lo.Must(postgres.NewContext(ctx, config.PostgresPresetDefault))
-
-	// =================================================================================================================
-	// CATALOGS
-	// =================================================================================================================
-
-	// Before the server listens, and fatal: a profile that resolves to nothing must fail the
-	// deployment rather than the first caller who names it.
-	catalogs := lo.Must(catalog.Load())
-
-	log.Printf("Loaded %d purposes and %d profiles", len(catalogs.Purposes()), len(catalogs.Profiles()))
 
 	// =================================================================================================================
 	// HANDLERS

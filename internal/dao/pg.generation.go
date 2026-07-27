@@ -40,12 +40,12 @@ type Generation struct {
 	ID      uuid.UUID `bun:"id,pk,type:uuid"`
 	OwnerID uuid.UUID `bun:"owner_id,type:uuid"`
 	Purpose string    `bun:"purpose"`
-	Profile string    `bun:"profile"`
 
-	IdempotencyKey     string          `bun:"idempotency_key"`
-	RequestFingerprint []byte          `bun:"request_fingerprint"`
-	Request            json.RawMessage `bun:"request,type:jsonb"`
-	Output             json.RawMessage `bun:"output,type:jsonb,nullzero"`
+	IdempotencyKey     string `bun:"idempotency_key"`
+	RequestFingerprint []byte `bun:"request_fingerprint"`
+	// Request is the provider payload, forwarded verbatim. Opaque here: the caller owns it.
+	Request json.RawMessage `bun:"request,type:jsonb"`
+	Output  json.RawMessage `bun:"output,type:jsonb,nullzero"`
 	// Error is the serialised failure. Nothing queries inside it.
 	Error *string `bun:"error,nullzero"`
 

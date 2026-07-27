@@ -32,8 +32,8 @@ type GenerationSubmitRequest struct {
 	ID uuid.UUID
 	// OwnerID is the user the generation acts for, and the attribution key for its cost.
 	OwnerID uuid.UUID
+	// Purpose is what the caller attributes this spend to. Its vocabulary belongs to the caller.
 	Purpose string
-	Profile string
 	// IdempotencyKey deduplicates repeat submissions within one owner and purpose.
 	IdempotencyKey string
 	// RequestFingerprint tells a replay from a reused key.
@@ -68,7 +68,6 @@ func (dao *GenerationSubmit) Exec(
 		attribute.String("generation.id", request.ID.String()),
 		attribute.String("generation.owner_id", request.OwnerID.String()),
 		attribute.String("generation.purpose", request.Purpose),
-		attribute.String("generation.profile", request.Profile),
 		attribute.Int("generation.max_attempts", int(request.MaxAttempts)),
 	)
 
@@ -84,7 +83,6 @@ func (dao *GenerationSubmit) Exec(
 		request.ID,
 		request.OwnerID,
 		request.Purpose,
-		request.Profile,
 		request.IdempotencyKey,
 		request.RequestFingerprint,
 		request.Request,

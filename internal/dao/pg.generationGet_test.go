@@ -27,7 +27,6 @@ func TestGenerationGet(t *testing.T) {
 			ID:                 id,
 			OwnerID:            ownerID,
 			Purpose:            "studio.generation",
-			Profile:            "draft",
 			IdempotencyKey:     "key-" + id.String(),
 			RequestFingerprint: []byte{0x01},
 			Request:            json.RawMessage(`{"instructions": "write"}`),

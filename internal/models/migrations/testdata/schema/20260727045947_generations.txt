@@ -1,4 +1,4 @@
-migration-history	sha256:ce792e9b71b7217d8dbabd88b490c1f7a110c50e283960f7126de5925861e436
+migration-history	sha256:29daafa5913b902207f54e3f8aaa0ea800e729eb1411219f6cb46679c05c2045
 column	generation_usage.attempt	smallint NOT NULL
 column	generation_usage.cached_input_tokens	bigint NOT NULL DEFAULT 0
 column	generation_usage.created_at	timestamp with time zone NOT NULL DEFAULT clock_timestamp()
@@ -7,7 +7,6 @@ column	generation_usage.input_tokens	bigint NOT NULL
 column	generation_usage.model	text NOT NULL
 column	generation_usage.output_tokens	bigint NOT NULL
 column	generation_usage.owner_id	uuid NOT NULL
-column	generation_usage.profile	text NOT NULL
 column	generation_usage.provider	text NOT NULL
 column	generation_usage.purpose	text NOT NULL
 column	generation_usage.reasoning_tokens	bigint NOT NULL DEFAULT 0
@@ -23,7 +22,6 @@ column	generations.lease_expires_at	timestamp with time zone
 column	generations.max_attempts	smallint NOT NULL DEFAULT 1
 column	generations.output	jsonb
 column	generations.owner_id	uuid NOT NULL
-column	generations.profile	text NOT NULL
 column	generations.provider_call_id	text
 column	generations.purpose	text NOT NULL
 column	generations.request	jsonb NOT NULL
@@ -48,8 +46,6 @@ constraint	generation_usage.generation_usage_output_tokens_check	CHECK ((output_
 constraint	generation_usage.generation_usage_output_tokens_not_null	NOT NULL output_tokens
 constraint	generation_usage.generation_usage_owner_id_not_null	NOT NULL owner_id
 constraint	generation_usage.generation_usage_pkey	PRIMARY KEY (generation_id, attempt)
-constraint	generation_usage.generation_usage_profile_check	CHECK ((profile <> ''::text))
-constraint	generation_usage.generation_usage_profile_not_null	NOT NULL profile
 constraint	generation_usage.generation_usage_provider_check	CHECK ((provider <> ''::text))
 constraint	generation_usage.generation_usage_provider_not_null	NOT NULL provider
 constraint	generation_usage.generation_usage_purpose_check	CHECK ((purpose <> ''::text))
@@ -71,8 +67,6 @@ constraint	generations.generations_max_attempts_not_null	NOT NULL max_attempts
 constraint	generations.generations_output_check	CHECK (((output IS NULL) OR (jsonb_typeof(output) = 'object'::text)))
 constraint	generations.generations_owner_id_not_null	NOT NULL owner_id
 constraint	generations.generations_pkey	PRIMARY KEY (id)
-constraint	generations.generations_profile_check	CHECK ((profile <> ''::text))
-constraint	generations.generations_profile_not_null	NOT NULL profile
 constraint	generations.generations_provider_call_id_check	CHECK (((provider_call_id IS NULL) OR (provider_call_id <> ''::text)))
 constraint	generations.generations_purpose_check	CHECK ((purpose <> ''::text))
 constraint	generations.generations_purpose_not_null	NOT NULL purpose
@@ -88,7 +82,7 @@ index	generation_usage_owner_idx	CREATE INDEX generation_usage_owner_idx ON publ
 index	generation_usage_owner_purpose_idx	CREATE INDEX generation_usage_owner_purpose_idx ON public.generation_usage USING btree (owner_id, purpose, created_at DESC)
 index	generation_usage_pkey	CREATE UNIQUE INDEX generation_usage_pkey ON public.generation_usage USING btree (generation_id, attempt)
 index	generations_dispatch_idx	CREATE INDEX generations_dispatch_idx ON public.generations USING btree (run_at) WHERE (status = 'pending'::generation_status)
-index	generations_idempotency_idx	CREATE UNIQUE INDEX generations_idempotency_idx ON public.generations USING btree (owner_id, purpose, idempotency_key)
+index	generations_idempotency_idx	CREATE UNIQUE INDEX generations_idempotency_idx ON public.generations USING btree (owner_id, idempotency_key)
 index	generations_lease_idx	CREATE INDEX generations_lease_idx ON public.generations USING btree (lease_expires_at) WHERE (status = 'running'::generation_status)
 index	generations_owner_idx	CREATE INDEX generations_owner_idx ON public.generations USING btree (owner_id, created_at DESC)
 index	generations_pkey	CREATE UNIQUE INDEX generations_pkey ON public.generations USING btree (id)

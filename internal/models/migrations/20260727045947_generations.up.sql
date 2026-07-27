@@ -21,13 +21,14 @@ CREATE TABLE generations (
   /* Why the platform spent, from a closed vocabulary. */
   purpose text NOT NULL CHECK (purpose <> ''),
   /* The execution tier, resolved to a provider and model outside the database. */
-  profile text NOT NULL CHECK (profile <> ''),
   /* Required: an unkeyed submission of a priced call is a bug, not a default. */
   idempotency_key text NOT NULL CHECK (idempotency_key <> ''),
   /* Digest of the request. A key reused with different content is a conflict, not a replay; NOT
   NULL so that comparison cannot pass on a null stored side. */
   request_fingerprint bytea NOT NULL,
-  /* User content, and the reason this table is purged. */
+  /* The provider request, forwarded verbatim. Opaque here on purpose: the caller owns every
+  parameter of its own call, and this service gains no new field when the provider does. Also user
+  content, which is why this table is purged. */
   request jsonb NOT NULL CHECK (jsonb_typeof(request) = 'object'),
   output jsonb CHECK (
     output IS NULL
@@ -76,9 +77,9 @@ CREATE TABLE generations (
   )
 );
 
--- purpose is part of the key: without it one owner's keys collide across features, and a submission
--- from one feature is served another's answer.
-CREATE UNIQUE INDEX generations_idempotency_idx ON generations (owner_id, purpose, idempotency_key);
+-- Scoped to the owner alone. The caller owns its own key space, and folding a caller-supplied
+-- purpose into the key would break idempotency the day a caller renamed one.
+CREATE UNIQUE INDEX generations_idempotency_idx ON generations (owner_id, idempotency_key);
 
 -- Partial, so none of them grows as terminal rows accumulate.
 CREATE INDEX generations_dispatch_idx ON generations (run_at)
@@ -106,8 +107,8 @@ SET
   );
 
 -- What each attempt consumed. One row per attempt, because a retry burns tokens twice and both
--- have to be recorded. owner_id, purpose and profile are duplicated rather than joined because the
--- row they would join to is purged.
+-- have to be recorded. owner_id and purpose are duplicated rather than joined because the row they
+-- would join to is purged.
 --
 -- No money here. This service records consumption; whoever bills turns it into a price, using the
 -- provider and model recorded on the row.
@@ -117,9 +118,9 @@ CREATE TABLE generation_usage (
   attempt smallint NOT NULL CHECK (attempt >= 1),
   owner_id uuid NOT NULL,
   purpose text NOT NULL CHECK (purpose <> ''),
-  profile text NOT NULL CHECK (profile <> ''),
-  /* What actually ran. Recorded, not derived: a profile resolves to different models over time,
-  and a price cannot be reconstructed later without knowing which one ran. */
+  /* What actually ran, read back off the provider's response rather than off the request: a
+  provider may serve a different snapshot than the one asked for, and a price cannot be
+  reconstructed later without knowing which one it billed. */
   provider text NOT NULL CHECK (provider <> ''),
   model text NOT NULL CHECK (model <> ''),
   /* Totals include the detail counts below, mirroring the provider's own accounting so a row reads
