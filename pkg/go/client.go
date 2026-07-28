@@ -9,14 +9,15 @@ import (
 	golibproto "github.com/a-novel-kit/golib/grpcf/proto/gen"
 
 	"github.com/a-novel/service-genai/internal/handlers/protogen"
+	genaiv1 "github.com/a-novel/service-genai/internal/handlers/protogen/genai/v1"
 )
 
 // Request, response, and entity types are re-exported from the service's generated
 // protobuf definitions, so callers never import the service's internal packages.
 type (
-	StatusRequest  = protogen.StatusRequest
-	StatusResponse = protogen.StatusResponse
-	QueueDepth     = protogen.QueueDepth
+	StatusRequest  = genaiv1.StatusRequest
+	StatusResponse = genaiv1.StatusResponse
+	QueueDepth     = genaiv1.QueueDepth
 
 	GenerationSubmitRequest  = protogen.GenerationSubmitRequest
 	GenerationSubmitResponse = protogen.GenerationSubmitResponse
@@ -35,6 +36,8 @@ type (
 	Generation       = protogen.Generation
 	GenerationStatus = protogen.GenerationStatus
 )
+
+const legacyStatusFullMethodName = "/StatusService/Status"
 
 // Terminal statuses, re-exported so a caller can decide whether to keep waiting without importing
 // the generated package.
@@ -88,7 +91,7 @@ type Client interface {
 
 type client struct {
 	golibproto.EchoServiceClient
-	protogen.StatusServiceClient
+	genaiv1.StatusServiceClient
 	protogen.GenerationSubmitServiceClient
 	protogen.GenerationGetServiceClient
 	protogen.GenerationCancelServiceClient
@@ -96,6 +99,27 @@ type client struct {
 	protogen.UsageQueryServiceClient
 
 	conn *grpc.ClientConn
+}
+
+type legacyStatusServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func (client *legacyStatusServiceClient) Status(
+	ctx context.Context,
+	request *StatusRequest,
+	opts ...grpc.CallOption,
+) (*StatusResponse, error) {
+	callOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+
+	response := new(StatusResponse)
+
+	err := client.cc.Invoke(ctx, legacyStatusFullMethodName, request, response, callOpts...)
+	if err != nil {
+		return nil, err
+	}
+
+	return response, nil
 }
 
 func (c *client) Close() {
@@ -113,7 +137,7 @@ func NewClient(addr string, opts ...grpc.DialOption) (Client, error) {
 
 	return &client{
 		EchoServiceClient:             golibproto.NewEchoServiceClient(conn),
-		StatusServiceClient:           protogen.NewStatusServiceClient(conn),
+		StatusServiceClient:           &legacyStatusServiceClient{cc: conn},
 		GenerationSubmitServiceClient: protogen.NewGenerationSubmitServiceClient(conn),
 		GenerationGetServiceClient:    protogen.NewGenerationGetServiceClient(conn),
 		GenerationCancelServiceClient: protogen.NewGenerationCancelServiceClient(conn),

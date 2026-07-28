@@ -4,6 +4,9 @@ managed:
   override:
     - file_option: go_package_prefix
       value: github.com/a-novel/service-genai/internal/handlers/protogen;protogen
+    - file_option: go_package_prefix
+      path: genai/v1
+      value: github.com/a-novel/service-genai/internal/handlers/protogen
 plugins:
   - remote: buf.build/protocolbuffers/go
     out: internal/handlers/protogen

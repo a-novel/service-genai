@@ -10,3 +10,8 @@ lint:
 breaking:
   use:
     - FILE
+  ignore_only:
+    FILE_NO_DELETE:
+      # v0.1.2 gives the Status descriptor a service-specific name so consumers can
+      # import it alongside other Agora clients without a global protobuf registry panic.
+      - internal/models/proto/status.proto

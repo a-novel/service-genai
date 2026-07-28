@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+package genai.v1;
+
 // StatusService reports the health of the gRPC server's dependencies and the queue's own backlog.
 service StatusService {
   rpc Status(StatusRequest) returns (StatusResponse);
