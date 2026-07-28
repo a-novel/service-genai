@@ -12,7 +12,7 @@ import (
 	"github.com/a-novel-kit/golib/otel"
 
 	"github.com/a-novel/service-genai/internal/core"
-	"github.com/a-novel/service-genai/internal/handlers/protogen"
+	genaiv0 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v0"
 )
 
 // GrpcGenerationSubmitService is the service dependency of [GrpcGenerationSubmit].
@@ -22,7 +22,7 @@ type GrpcGenerationSubmitService interface {
 
 // GrpcGenerationSubmit is the gRPC handler for the GenerationSubmit RPC.
 type GrpcGenerationSubmit struct {
-	protogen.UnimplementedGenerationSubmitServiceServer
+	genaiv0.UnimplementedGenerationSubmitServiceServer
 
 	service GrpcGenerationSubmitService
 }
@@ -32,8 +32,8 @@ func NewGrpcGenerationSubmit(service GrpcGenerationSubmitService) *GrpcGeneratio
 }
 
 func (handler *GrpcGenerationSubmit) GenerationSubmit(
-	ctx context.Context, request *protogen.GenerationSubmitRequest,
-) (*protogen.GenerationSubmitResponse, error) {
+	ctx context.Context, request *genaiv0.GenerationSubmitRequest,
+) (*genaiv0.GenerationSubmitResponse, error) {
 	ctx, span := otel.Tracer().Start(ctx, "grpc.GenerationSubmit")
 	defer span.End()
 
@@ -77,7 +77,7 @@ func (handler *GrpcGenerationSubmit) GenerationSubmit(
 		return nil, status.Error(codes.Internal, "internal error")
 	}
 
-	return otel.ReportSuccess(span, &protogen.GenerationSubmitResponse{
+	return otel.ReportSuccess(span, &genaiv0.GenerationSubmitResponse{
 		Generation: NewGrpcGeneration(result.Generation),
 		Created:    result.Created,
 	}), nil

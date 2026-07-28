@@ -12,7 +12,7 @@ import (
 
 	"github.com/a-novel/service-genai/internal/core"
 	"github.com/a-novel/service-genai/internal/dao"
-	"github.com/a-novel/service-genai/internal/handlers/protogen"
+	genaiv0 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v0"
 )
 
 // GrpcGenerationCancelService is the service dependency of [GrpcGenerationCancel].
@@ -22,7 +22,7 @@ type GrpcGenerationCancelService interface {
 
 // GrpcGenerationCancel is the gRPC handler for the GenerationCancel RPC.
 type GrpcGenerationCancel struct {
-	protogen.UnimplementedGenerationCancelServiceServer
+	genaiv0.UnimplementedGenerationCancelServiceServer
 
 	service GrpcGenerationCancelService
 }
@@ -32,8 +32,8 @@ func NewGrpcGenerationCancel(service GrpcGenerationCancelService) *GrpcGeneratio
 }
 
 func (handler *GrpcGenerationCancel) GenerationCancel(
-	ctx context.Context, request *protogen.GenerationCancelRequest,
-) (*protogen.GenerationCancelResponse, error) {
+	ctx context.Context, request *genaiv0.GenerationCancelRequest,
+) (*genaiv0.GenerationCancelResponse, error) {
 	ctx, span := otel.Tracer().Start(ctx, "grpc.GenerationCancel")
 	defer span.End()
 
@@ -73,7 +73,7 @@ func (handler *GrpcGenerationCancel) GenerationCancel(
 		return nil, status.Error(codes.Internal, "internal error")
 	}
 
-	return otel.ReportSuccess(span, &protogen.GenerationCancelResponse{
+	return otel.ReportSuccess(span, &genaiv0.GenerationCancelResponse{
 		Generation: NewGrpcGeneration(generation),
 	}), nil
 }

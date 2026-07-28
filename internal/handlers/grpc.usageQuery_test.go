@@ -12,7 +12,7 @@ import (
 	"github.com/a-novel/service-genai/internal/dao"
 	"github.com/a-novel/service-genai/internal/handlers"
 	handlersmocks "github.com/a-novel/service-genai/internal/handlers/mocks"
-	"github.com/a-novel/service-genai/internal/handlers/protogen"
+	genaiv0 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v0"
 )
 
 func TestGrpcUsageQuery(t *testing.T) {
@@ -31,7 +31,7 @@ func TestGrpcUsageQuery(t *testing.T) {
 	testCases := []struct {
 		name string
 
-		request *protogen.UsageQueryRequest
+		request *genaiv0.UsageQueryRequest
 
 		serviceMock *serviceMock
 
@@ -41,7 +41,7 @@ func TestGrpcUsageQuery(t *testing.T) {
 		{
 			name: "Success",
 
-			request: &protogen.UsageQueryRequest{OwnerId: testOwnerID, From: from, To: to},
+			request: &genaiv0.UsageQueryRequest{OwnerId: testOwnerID, From: from, To: to},
 			serviceMock: &serviceMock{resp: &core.UsageQueryResult{
 				Groups: []*dao.GenerationUsageGroup{
 					{Purpose: "studio.generation", Model: "model-a", InputTokens: 100, Attempts: 2},
@@ -55,27 +55,27 @@ func TestGrpcUsageQuery(t *testing.T) {
 			// An owner with no consumption gets an empty report, not an error.
 			name: "Success/NoUsage",
 
-			request:     &protogen.UsageQueryRequest{OwnerId: testOwnerID, From: from, To: to},
+			request:     &genaiv0.UsageQueryRequest{OwnerId: testOwnerID, From: from, To: to},
 			serviceMock: &serviceMock{resp: &core.UsageQueryResult{}},
 		},
 		{
 			name: "Error/InvalidOwnerID",
 
-			request: &protogen.UsageQueryRequest{OwnerId: "not-a-uuid", From: from, To: to},
+			request: &genaiv0.UsageQueryRequest{OwnerId: "not-a-uuid", From: from, To: to},
 
 			expectStatus: codes.InvalidArgument,
 		},
 		{
 			name: "Error/InvalidFrom",
 
-			request: &protogen.UsageQueryRequest{OwnerId: testOwnerID, From: "yesterday", To: to},
+			request: &genaiv0.UsageQueryRequest{OwnerId: testOwnerID, From: "yesterday", To: to},
 
 			expectStatus: codes.InvalidArgument,
 		},
 		{
 			name: "Error/InvalidTo",
 
-			request: &protogen.UsageQueryRequest{OwnerId: testOwnerID, From: from, To: ""},
+			request: &genaiv0.UsageQueryRequest{OwnerId: testOwnerID, From: from, To: ""},
 
 			expectStatus: codes.InvalidArgument,
 		},
@@ -83,7 +83,7 @@ func TestGrpcUsageQuery(t *testing.T) {
 			// The window ceiling is a core decision; the handler only has to relay the refusal.
 			name: "Error/RejectedByTheService",
 
-			request:     &protogen.UsageQueryRequest{OwnerId: testOwnerID, From: from, To: to},
+			request:     &genaiv0.UsageQueryRequest{OwnerId: testOwnerID, From: from, To: to},
 			serviceMock: &serviceMock{err: core.ErrInvalidRequest},
 
 			expectStatus: codes.InvalidArgument,
@@ -91,7 +91,7 @@ func TestGrpcUsageQuery(t *testing.T) {
 		{
 			name: "Error/Internal",
 
-			request:     &protogen.UsageQueryRequest{OwnerId: testOwnerID, From: from, To: to},
+			request:     &genaiv0.UsageQueryRequest{OwnerId: testOwnerID, From: from, To: to},
 			serviceMock: &serviceMock{err: errFoo},
 
 			expectStatus: codes.Internal,

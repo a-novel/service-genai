@@ -4,19 +4,19 @@ import (
 	"time"
 
 	"github.com/a-novel/service-genai/internal/dao"
-	"github.com/a-novel/service-genai/internal/handlers/protogen"
+	genaiv0 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v0"
 )
 
 // generationStatuses maps the stored lifecycle onto the wire enum. A status with no mapping reports
 // unspecified rather than a plausible neighbour, so a value this service has not published cannot be
 // mistaken for one it has.
-var generationStatuses = map[dao.GenerationStatus]protogen.GenerationStatus{
-	dao.GenerationStatusPending:   protogen.GenerationStatus_GENERATION_STATUS_PENDING,
-	dao.GenerationStatusRunning:   protogen.GenerationStatus_GENERATION_STATUS_RUNNING,
-	dao.GenerationStatusSucceeded: protogen.GenerationStatus_GENERATION_STATUS_SUCCEEDED,
-	dao.GenerationStatusFailed:    protogen.GenerationStatus_GENERATION_STATUS_FAILED,
-	dao.GenerationStatusAbandoned: protogen.GenerationStatus_GENERATION_STATUS_ABANDONED,
-	dao.GenerationStatusCancelled: protogen.GenerationStatus_GENERATION_STATUS_CANCELLED,
+var generationStatuses = map[dao.GenerationStatus]genaiv0.GenerationStatus{
+	dao.GenerationStatusPending:   genaiv0.GenerationStatus_GENERATION_STATUS_PENDING,
+	dao.GenerationStatusRunning:   genaiv0.GenerationStatus_GENERATION_STATUS_RUNNING,
+	dao.GenerationStatusSucceeded: genaiv0.GenerationStatus_GENERATION_STATUS_SUCCEEDED,
+	dao.GenerationStatusFailed:    genaiv0.GenerationStatus_GENERATION_STATUS_FAILED,
+	dao.GenerationStatusAbandoned: genaiv0.GenerationStatus_GENERATION_STATUS_ABANDONED,
+	dao.GenerationStatusCancelled: genaiv0.GenerationStatus_GENERATION_STATUS_CANCELLED,
 }
 
 // NewGrpcGeneration converts a stored generation to its wire form.
@@ -24,8 +24,8 @@ var generationStatuses = map[dao.GenerationStatus]protogen.GenerationStatus{
 // The request and the provider call identifier are deliberately dropped. The caller already has the
 // request it sent, and the identifier is this service's recovery mechanism rather than a caller's
 // concern — publishing it would invite a caller to act on it.
-func NewGrpcGeneration(generation *dao.Generation) *protogen.Generation {
-	message := &protogen.Generation{
+func NewGrpcGeneration(generation *dao.Generation) *genaiv0.Generation {
+	message := &genaiv0.Generation{
 		Id:          generation.ID.String(),
 		OwnerId:     generation.OwnerID.String(),
 		Purpose:     generation.Purpose,

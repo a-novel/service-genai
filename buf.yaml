@@ -6,7 +6,7 @@ lint:
   use:
     - STANDARD
   except:
-    - PACKAGE_DEFINED
+    - PACKAGE_VERSION_SUFFIX
 breaking:
   use:
     - FILE

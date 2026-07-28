@@ -2,9 +2,9 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.2
 // - protoc             (unknown)
-// source: usage_query.proto
+// source: anovel/genai/v0/usage_query.proto
 
-package protogen
+package v0
 
 import (
 	context "context"
@@ -19,7 +19,7 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	UsageQueryService_UsageQuery_FullMethodName = "/UsageQueryService/UsageQuery"
+	UsageQueryService_UsageQuery_FullMethodName = "/anovel.genai.v0.UsageQueryService/UsageQuery"
 )
 
 // UsageQueryServiceClient is the client API for UsageQueryService service.
@@ -118,7 +118,7 @@ func _UsageQueryService_UsageQuery_Handler(srv interface{}, ctx context.Context,
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var UsageQueryService_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "UsageQueryService",
+	ServiceName: "anovel.genai.v0.UsageQueryService",
 	HandlerType: (*UsageQueryServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
@@ -127,5 +127,5 @@ var UsageQueryService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "usage_query.proto",
+	Metadata: "anovel/genai/v0/usage_query.proto",
 }

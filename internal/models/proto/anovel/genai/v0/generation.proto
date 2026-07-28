@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+package anovel.genai.v0;
+
 // A Generation is one AI generative call as this service records it.
 //
 // The service is a crash-safe metering proxy: the caller composes the provider request and owns

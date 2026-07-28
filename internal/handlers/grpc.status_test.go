@@ -15,7 +15,7 @@ import (
 	"github.com/a-novel/service-genai/internal/core"
 	"github.com/a-novel/service-genai/internal/handlers"
 	handlersmocks "github.com/a-novel/service-genai/internal/handlers/mocks"
-	"github.com/a-novel/service-genai/internal/handlers/protogen"
+	genaiv0 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v0"
 )
 
 func TestStatus(t *testing.T) {
@@ -26,17 +26,17 @@ func TestStatus(t *testing.T) {
 
 		skipPostgres bool
 
-		expect       *protogen.StatusResponse
+		expect       *genaiv0.StatusResponse
 		expectStatus codes.Code
 	}{
 		{
 			name: "Success",
 
-			expect: &protogen.StatusResponse{
-				Postgres: &protogen.DependencyHealth{
-					Status: protogen.DependencyStatus_DEPENDENCY_STATUS_UP,
+			expect: &genaiv0.StatusResponse{
+				Postgres: &genaiv0.DependencyHealth{
+					Status: genaiv0.DependencyStatus_DEPENDENCY_STATUS_UP,
 				},
-				Queue: &protogen.QueueDepth{Pending: 2, OldestPendingAgeSeconds: 90},
+				Queue: &genaiv0.QueueDepth{Pending: 2, OldestPendingAgeSeconds: 90},
 			},
 		},
 		{
@@ -49,9 +49,9 @@ func TestStatus(t *testing.T) {
 
 			// The backlog cannot be measured without the database, and postgres already reports
 			// down — so a missing queue is a consequence of that, not a second failure.
-			expect: &protogen.StatusResponse{
-				Postgres: &protogen.DependencyHealth{
-					Status: protogen.DependencyStatus_DEPENDENCY_STATUS_DOWN,
+			expect: &genaiv0.StatusResponse{
+				Postgres: &genaiv0.DependencyHealth{
+					Status: genaiv0.DependencyStatus_DEPENDENCY_STATUS_DOWN,
 				},
 			},
 		},
@@ -82,7 +82,7 @@ func TestStatus(t *testing.T) {
 				require.NoError(t, err)
 			}
 
-			res, err := handler.Status(ctx, new(protogen.StatusRequest))
+			res, err := handler.Status(ctx, new(genaiv0.StatusRequest))
 			resSt, ok := status.FromError(err)
 			require.True(t, ok, resSt.Code().String())
 			require.Equal(
