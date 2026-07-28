@@ -2,9 +2,9 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.2
 // - protoc             (unknown)
-// source: generation_submit.proto
+// source: anovel/genai/v1/generation_submit.proto
 
-package protogen
+package genaiv1
 
 import (
 	context "context"
@@ -19,7 +19,7 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	GenerationSubmitService_GenerationSubmit_FullMethodName = "/GenerationSubmitService/GenerationSubmit"
+	GenerationSubmitService_GenerationSubmit_FullMethodName = "/anovel.genai.v1.GenerationSubmitService/GenerationSubmit"
 )
 
 // GenerationSubmitServiceClient is the client API for GenerationSubmitService service.
@@ -113,7 +113,7 @@ func _GenerationSubmitService_GenerationSubmit_Handler(srv interface{}, ctx cont
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var GenerationSubmitService_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "GenerationSubmitService",
+	ServiceName: "anovel.genai.v1.GenerationSubmitService",
 	HandlerType: (*GenerationSubmitServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
@@ -122,5 +122,5 @@ var GenerationSubmitService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "generation_submit.proto",
+	Metadata: "anovel/genai/v1/generation_submit.proto",
 }

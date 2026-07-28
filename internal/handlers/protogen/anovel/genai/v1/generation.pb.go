@@ -2,9 +2,9 @@
 // versions:
 // 	protoc-gen-go v1.36.11
 // 	protoc        (unknown)
-// source: generation.proto
+// source: anovel/genai/v1/generation.proto
 
-package protogen
+package genaiv1
 
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
@@ -75,11 +75,11 @@ func (x GenerationStatus) String() string {
 }
 
 func (GenerationStatus) Descriptor() protoreflect.EnumDescriptor {
-	return file_generation_proto_enumTypes[0].Descriptor()
+	return file_anovel_genai_v1_generation_proto_enumTypes[0].Descriptor()
 }
 
 func (GenerationStatus) Type() protoreflect.EnumType {
-	return &file_generation_proto_enumTypes[0]
+	return &file_anovel_genai_v1_generation_proto_enumTypes[0]
 }
 
 func (x GenerationStatus) Number() protoreflect.EnumNumber {
@@ -88,7 +88,7 @@ func (x GenerationStatus) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use GenerationStatus.Descriptor instead.
 func (GenerationStatus) EnumDescriptor() ([]byte, []int) {
-	return file_generation_proto_rawDescGZIP(), []int{0}
+	return file_anovel_genai_v1_generation_proto_rawDescGZIP(), []int{0}
 }
 
 // A Generation is one AI generative call as this service records it.
@@ -105,7 +105,7 @@ type Generation struct {
 	// Purpose is the caller's own label for what this spend is attributed to. Opaque here.
 	Purpose string `protobuf:"bytes,3,opt,name=purpose,proto3" json:"purpose,omitempty"`
 	// Status is where the generation sits in its lifecycle.
-	Status GenerationStatus `protobuf:"varint,4,opt,name=status,proto3,enum=GenerationStatus" json:"status,omitempty"`
+	Status GenerationStatus `protobuf:"varint,4,opt,name=status,proto3,enum=anovel.genai.v1.GenerationStatus" json:"status,omitempty"`
 	// Attempt counts runs already begun.
 	Attempt int32 `protobuf:"varint,5,opt,name=attempt,proto3" json:"attempt,omitempty"`
 	// MaxAttempts caps the value Attempt may reach.
@@ -129,7 +129,7 @@ type Generation struct {
 
 func (x *Generation) Reset() {
 	*x = Generation{}
-	mi := &file_generation_proto_msgTypes[0]
+	mi := &file_anovel_genai_v1_generation_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -141,7 +141,7 @@ func (x *Generation) String() string {
 func (*Generation) ProtoMessage() {}
 
 func (x *Generation) ProtoReflect() protoreflect.Message {
-	mi := &file_generation_proto_msgTypes[0]
+	mi := &file_anovel_genai_v1_generation_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -154,7 +154,7 @@ func (x *Generation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Generation.ProtoReflect.Descriptor instead.
 func (*Generation) Descriptor() ([]byte, []int) {
-	return file_generation_proto_rawDescGZIP(), []int{0}
+	return file_anovel_genai_v1_generation_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *Generation) GetId() string {
@@ -241,17 +241,17 @@ func (x *Generation) GetExpiresAt() string {
 	return ""
 }
 
-var File_generation_proto protoreflect.FileDescriptor
+var File_anovel_genai_v1_generation_proto protoreflect.FileDescriptor
 
-const file_generation_proto_rawDesc = "" +
+const file_anovel_genai_v1_generation_proto_rawDesc = "" +
 	"\n" +
-	"\x10generation.proto\"\xfb\x02\n" +
+	" anovel/genai/v1/generation.proto\x12\x0fanovel.genai.v1\"\x8b\x03\n" +
 	"\n" +
 	"Generation\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x19\n" +
 	"\bowner_id\x18\x02 \x01(\tR\aownerId\x12\x18\n" +
-	"\apurpose\x18\x03 \x01(\tR\apurpose\x12)\n" +
-	"\x06status\x18\x04 \x01(\x0e2\x11.GenerationStatusR\x06status\x12\x18\n" +
+	"\apurpose\x18\x03 \x01(\tR\apurpose\x129\n" +
+	"\x06status\x18\x04 \x01(\x0e2!.anovel.genai.v1.GenerationStatusR\x06status\x12\x18\n" +
 	"\aattempt\x18\x05 \x01(\x05R\aattempt\x12!\n" +
 	"\fmax_attempts\x18\x06 \x01(\x05R\vmaxAttempts\x12\x16\n" +
 	"\x06output\x18\a \x01(\fR\x06output\x12\x14\n" +
@@ -272,28 +272,29 @@ const file_generation_proto_rawDesc = "" +
 	"\x1bGENERATION_STATUS_SUCCEEDED\x10\x03\x12\x1c\n" +
 	"\x18GENERATION_STATUS_FAILED\x10\x04\x12\x1f\n" +
 	"\x1bGENERATION_STATUS_ABANDONED\x10\x05\x12\x1f\n" +
-	"\x1bGENERATION_STATUS_CANCELLED\x10\x06BYB\x0fGenerationProtoP\x01ZDgithub.com/a-novel/service-genai/internal/handlers/protogen;protogenb\x06proto3"
+	"\x1bGENERATION_STATUS_CANCELLED\x10\x06B\xd9\x01\n" +
+	"\x13com.anovel.genai.v1B\x0fGenerationProtoP\x01ZSgithub.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v1;genaiv1\xa2\x02\x03AGX\xaa\x02\x0fAnovel.Genai.V1\xca\x02\x0fAnovel\\Genai\\V1\xe2\x02\x1bAnovel\\Genai\\V1\\GPBMetadata\xea\x02\x11Anovel::Genai::V1b\x06proto3"
 
 var (
-	file_generation_proto_rawDescOnce sync.Once
-	file_generation_proto_rawDescData []byte
+	file_anovel_genai_v1_generation_proto_rawDescOnce sync.Once
+	file_anovel_genai_v1_generation_proto_rawDescData []byte
 )
 
-func file_generation_proto_rawDescGZIP() []byte {
-	file_generation_proto_rawDescOnce.Do(func() {
-		file_generation_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_generation_proto_rawDesc), len(file_generation_proto_rawDesc)))
+func file_anovel_genai_v1_generation_proto_rawDescGZIP() []byte {
+	file_anovel_genai_v1_generation_proto_rawDescOnce.Do(func() {
+		file_anovel_genai_v1_generation_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_anovel_genai_v1_generation_proto_rawDesc), len(file_anovel_genai_v1_generation_proto_rawDesc)))
 	})
-	return file_generation_proto_rawDescData
+	return file_anovel_genai_v1_generation_proto_rawDescData
 }
 
-var file_generation_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_generation_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
-var file_generation_proto_goTypes = []any{
-	(GenerationStatus)(0), // 0: GenerationStatus
-	(*Generation)(nil),    // 1: Generation
+var file_anovel_genai_v1_generation_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_anovel_genai_v1_generation_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
+var file_anovel_genai_v1_generation_proto_goTypes = []any{
+	(GenerationStatus)(0), // 0: anovel.genai.v1.GenerationStatus
+	(*Generation)(nil),    // 1: anovel.genai.v1.Generation
 }
-var file_generation_proto_depIdxs = []int32{
-	0, // 0: Generation.status:type_name -> GenerationStatus
+var file_anovel_genai_v1_generation_proto_depIdxs = []int32{
+	0, // 0: anovel.genai.v1.Generation.status:type_name -> anovel.genai.v1.GenerationStatus
 	1, // [1:1] is the sub-list for method output_type
 	1, // [1:1] is the sub-list for method input_type
 	1, // [1:1] is the sub-list for extension type_name
@@ -301,27 +302,27 @@ var file_generation_proto_depIdxs = []int32{
 	0, // [0:1] is the sub-list for field type_name
 }
 
-func init() { file_generation_proto_init() }
-func file_generation_proto_init() {
-	if File_generation_proto != nil {
+func init() { file_anovel_genai_v1_generation_proto_init() }
+func file_anovel_genai_v1_generation_proto_init() {
+	if File_anovel_genai_v1_generation_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_generation_proto_rawDesc), len(file_generation_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_anovel_genai_v1_generation_proto_rawDesc), len(file_anovel_genai_v1_generation_proto_rawDesc)),
 			NumEnums:      1,
 			NumMessages:   1,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
-		GoTypes:           file_generation_proto_goTypes,
-		DependencyIndexes: file_generation_proto_depIdxs,
-		EnumInfos:         file_generation_proto_enumTypes,
-		MessageInfos:      file_generation_proto_msgTypes,
+		GoTypes:           file_anovel_genai_v1_generation_proto_goTypes,
+		DependencyIndexes: file_anovel_genai_v1_generation_proto_depIdxs,
+		EnumInfos:         file_anovel_genai_v1_generation_proto_enumTypes,
+		MessageInfos:      file_anovel_genai_v1_generation_proto_msgTypes,
 	}.Build()
-	File_generation_proto = out.File
-	file_generation_proto_goTypes = nil
-	file_generation_proto_depIdxs = nil
+	File_anovel_genai_v1_generation_proto = out.File
+	file_anovel_genai_v1_generation_proto_goTypes = nil
+	file_anovel_genai_v1_generation_proto_depIdxs = nil
 }

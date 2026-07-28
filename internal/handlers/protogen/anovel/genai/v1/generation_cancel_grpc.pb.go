@@ -2,9 +2,9 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.2
 // - protoc             (unknown)
-// source: generation_cancel.proto
+// source: anovel/genai/v1/generation_cancel.proto
 
-package protogen
+package genaiv1
 
 import (
 	context "context"
@@ -19,7 +19,7 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	GenerationCancelService_GenerationCancel_FullMethodName = "/GenerationCancelService/GenerationCancel"
+	GenerationCancelService_GenerationCancel_FullMethodName = "/anovel.genai.v1.GenerationCancelService/GenerationCancel"
 )
 
 // GenerationCancelServiceClient is the client API for GenerationCancelService service.
@@ -121,7 +121,7 @@ func _GenerationCancelService_GenerationCancel_Handler(srv interface{}, ctx cont
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var GenerationCancelService_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "GenerationCancelService",
+	ServiceName: "anovel.genai.v1.GenerationCancelService",
 	HandlerType: (*GenerationCancelServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
@@ -130,5 +130,5 @@ var GenerationCancelService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "generation_cancel.proto",
+	Metadata: "anovel/genai/v1/generation_cancel.proto",
 }
