@@ -10,7 +10,7 @@ import (
 	"github.com/a-novel-kit/golib/postgres"
 
 	"github.com/a-novel/service-genai/internal/core"
-	genaiv1 "github.com/a-novel/service-genai/internal/handlers/protogen/genai/v1"
+	genaiv1 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v1"
 )
 
 // NewGrpcHealthStatus converts an error into a DependencyHealth proto message,

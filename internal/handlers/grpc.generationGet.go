@@ -12,7 +12,7 @@ import (
 
 	"github.com/a-novel/service-genai/internal/core"
 	"github.com/a-novel/service-genai/internal/dao"
-	"github.com/a-novel/service-genai/internal/handlers/protogen"
+	genaiv1 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v1"
 )
 
 // GrpcGenerationGetService is the service dependency of [GrpcGenerationGet].
@@ -22,7 +22,7 @@ type GrpcGenerationGetService interface {
 
 // GrpcGenerationGet is the gRPC handler for the GenerationGet RPC.
 type GrpcGenerationGet struct {
-	protogen.UnimplementedGenerationGetServiceServer
+	genaiv1.UnimplementedGenerationGetServiceServer
 
 	service GrpcGenerationGetService
 }
@@ -32,8 +32,8 @@ func NewGrpcGenerationGet(service GrpcGenerationGetService) *GrpcGenerationGet {
 }
 
 func (handler *GrpcGenerationGet) GenerationGet(
-	ctx context.Context, request *protogen.GenerationGetRequest,
-) (*protogen.GenerationGetResponse, error) {
+	ctx context.Context, request *genaiv1.GenerationGetRequest,
+) (*genaiv1.GenerationGetResponse, error) {
 	ctx, span := otel.Tracer().Start(ctx, "grpc.GenerationGet")
 	defer span.End()
 
@@ -42,7 +42,7 @@ func (handler *GrpcGenerationGet) GenerationGet(
 		return nil, err
 	}
 
-	return otel.ReportSuccess(span, &protogen.GenerationGetResponse{
+	return otel.ReportSuccess(span, &genaiv1.GenerationGetResponse{
 		Generation: NewGrpcGeneration(generation),
 	}), nil
 }

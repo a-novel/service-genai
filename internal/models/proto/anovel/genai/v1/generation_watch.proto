@@ -1,6 +1,8 @@
 syntax = "proto3";
 
-import "generation.proto";
+package anovel.genai.v1;
+
+import "anovel/genai/v1/generation.proto";
 
 // GenerationWatchService streams a generation's state to a caller waiting on its outcome.
 //

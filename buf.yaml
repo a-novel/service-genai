@@ -5,13 +5,17 @@ modules:
 lint:
   use:
     - STANDARD
-  except:
-    - PACKAGE_DEFINED
 breaking:
   use:
     - FILE
   ignore_only:
     FILE_NO_DELETE:
-      # v0.1.2 gives the Status descriptor a service-specific name so consumers can
-      # import it alongside other Agora clients without a global protobuf registry panic.
+      # The first versioned contract intentionally moves every pre-v1 descriptor. Remove these
+      # exceptions once master itself is the versioned baseline for breaking-change checks.
+      - internal/models/proto/generation.proto
+      - internal/models/proto/generation_cancel.proto
+      - internal/models/proto/generation_get.proto
+      - internal/models/proto/generation_submit.proto
+      - internal/models/proto/generation_watch.proto
       - internal/models/proto/status.proto
+      - internal/models/proto/usage_query.proto

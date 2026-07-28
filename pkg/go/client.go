@@ -8,8 +8,7 @@ import (
 
 	golibproto "github.com/a-novel-kit/golib/grpcf/proto/gen"
 
-	"github.com/a-novel/service-genai/internal/handlers/protogen"
-	genaiv1 "github.com/a-novel/service-genai/internal/handlers/protogen/genai/v1"
+	genaiv1 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v1"
 )
 
 // Request, response, and entity types are re-exported from the service's generated
@@ -19,35 +18,33 @@ type (
 	StatusResponse = genaiv1.StatusResponse
 	QueueDepth     = genaiv1.QueueDepth
 
-	GenerationSubmitRequest  = protogen.GenerationSubmitRequest
-	GenerationSubmitResponse = protogen.GenerationSubmitResponse
-	GenerationGetRequest     = protogen.GenerationGetRequest
-	GenerationGetResponse    = protogen.GenerationGetResponse
-	GenerationCancelRequest  = protogen.GenerationCancelRequest
-	GenerationCancelResponse = protogen.GenerationCancelResponse
-	GenerationWatchRequest   = protogen.GenerationWatchRequest
-	GenerationWatchResponse  = protogen.GenerationWatchResponse
+	GenerationSubmitRequest  = genaiv1.GenerationSubmitRequest
+	GenerationSubmitResponse = genaiv1.GenerationSubmitResponse
+	GenerationGetRequest     = genaiv1.GenerationGetRequest
+	GenerationGetResponse    = genaiv1.GenerationGetResponse
+	GenerationCancelRequest  = genaiv1.GenerationCancelRequest
+	GenerationCancelResponse = genaiv1.GenerationCancelResponse
+	GenerationWatchRequest   = genaiv1.GenerationWatchRequest
+	GenerationWatchResponse  = genaiv1.GenerationWatchResponse
 
-	UsageQueryRequest  = protogen.UsageQueryRequest
-	UsageQueryResponse = protogen.UsageQueryResponse
-	UsageGroup         = protogen.UsageGroup
-	UsageTotal         = protogen.UsageTotal
+	UsageQueryRequest  = genaiv1.UsageQueryRequest
+	UsageQueryResponse = genaiv1.UsageQueryResponse
+	UsageGroup         = genaiv1.UsageGroup
+	UsageTotal         = genaiv1.UsageTotal
 
-	Generation       = protogen.Generation
-	GenerationStatus = protogen.GenerationStatus
+	Generation       = genaiv1.Generation
+	GenerationStatus = genaiv1.GenerationStatus
 )
-
-const legacyStatusFullMethodName = "/StatusService/Status"
 
 // Terminal statuses, re-exported so a caller can decide whether to keep waiting without importing
 // the generated package.
 const (
-	GenerationStatusPending   = protogen.GenerationStatus_GENERATION_STATUS_PENDING
-	GenerationStatusRunning   = protogen.GenerationStatus_GENERATION_STATUS_RUNNING
-	GenerationStatusSucceeded = protogen.GenerationStatus_GENERATION_STATUS_SUCCEEDED
-	GenerationStatusFailed    = protogen.GenerationStatus_GENERATION_STATUS_FAILED
-	GenerationStatusAbandoned = protogen.GenerationStatus_GENERATION_STATUS_ABANDONED
-	GenerationStatusCancelled = protogen.GenerationStatus_GENERATION_STATUS_CANCELLED
+	GenerationStatusPending   = genaiv1.GenerationStatus_GENERATION_STATUS_PENDING
+	GenerationStatusRunning   = genaiv1.GenerationStatus_GENERATION_STATUS_RUNNING
+	GenerationStatusSucceeded = genaiv1.GenerationStatus_GENERATION_STATUS_SUCCEEDED
+	GenerationStatusFailed    = genaiv1.GenerationStatus_GENERATION_STATUS_FAILED
+	GenerationStatusAbandoned = genaiv1.GenerationStatus_GENERATION_STATUS_ABANDONED
+	GenerationStatusCancelled = genaiv1.GenerationStatus_GENERATION_STATUS_CANCELLED
 )
 
 // A Client issues the service's gRPC calls, one method per RPC. Construct one
@@ -92,34 +89,13 @@ type Client interface {
 type client struct {
 	golibproto.EchoServiceClient
 	genaiv1.StatusServiceClient
-	protogen.GenerationSubmitServiceClient
-	protogen.GenerationGetServiceClient
-	protogen.GenerationCancelServiceClient
-	protogen.GenerationWatchServiceClient
-	protogen.UsageQueryServiceClient
+	genaiv1.GenerationSubmitServiceClient
+	genaiv1.GenerationGetServiceClient
+	genaiv1.GenerationCancelServiceClient
+	genaiv1.GenerationWatchServiceClient
+	genaiv1.UsageQueryServiceClient
 
 	conn *grpc.ClientConn
-}
-
-type legacyStatusServiceClient struct {
-	cc grpc.ClientConnInterface
-}
-
-func (client *legacyStatusServiceClient) Status(
-	ctx context.Context,
-	request *StatusRequest,
-	opts ...grpc.CallOption,
-) (*StatusResponse, error) {
-	callOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-
-	response := new(StatusResponse)
-
-	err := client.cc.Invoke(ctx, legacyStatusFullMethodName, request, response, callOpts...)
-	if err != nil {
-		return nil, err
-	}
-
-	return response, nil
 }
 
 func (c *client) Close() {
@@ -137,12 +113,12 @@ func NewClient(addr string, opts ...grpc.DialOption) (Client, error) {
 
 	return &client{
 		EchoServiceClient:             golibproto.NewEchoServiceClient(conn),
-		StatusServiceClient:           &legacyStatusServiceClient{cc: conn},
-		GenerationSubmitServiceClient: protogen.NewGenerationSubmitServiceClient(conn),
-		GenerationGetServiceClient:    protogen.NewGenerationGetServiceClient(conn),
-		GenerationCancelServiceClient: protogen.NewGenerationCancelServiceClient(conn),
-		GenerationWatchServiceClient:  protogen.NewGenerationWatchServiceClient(conn),
-		UsageQueryServiceClient:       protogen.NewUsageQueryServiceClient(conn),
+		StatusServiceClient:           genaiv1.NewStatusServiceClient(conn),
+		GenerationSubmitServiceClient: genaiv1.NewGenerationSubmitServiceClient(conn),
+		GenerationGetServiceClient:    genaiv1.NewGenerationGetServiceClient(conn),
+		GenerationCancelServiceClient: genaiv1.NewGenerationCancelServiceClient(conn),
+		GenerationWatchServiceClient:  genaiv1.NewGenerationWatchServiceClient(conn),
+		UsageQueryServiceClient:       genaiv1.NewUsageQueryServiceClient(conn),
 		conn:                          conn,
 	}, nil
 }

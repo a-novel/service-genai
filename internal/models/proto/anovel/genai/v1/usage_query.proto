@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+package anovel.genai.v1;
+
 // UsageQueryService reports what an owner consumed over a window.
 //
 // It returns tokens, never money. What a token costs is a downstream decision, which is why the

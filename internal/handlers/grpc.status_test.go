@@ -15,7 +15,7 @@ import (
 	"github.com/a-novel/service-genai/internal/core"
 	"github.com/a-novel/service-genai/internal/handlers"
 	handlersmocks "github.com/a-novel/service-genai/internal/handlers/mocks"
-	genaiv1 "github.com/a-novel/service-genai/internal/handlers/protogen/genai/v1"
+	genaiv1 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v1"
 )
 
 func TestStatus(t *testing.T) {

@@ -6,7 +6,7 @@ import (
 	"github.com/a-novel-kit/golib/otel"
 
 	"github.com/a-novel/service-genai/internal/dao"
-	"github.com/a-novel/service-genai/internal/handlers/protogen"
+	genaiv1 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v1"
 )
 
 // GenerationWatchInterval is how often the stream re-reads durable state.
@@ -21,7 +21,7 @@ const GenerationWatchInterval = time.Second
 // It reads through the get handler, so the ownership predicate and the refusals are the same ones —
 // a watch cannot see what a read could not.
 type GrpcGenerationWatch struct {
-	protogen.UnimplementedGenerationWatchServiceServer
+	genaiv1.UnimplementedGenerationWatchServiceServer
 
 	reader   *GrpcGenerationGet
 	interval time.Duration
@@ -32,8 +32,8 @@ func NewGrpcGenerationWatch(reader *GrpcGenerationGet) *GrpcGenerationWatch {
 }
 
 func (handler *GrpcGenerationWatch) GenerationWatch(
-	request *protogen.GenerationWatchRequest,
-	stream protogen.GenerationWatchService_GenerationWatchServer,
+	request *genaiv1.GenerationWatchRequest,
+	stream genaiv1.GenerationWatchService_GenerationWatchServer,
 ) error {
 	ctx, span := otel.Tracer().Start(stream.Context(), "grpc.GenerationWatch")
 	defer span.End()
@@ -50,7 +50,7 @@ func (handler *GrpcGenerationWatch) GenerationWatch(
 		// One snapshot on subscribe, then one per change. Re-sending an unchanged generation every
 		// tick would make the stream a poll the caller pays for.
 		if last == nil || !generation.UpdatedAt.Equal(last.UpdatedAt) {
-			err = stream.Send(&protogen.GenerationWatchResponse{
+			err = stream.Send(&genaiv1.GenerationWatchResponse{
 				Generation: NewGrpcGeneration(generation),
 			})
 			if err != nil {
