@@ -2,9 +2,9 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.2
 // - protoc             (unknown)
-// source: anovel/genai/v1/status.proto
+// source: anovel/genai/v0/status.proto
 
-package genaiv1
+package v0
 
 import (
 	context "context"
@@ -19,7 +19,7 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	StatusService_Status_FullMethodName = "/anovel.genai.v1.StatusService/Status"
+	StatusService_Status_FullMethodName = "/anovel.genai.v0.StatusService/Status"
 )
 
 // StatusServiceClient is the client API for StatusService service.
@@ -112,7 +112,7 @@ func _StatusService_Status_Handler(srv interface{}, ctx context.Context, dec fun
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var StatusService_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "anovel.genai.v1.StatusService",
+	ServiceName: "anovel.genai.v0.StatusService",
 	HandlerType: (*StatusServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
@@ -121,5 +121,5 @@ var StatusService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "anovel/genai/v1/status.proto",
+	Metadata: "anovel/genai/v0/status.proto",
 }

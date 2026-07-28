@@ -34,7 +34,7 @@ import (
 	"github.com/a-novel/service-genai/internal/core"
 	"github.com/a-novel/service-genai/internal/dao"
 	"github.com/a-novel/service-genai/internal/handlers"
-	genaiv1 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v1"
+	genaiv0 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v0"
 	"github.com/a-novel/service-genai/internal/lib"
 )
 
@@ -147,12 +147,12 @@ func main() {
 
 	grpcf.SetEchoServersContext(ctx, server, cfg.Grpc.Ping)
 
-	genaiv1.RegisterStatusServiceServer(server, handlerStatus)
-	genaiv1.RegisterGenerationSubmitServiceServer(server, handlerSubmit)
-	genaiv1.RegisterGenerationGetServiceServer(server, handlerGet)
-	genaiv1.RegisterGenerationCancelServiceServer(server, handlerCancel)
-	genaiv1.RegisterGenerationWatchServiceServer(server, handlerWatch)
-	genaiv1.RegisterUsageQueryServiceServer(server, handlerUsageQuery)
+	genaiv0.RegisterStatusServiceServer(server, handlerStatus)
+	genaiv0.RegisterGenerationSubmitServiceServer(server, handlerSubmit)
+	genaiv0.RegisterGenerationGetServiceServer(server, handlerGet)
+	genaiv0.RegisterGenerationCancelServiceServer(server, handlerCancel)
+	genaiv0.RegisterGenerationWatchServiceServer(server, handlerWatch)
+	genaiv0.RegisterUsageQueryServiceServer(server, handlerUsageQuery)
 
 	reflection.Register(server)
 

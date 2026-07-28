@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-package anovel.genai.v1;
+package anovel.genai.v0;
 
-import "anovel/genai/v1/generation.proto";
+import "anovel/genai/v0/generation.proto";
 
 // GenerationGetService reads one of an owner's generations. A generation owned by anyone else
 // reports not-found, so the read cannot be used to learn whether an id exists.

@@ -2,9 +2,9 @@
 // versions:
 // 	protoc-gen-go v1.36.11
 // 	protoc        (unknown)
-// source: anovel/genai/v1/generation_cancel.proto
+// source: anovel/genai/v0/generation_cancel.proto
 
-package genaiv1
+package v0
 
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
@@ -34,7 +34,7 @@ type GenerationCancelRequest struct {
 
 func (x *GenerationCancelRequest) Reset() {
 	*x = GenerationCancelRequest{}
-	mi := &file_anovel_genai_v1_generation_cancel_proto_msgTypes[0]
+	mi := &file_anovel_genai_v0_generation_cancel_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -46,7 +46,7 @@ func (x *GenerationCancelRequest) String() string {
 func (*GenerationCancelRequest) ProtoMessage() {}
 
 func (x *GenerationCancelRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_anovel_genai_v1_generation_cancel_proto_msgTypes[0]
+	mi := &file_anovel_genai_v0_generation_cancel_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -59,7 +59,7 @@ func (x *GenerationCancelRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GenerationCancelRequest.ProtoReflect.Descriptor instead.
 func (*GenerationCancelRequest) Descriptor() ([]byte, []int) {
-	return file_anovel_genai_v1_generation_cancel_proto_rawDescGZIP(), []int{0}
+	return file_anovel_genai_v0_generation_cancel_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *GenerationCancelRequest) GetId() string {
@@ -87,7 +87,7 @@ type GenerationCancelResponse struct {
 
 func (x *GenerationCancelResponse) Reset() {
 	*x = GenerationCancelResponse{}
-	mi := &file_anovel_genai_v1_generation_cancel_proto_msgTypes[1]
+	mi := &file_anovel_genai_v0_generation_cancel_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -99,7 +99,7 @@ func (x *GenerationCancelResponse) String() string {
 func (*GenerationCancelResponse) ProtoMessage() {}
 
 func (x *GenerationCancelResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_anovel_genai_v1_generation_cancel_proto_msgTypes[1]
+	mi := &file_anovel_genai_v0_generation_cancel_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -112,7 +112,7 @@ func (x *GenerationCancelResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GenerationCancelResponse.ProtoReflect.Descriptor instead.
 func (*GenerationCancelResponse) Descriptor() ([]byte, []int) {
-	return file_anovel_genai_v1_generation_cancel_proto_rawDescGZIP(), []int{1}
+	return file_anovel_genai_v0_generation_cancel_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *GenerationCancelResponse) GetGeneration() *Generation {
@@ -122,44 +122,44 @@ func (x *GenerationCancelResponse) GetGeneration() *Generation {
 	return nil
 }
 
-var File_anovel_genai_v1_generation_cancel_proto protoreflect.FileDescriptor
+var File_anovel_genai_v0_generation_cancel_proto protoreflect.FileDescriptor
 
-const file_anovel_genai_v1_generation_cancel_proto_rawDesc = "" +
+const file_anovel_genai_v0_generation_cancel_proto_rawDesc = "" +
 	"\n" +
-	"'anovel/genai/v1/generation_cancel.proto\x12\x0fanovel.genai.v1\x1a anovel/genai/v1/generation.proto\"D\n" +
+	"'anovel/genai/v0/generation_cancel.proto\x12\x0fanovel.genai.v0\x1a anovel/genai/v0/generation.proto\"D\n" +
 	"\x17GenerationCancelRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x19\n" +
 	"\bowner_id\x18\x02 \x01(\tR\aownerId\"W\n" +
 	"\x18GenerationCancelResponse\x12;\n" +
 	"\n" +
-	"generation\x18\x01 \x01(\v2\x1b.anovel.genai.v1.GenerationR\n" +
+	"generation\x18\x01 \x01(\v2\x1b.anovel.genai.v0.GenerationR\n" +
 	"generation2\x82\x01\n" +
 	"\x17GenerationCancelService\x12g\n" +
-	"\x10GenerationCancel\x12(.anovel.genai.v1.GenerationCancelRequest\x1a).anovel.genai.v1.GenerationCancelResponseB\xdf\x01\n" +
-	"\x13com.anovel.genai.v1B\x15GenerationCancelProtoP\x01ZSgithub.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v1;genaiv1\xa2\x02\x03AGX\xaa\x02\x0fAnovel.Genai.V1\xca\x02\x0fAnovel\\Genai\\V1\xe2\x02\x1bAnovel\\Genai\\V1\\GPBMetadata\xea\x02\x11Anovel::Genai::V1b\x06proto3"
+	"\x10GenerationCancel\x12(.anovel.genai.v0.GenerationCancelRequest\x1a).anovel.genai.v0.GenerationCancelResponseB\xd7\x01\n" +
+	"\x13com.anovel.genai.v0B\x15GenerationCancelProtoP\x01ZKgithub.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v0\xa2\x02\x03AGV\xaa\x02\x0fAnovel.Genai.V0\xca\x02\x0fAnovel\\Genai\\V0\xe2\x02\x1bAnovel\\Genai\\V0\\GPBMetadata\xea\x02\x11Anovel::Genai::V0b\x06proto3"
 
 var (
-	file_anovel_genai_v1_generation_cancel_proto_rawDescOnce sync.Once
-	file_anovel_genai_v1_generation_cancel_proto_rawDescData []byte
+	file_anovel_genai_v0_generation_cancel_proto_rawDescOnce sync.Once
+	file_anovel_genai_v0_generation_cancel_proto_rawDescData []byte
 )
 
-func file_anovel_genai_v1_generation_cancel_proto_rawDescGZIP() []byte {
-	file_anovel_genai_v1_generation_cancel_proto_rawDescOnce.Do(func() {
-		file_anovel_genai_v1_generation_cancel_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_anovel_genai_v1_generation_cancel_proto_rawDesc), len(file_anovel_genai_v1_generation_cancel_proto_rawDesc)))
+func file_anovel_genai_v0_generation_cancel_proto_rawDescGZIP() []byte {
+	file_anovel_genai_v0_generation_cancel_proto_rawDescOnce.Do(func() {
+		file_anovel_genai_v0_generation_cancel_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_anovel_genai_v0_generation_cancel_proto_rawDesc), len(file_anovel_genai_v0_generation_cancel_proto_rawDesc)))
 	})
-	return file_anovel_genai_v1_generation_cancel_proto_rawDescData
+	return file_anovel_genai_v0_generation_cancel_proto_rawDescData
 }
 
-var file_anovel_genai_v1_generation_cancel_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
-var file_anovel_genai_v1_generation_cancel_proto_goTypes = []any{
-	(*GenerationCancelRequest)(nil),  // 0: anovel.genai.v1.GenerationCancelRequest
-	(*GenerationCancelResponse)(nil), // 1: anovel.genai.v1.GenerationCancelResponse
-	(*Generation)(nil),               // 2: anovel.genai.v1.Generation
+var file_anovel_genai_v0_generation_cancel_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_anovel_genai_v0_generation_cancel_proto_goTypes = []any{
+	(*GenerationCancelRequest)(nil),  // 0: anovel.genai.v0.GenerationCancelRequest
+	(*GenerationCancelResponse)(nil), // 1: anovel.genai.v0.GenerationCancelResponse
+	(*Generation)(nil),               // 2: anovel.genai.v0.Generation
 }
-var file_anovel_genai_v1_generation_cancel_proto_depIdxs = []int32{
-	2, // 0: anovel.genai.v1.GenerationCancelResponse.generation:type_name -> anovel.genai.v1.Generation
-	0, // 1: anovel.genai.v1.GenerationCancelService.GenerationCancel:input_type -> anovel.genai.v1.GenerationCancelRequest
-	1, // 2: anovel.genai.v1.GenerationCancelService.GenerationCancel:output_type -> anovel.genai.v1.GenerationCancelResponse
+var file_anovel_genai_v0_generation_cancel_proto_depIdxs = []int32{
+	2, // 0: anovel.genai.v0.GenerationCancelResponse.generation:type_name -> anovel.genai.v0.Generation
+	0, // 1: anovel.genai.v0.GenerationCancelService.GenerationCancel:input_type -> anovel.genai.v0.GenerationCancelRequest
+	1, // 2: anovel.genai.v0.GenerationCancelService.GenerationCancel:output_type -> anovel.genai.v0.GenerationCancelResponse
 	2, // [2:3] is the sub-list for method output_type
 	1, // [1:2] is the sub-list for method input_type
 	1, // [1:1] is the sub-list for extension type_name
@@ -167,27 +167,27 @@ var file_anovel_genai_v1_generation_cancel_proto_depIdxs = []int32{
 	0, // [0:1] is the sub-list for field type_name
 }
 
-func init() { file_anovel_genai_v1_generation_cancel_proto_init() }
-func file_anovel_genai_v1_generation_cancel_proto_init() {
-	if File_anovel_genai_v1_generation_cancel_proto != nil {
+func init() { file_anovel_genai_v0_generation_cancel_proto_init() }
+func file_anovel_genai_v0_generation_cancel_proto_init() {
+	if File_anovel_genai_v0_generation_cancel_proto != nil {
 		return
 	}
-	file_anovel_genai_v1_generation_proto_init()
+	file_anovel_genai_v0_generation_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_anovel_genai_v1_generation_cancel_proto_rawDesc), len(file_anovel_genai_v1_generation_cancel_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_anovel_genai_v0_generation_cancel_proto_rawDesc), len(file_anovel_genai_v0_generation_cancel_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   2,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_anovel_genai_v1_generation_cancel_proto_goTypes,
-		DependencyIndexes: file_anovel_genai_v1_generation_cancel_proto_depIdxs,
-		MessageInfos:      file_anovel_genai_v1_generation_cancel_proto_msgTypes,
+		GoTypes:           file_anovel_genai_v0_generation_cancel_proto_goTypes,
+		DependencyIndexes: file_anovel_genai_v0_generation_cancel_proto_depIdxs,
+		MessageInfos:      file_anovel_genai_v0_generation_cancel_proto_msgTypes,
 	}.Build()
-	File_anovel_genai_v1_generation_cancel_proto = out.File
-	file_anovel_genai_v1_generation_cancel_proto_goTypes = nil
-	file_anovel_genai_v1_generation_cancel_proto_depIdxs = nil
+	File_anovel_genai_v0_generation_cancel_proto = out.File
+	file_anovel_genai_v0_generation_cancel_proto_goTypes = nil
+	file_anovel_genai_v0_generation_cancel_proto_depIdxs = nil
 }

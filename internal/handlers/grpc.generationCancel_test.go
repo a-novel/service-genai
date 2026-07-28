@@ -12,7 +12,7 @@ import (
 	"github.com/a-novel/service-genai/internal/dao"
 	"github.com/a-novel/service-genai/internal/handlers"
 	handlersmocks "github.com/a-novel/service-genai/internal/handlers/mocks"
-	genaiv1 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v1"
+	genaiv0 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v0"
 )
 
 func TestGrpcGenerationCancel(t *testing.T) {
@@ -26,7 +26,7 @@ func TestGrpcGenerationCancel(t *testing.T) {
 	testCases := []struct {
 		name string
 
-		request *genaiv1.GenerationCancelRequest
+		request *genaiv0.GenerationCancelRequest
 
 		serviceMock *serviceMock
 
@@ -37,7 +37,7 @@ func TestGrpcGenerationCancel(t *testing.T) {
 			// provider operation has actually stopped, recording what was spent.
 			name: "Success",
 
-			request:     &genaiv1.GenerationCancelRequest{Id: testGenerationID, OwnerId: testOwnerID},
+			request:     &genaiv0.GenerationCancelRequest{Id: testGenerationID, OwnerId: testOwnerID},
 			serviceMock: &serviceMock{resp: testGeneration()},
 		},
 		{
@@ -45,7 +45,7 @@ func TestGrpcGenerationCancel(t *testing.T) {
 			// would confirm that another owner's id is real.
 			name: "Error/NotCancellable",
 
-			request:     &genaiv1.GenerationCancelRequest{Id: testGenerationID, OwnerId: testOwnerID},
+			request:     &genaiv0.GenerationCancelRequest{Id: testGenerationID, OwnerId: testOwnerID},
 			serviceMock: &serviceMock{err: core.ErrGenerationNotCancellable},
 
 			expectStatus: codes.NotFound,
@@ -53,21 +53,21 @@ func TestGrpcGenerationCancel(t *testing.T) {
 		{
 			name: "Error/InvalidGenerationID",
 
-			request: &genaiv1.GenerationCancelRequest{Id: "not-a-uuid", OwnerId: testOwnerID},
+			request: &genaiv0.GenerationCancelRequest{Id: "not-a-uuid", OwnerId: testOwnerID},
 
 			expectStatus: codes.InvalidArgument,
 		},
 		{
 			name: "Error/InvalidOwnerID",
 
-			request: &genaiv1.GenerationCancelRequest{Id: testGenerationID, OwnerId: "not-a-uuid"},
+			request: &genaiv0.GenerationCancelRequest{Id: testGenerationID, OwnerId: "not-a-uuid"},
 
 			expectStatus: codes.InvalidArgument,
 		},
 		{
 			name: "Error/Internal",
 
-			request:     &genaiv1.GenerationCancelRequest{Id: testGenerationID, OwnerId: testOwnerID},
+			request:     &genaiv0.GenerationCancelRequest{Id: testGenerationID, OwnerId: testOwnerID},
 			serviceMock: &serviceMock{err: errFoo},
 
 			expectStatus: codes.Internal,

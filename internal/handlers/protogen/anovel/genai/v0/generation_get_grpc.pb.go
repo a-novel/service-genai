@@ -2,9 +2,9 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.2
 // - protoc             (unknown)
-// source: anovel/genai/v1/generation_get.proto
+// source: anovel/genai/v0/generation_get.proto
 
-package genaiv1
+package v0
 
 import (
 	context "context"
@@ -19,7 +19,7 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	GenerationGetService_GenerationGet_FullMethodName = "/anovel.genai.v1.GenerationGetService/GenerationGet"
+	GenerationGetService_GenerationGet_FullMethodName = "/anovel.genai.v0.GenerationGetService/GenerationGet"
 )
 
 // GenerationGetServiceClient is the client API for GenerationGetService service.
@@ -114,7 +114,7 @@ func _GenerationGetService_GenerationGet_Handler(srv interface{}, ctx context.Co
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var GenerationGetService_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "anovel.genai.v1.GenerationGetService",
+	ServiceName: "anovel.genai.v0.GenerationGetService",
 	HandlerType: (*GenerationGetServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
@@ -123,5 +123,5 @@ var GenerationGetService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "anovel/genai/v1/generation_get.proto",
+	Metadata: "anovel/genai/v0/generation_get.proto",
 }

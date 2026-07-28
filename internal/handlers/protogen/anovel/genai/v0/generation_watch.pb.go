@@ -2,9 +2,9 @@
 // versions:
 // 	protoc-gen-go v1.36.11
 // 	protoc        (unknown)
-// source: anovel/genai/v1/generation_watch.proto
+// source: anovel/genai/v0/generation_watch.proto
 
-package genaiv1
+package v0
 
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
@@ -34,7 +34,7 @@ type GenerationWatchRequest struct {
 
 func (x *GenerationWatchRequest) Reset() {
 	*x = GenerationWatchRequest{}
-	mi := &file_anovel_genai_v1_generation_watch_proto_msgTypes[0]
+	mi := &file_anovel_genai_v0_generation_watch_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -46,7 +46,7 @@ func (x *GenerationWatchRequest) String() string {
 func (*GenerationWatchRequest) ProtoMessage() {}
 
 func (x *GenerationWatchRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_anovel_genai_v1_generation_watch_proto_msgTypes[0]
+	mi := &file_anovel_genai_v0_generation_watch_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -59,7 +59,7 @@ func (x *GenerationWatchRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GenerationWatchRequest.ProtoReflect.Descriptor instead.
 func (*GenerationWatchRequest) Descriptor() ([]byte, []int) {
-	return file_anovel_genai_v1_generation_watch_proto_rawDescGZIP(), []int{0}
+	return file_anovel_genai_v0_generation_watch_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *GenerationWatchRequest) GetId() string {
@@ -87,7 +87,7 @@ type GenerationWatchResponse struct {
 
 func (x *GenerationWatchResponse) Reset() {
 	*x = GenerationWatchResponse{}
-	mi := &file_anovel_genai_v1_generation_watch_proto_msgTypes[1]
+	mi := &file_anovel_genai_v0_generation_watch_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -99,7 +99,7 @@ func (x *GenerationWatchResponse) String() string {
 func (*GenerationWatchResponse) ProtoMessage() {}
 
 func (x *GenerationWatchResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_anovel_genai_v1_generation_watch_proto_msgTypes[1]
+	mi := &file_anovel_genai_v0_generation_watch_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -112,7 +112,7 @@ func (x *GenerationWatchResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GenerationWatchResponse.ProtoReflect.Descriptor instead.
 func (*GenerationWatchResponse) Descriptor() ([]byte, []int) {
-	return file_anovel_genai_v1_generation_watch_proto_rawDescGZIP(), []int{1}
+	return file_anovel_genai_v0_generation_watch_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *GenerationWatchResponse) GetGeneration() *Generation {
@@ -122,44 +122,44 @@ func (x *GenerationWatchResponse) GetGeneration() *Generation {
 	return nil
 }
 
-var File_anovel_genai_v1_generation_watch_proto protoreflect.FileDescriptor
+var File_anovel_genai_v0_generation_watch_proto protoreflect.FileDescriptor
 
-const file_anovel_genai_v1_generation_watch_proto_rawDesc = "" +
+const file_anovel_genai_v0_generation_watch_proto_rawDesc = "" +
 	"\n" +
-	"&anovel/genai/v1/generation_watch.proto\x12\x0fanovel.genai.v1\x1a anovel/genai/v1/generation.proto\"C\n" +
+	"&anovel/genai/v0/generation_watch.proto\x12\x0fanovel.genai.v0\x1a anovel/genai/v0/generation.proto\"C\n" +
 	"\x16GenerationWatchRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x19\n" +
 	"\bowner_id\x18\x02 \x01(\tR\aownerId\"V\n" +
 	"\x17GenerationWatchResponse\x12;\n" +
 	"\n" +
-	"generation\x18\x01 \x01(\v2\x1b.anovel.genai.v1.GenerationR\n" +
+	"generation\x18\x01 \x01(\v2\x1b.anovel.genai.v0.GenerationR\n" +
 	"generation2\x80\x01\n" +
 	"\x16GenerationWatchService\x12f\n" +
-	"\x0fGenerationWatch\x12'.anovel.genai.v1.GenerationWatchRequest\x1a(.anovel.genai.v1.GenerationWatchResponse0\x01B\xde\x01\n" +
-	"\x13com.anovel.genai.v1B\x14GenerationWatchProtoP\x01ZSgithub.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v1;genaiv1\xa2\x02\x03AGX\xaa\x02\x0fAnovel.Genai.V1\xca\x02\x0fAnovel\\Genai\\V1\xe2\x02\x1bAnovel\\Genai\\V1\\GPBMetadata\xea\x02\x11Anovel::Genai::V1b\x06proto3"
+	"\x0fGenerationWatch\x12'.anovel.genai.v0.GenerationWatchRequest\x1a(.anovel.genai.v0.GenerationWatchResponse0\x01B\xd6\x01\n" +
+	"\x13com.anovel.genai.v0B\x14GenerationWatchProtoP\x01ZKgithub.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v0\xa2\x02\x03AGV\xaa\x02\x0fAnovel.Genai.V0\xca\x02\x0fAnovel\\Genai\\V0\xe2\x02\x1bAnovel\\Genai\\V0\\GPBMetadata\xea\x02\x11Anovel::Genai::V0b\x06proto3"
 
 var (
-	file_anovel_genai_v1_generation_watch_proto_rawDescOnce sync.Once
-	file_anovel_genai_v1_generation_watch_proto_rawDescData []byte
+	file_anovel_genai_v0_generation_watch_proto_rawDescOnce sync.Once
+	file_anovel_genai_v0_generation_watch_proto_rawDescData []byte
 )
 
-func file_anovel_genai_v1_generation_watch_proto_rawDescGZIP() []byte {
-	file_anovel_genai_v1_generation_watch_proto_rawDescOnce.Do(func() {
-		file_anovel_genai_v1_generation_watch_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_anovel_genai_v1_generation_watch_proto_rawDesc), len(file_anovel_genai_v1_generation_watch_proto_rawDesc)))
+func file_anovel_genai_v0_generation_watch_proto_rawDescGZIP() []byte {
+	file_anovel_genai_v0_generation_watch_proto_rawDescOnce.Do(func() {
+		file_anovel_genai_v0_generation_watch_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_anovel_genai_v0_generation_watch_proto_rawDesc), len(file_anovel_genai_v0_generation_watch_proto_rawDesc)))
 	})
-	return file_anovel_genai_v1_generation_watch_proto_rawDescData
+	return file_anovel_genai_v0_generation_watch_proto_rawDescData
 }
 
-var file_anovel_genai_v1_generation_watch_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
-var file_anovel_genai_v1_generation_watch_proto_goTypes = []any{
-	(*GenerationWatchRequest)(nil),  // 0: anovel.genai.v1.GenerationWatchRequest
-	(*GenerationWatchResponse)(nil), // 1: anovel.genai.v1.GenerationWatchResponse
-	(*Generation)(nil),              // 2: anovel.genai.v1.Generation
+var file_anovel_genai_v0_generation_watch_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_anovel_genai_v0_generation_watch_proto_goTypes = []any{
+	(*GenerationWatchRequest)(nil),  // 0: anovel.genai.v0.GenerationWatchRequest
+	(*GenerationWatchResponse)(nil), // 1: anovel.genai.v0.GenerationWatchResponse
+	(*Generation)(nil),              // 2: anovel.genai.v0.Generation
 }
-var file_anovel_genai_v1_generation_watch_proto_depIdxs = []int32{
-	2, // 0: anovel.genai.v1.GenerationWatchResponse.generation:type_name -> anovel.genai.v1.Generation
-	0, // 1: anovel.genai.v1.GenerationWatchService.GenerationWatch:input_type -> anovel.genai.v1.GenerationWatchRequest
-	1, // 2: anovel.genai.v1.GenerationWatchService.GenerationWatch:output_type -> anovel.genai.v1.GenerationWatchResponse
+var file_anovel_genai_v0_generation_watch_proto_depIdxs = []int32{
+	2, // 0: anovel.genai.v0.GenerationWatchResponse.generation:type_name -> anovel.genai.v0.Generation
+	0, // 1: anovel.genai.v0.GenerationWatchService.GenerationWatch:input_type -> anovel.genai.v0.GenerationWatchRequest
+	1, // 2: anovel.genai.v0.GenerationWatchService.GenerationWatch:output_type -> anovel.genai.v0.GenerationWatchResponse
 	2, // [2:3] is the sub-list for method output_type
 	1, // [1:2] is the sub-list for method input_type
 	1, // [1:1] is the sub-list for extension type_name
@@ -167,27 +167,27 @@ var file_anovel_genai_v1_generation_watch_proto_depIdxs = []int32{
 	0, // [0:1] is the sub-list for field type_name
 }
 
-func init() { file_anovel_genai_v1_generation_watch_proto_init() }
-func file_anovel_genai_v1_generation_watch_proto_init() {
-	if File_anovel_genai_v1_generation_watch_proto != nil {
+func init() { file_anovel_genai_v0_generation_watch_proto_init() }
+func file_anovel_genai_v0_generation_watch_proto_init() {
+	if File_anovel_genai_v0_generation_watch_proto != nil {
 		return
 	}
-	file_anovel_genai_v1_generation_proto_init()
+	file_anovel_genai_v0_generation_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_anovel_genai_v1_generation_watch_proto_rawDesc), len(file_anovel_genai_v1_generation_watch_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_anovel_genai_v0_generation_watch_proto_rawDesc), len(file_anovel_genai_v0_generation_watch_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   2,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_anovel_genai_v1_generation_watch_proto_goTypes,
-		DependencyIndexes: file_anovel_genai_v1_generation_watch_proto_depIdxs,
-		MessageInfos:      file_anovel_genai_v1_generation_watch_proto_msgTypes,
+		GoTypes:           file_anovel_genai_v0_generation_watch_proto_goTypes,
+		DependencyIndexes: file_anovel_genai_v0_generation_watch_proto_depIdxs,
+		MessageInfos:      file_anovel_genai_v0_generation_watch_proto_msgTypes,
 	}.Build()
-	File_anovel_genai_v1_generation_watch_proto = out.File
-	file_anovel_genai_v1_generation_watch_proto_goTypes = nil
-	file_anovel_genai_v1_generation_watch_proto_depIdxs = nil
+	File_anovel_genai_v0_generation_watch_proto = out.File
+	file_anovel_genai_v0_generation_watch_proto_goTypes = nil
+	file_anovel_genai_v0_generation_watch_proto_depIdxs = nil
 }

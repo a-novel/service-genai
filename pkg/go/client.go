@@ -8,43 +8,43 @@ import (
 
 	golibproto "github.com/a-novel-kit/golib/grpcf/proto/gen"
 
-	genaiv1 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v1"
+	genaiv0 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v0"
 )
 
 // Request, response, and entity types are re-exported from the service's generated
 // protobuf definitions, so callers never import the service's internal packages.
 type (
-	StatusRequest  = genaiv1.StatusRequest
-	StatusResponse = genaiv1.StatusResponse
-	QueueDepth     = genaiv1.QueueDepth
+	StatusRequest  = genaiv0.StatusRequest
+	StatusResponse = genaiv0.StatusResponse
+	QueueDepth     = genaiv0.QueueDepth
 
-	GenerationSubmitRequest  = genaiv1.GenerationSubmitRequest
-	GenerationSubmitResponse = genaiv1.GenerationSubmitResponse
-	GenerationGetRequest     = genaiv1.GenerationGetRequest
-	GenerationGetResponse    = genaiv1.GenerationGetResponse
-	GenerationCancelRequest  = genaiv1.GenerationCancelRequest
-	GenerationCancelResponse = genaiv1.GenerationCancelResponse
-	GenerationWatchRequest   = genaiv1.GenerationWatchRequest
-	GenerationWatchResponse  = genaiv1.GenerationWatchResponse
+	GenerationSubmitRequest  = genaiv0.GenerationSubmitRequest
+	GenerationSubmitResponse = genaiv0.GenerationSubmitResponse
+	GenerationGetRequest     = genaiv0.GenerationGetRequest
+	GenerationGetResponse    = genaiv0.GenerationGetResponse
+	GenerationCancelRequest  = genaiv0.GenerationCancelRequest
+	GenerationCancelResponse = genaiv0.GenerationCancelResponse
+	GenerationWatchRequest   = genaiv0.GenerationWatchRequest
+	GenerationWatchResponse  = genaiv0.GenerationWatchResponse
 
-	UsageQueryRequest  = genaiv1.UsageQueryRequest
-	UsageQueryResponse = genaiv1.UsageQueryResponse
-	UsageGroup         = genaiv1.UsageGroup
-	UsageTotal         = genaiv1.UsageTotal
+	UsageQueryRequest  = genaiv0.UsageQueryRequest
+	UsageQueryResponse = genaiv0.UsageQueryResponse
+	UsageGroup         = genaiv0.UsageGroup
+	UsageTotal         = genaiv0.UsageTotal
 
-	Generation       = genaiv1.Generation
-	GenerationStatus = genaiv1.GenerationStatus
+	Generation       = genaiv0.Generation
+	GenerationStatus = genaiv0.GenerationStatus
 )
 
 // Terminal statuses, re-exported so a caller can decide whether to keep waiting without importing
 // the generated package.
 const (
-	GenerationStatusPending   = genaiv1.GenerationStatus_GENERATION_STATUS_PENDING
-	GenerationStatusRunning   = genaiv1.GenerationStatus_GENERATION_STATUS_RUNNING
-	GenerationStatusSucceeded = genaiv1.GenerationStatus_GENERATION_STATUS_SUCCEEDED
-	GenerationStatusFailed    = genaiv1.GenerationStatus_GENERATION_STATUS_FAILED
-	GenerationStatusAbandoned = genaiv1.GenerationStatus_GENERATION_STATUS_ABANDONED
-	GenerationStatusCancelled = genaiv1.GenerationStatus_GENERATION_STATUS_CANCELLED
+	GenerationStatusPending   = genaiv0.GenerationStatus_GENERATION_STATUS_PENDING
+	GenerationStatusRunning   = genaiv0.GenerationStatus_GENERATION_STATUS_RUNNING
+	GenerationStatusSucceeded = genaiv0.GenerationStatus_GENERATION_STATUS_SUCCEEDED
+	GenerationStatusFailed    = genaiv0.GenerationStatus_GENERATION_STATUS_FAILED
+	GenerationStatusAbandoned = genaiv0.GenerationStatus_GENERATION_STATUS_ABANDONED
+	GenerationStatusCancelled = genaiv0.GenerationStatus_GENERATION_STATUS_CANCELLED
 )
 
 // A Client issues the service's gRPC calls, one method per RPC. Construct one
@@ -88,12 +88,12 @@ type Client interface {
 
 type client struct {
 	golibproto.EchoServiceClient
-	genaiv1.StatusServiceClient
-	genaiv1.GenerationSubmitServiceClient
-	genaiv1.GenerationGetServiceClient
-	genaiv1.GenerationCancelServiceClient
-	genaiv1.GenerationWatchServiceClient
-	genaiv1.UsageQueryServiceClient
+	genaiv0.StatusServiceClient
+	genaiv0.GenerationSubmitServiceClient
+	genaiv0.GenerationGetServiceClient
+	genaiv0.GenerationCancelServiceClient
+	genaiv0.GenerationWatchServiceClient
+	genaiv0.UsageQueryServiceClient
 
 	conn *grpc.ClientConn
 }
@@ -113,12 +113,12 @@ func NewClient(addr string, opts ...grpc.DialOption) (Client, error) {
 
 	return &client{
 		EchoServiceClient:             golibproto.NewEchoServiceClient(conn),
-		StatusServiceClient:           genaiv1.NewStatusServiceClient(conn),
-		GenerationSubmitServiceClient: genaiv1.NewGenerationSubmitServiceClient(conn),
-		GenerationGetServiceClient:    genaiv1.NewGenerationGetServiceClient(conn),
-		GenerationCancelServiceClient: genaiv1.NewGenerationCancelServiceClient(conn),
-		GenerationWatchServiceClient:  genaiv1.NewGenerationWatchServiceClient(conn),
-		UsageQueryServiceClient:       genaiv1.NewUsageQueryServiceClient(conn),
+		StatusServiceClient:           genaiv0.NewStatusServiceClient(conn),
+		GenerationSubmitServiceClient: genaiv0.NewGenerationSubmitServiceClient(conn),
+		GenerationGetServiceClient:    genaiv0.NewGenerationGetServiceClient(conn),
+		GenerationCancelServiceClient: genaiv0.NewGenerationCancelServiceClient(conn),
+		GenerationWatchServiceClient:  genaiv0.NewGenerationWatchServiceClient(conn),
+		UsageQueryServiceClient:       genaiv0.NewUsageQueryServiceClient(conn),
 		conn:                          conn,
 	}, nil
 }

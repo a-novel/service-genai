@@ -12,7 +12,7 @@ import (
 	"github.com/a-novel-kit/golib/otel"
 
 	"github.com/a-novel/service-genai/internal/core"
-	genaiv1 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v1"
+	genaiv0 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v0"
 )
 
 // GrpcUsageQueryService is the service dependency of [GrpcUsageQuery].
@@ -22,7 +22,7 @@ type GrpcUsageQueryService interface {
 
 // GrpcUsageQuery is the gRPC handler for the UsageQuery RPC.
 type GrpcUsageQuery struct {
-	genaiv1.UnimplementedUsageQueryServiceServer
+	genaiv0.UnimplementedUsageQueryServiceServer
 
 	service GrpcUsageQueryService
 }
@@ -32,8 +32,8 @@ func NewGrpcUsageQuery(service GrpcUsageQueryService) *GrpcUsageQuery {
 }
 
 func (handler *GrpcUsageQuery) UsageQuery(
-	ctx context.Context, request *genaiv1.UsageQueryRequest,
-) (*genaiv1.UsageQueryResponse, error) {
+	ctx context.Context, request *genaiv0.UsageQueryRequest,
+) (*genaiv0.UsageQueryResponse, error) {
 	ctx, span := otel.Tracer().Start(ctx, "grpc.UsageQuery")
 	defer span.End()
 
@@ -78,10 +78,10 @@ func (handler *GrpcUsageQuery) UsageQuery(
 		return nil, status.Error(codes.Internal, "internal error")
 	}
 
-	groups := make([]*genaiv1.UsageGroup, 0, len(result.Groups))
+	groups := make([]*genaiv0.UsageGroup, 0, len(result.Groups))
 
 	for _, group := range result.Groups {
-		groups = append(groups, &genaiv1.UsageGroup{
+		groups = append(groups, &genaiv0.UsageGroup{
 			Purpose:           group.Purpose,
 			Model:             group.Model,
 			InputTokens:       group.InputTokens,
@@ -92,9 +92,9 @@ func (handler *GrpcUsageQuery) UsageQuery(
 		})
 	}
 
-	return otel.ReportSuccess(span, &genaiv1.UsageQueryResponse{
+	return otel.ReportSuccess(span, &genaiv0.UsageQueryResponse{
 		Groups: groups,
-		Total: &genaiv1.UsageTotal{
+		Total: &genaiv0.UsageTotal{
 			InputTokens:       result.Total.InputTokens,
 			CachedInputTokens: result.Total.CachedInputTokens,
 			OutputTokens:      result.Total.OutputTokens,

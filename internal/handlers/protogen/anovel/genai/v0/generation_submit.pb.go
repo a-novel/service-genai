@@ -2,9 +2,9 @@
 // versions:
 // 	protoc-gen-go v1.36.11
 // 	protoc        (unknown)
-// source: anovel/genai/v1/generation_submit.proto
+// source: anovel/genai/v0/generation_submit.proto
 
-package genaiv1
+package v0
 
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
@@ -46,7 +46,7 @@ type GenerationSubmitRequest struct {
 
 func (x *GenerationSubmitRequest) Reset() {
 	*x = GenerationSubmitRequest{}
-	mi := &file_anovel_genai_v1_generation_submit_proto_msgTypes[0]
+	mi := &file_anovel_genai_v0_generation_submit_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -58,7 +58,7 @@ func (x *GenerationSubmitRequest) String() string {
 func (*GenerationSubmitRequest) ProtoMessage() {}
 
 func (x *GenerationSubmitRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_anovel_genai_v1_generation_submit_proto_msgTypes[0]
+	mi := &file_anovel_genai_v0_generation_submit_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -71,7 +71,7 @@ func (x *GenerationSubmitRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GenerationSubmitRequest.ProtoReflect.Descriptor instead.
 func (*GenerationSubmitRequest) Descriptor() ([]byte, []int) {
-	return file_anovel_genai_v1_generation_submit_proto_rawDescGZIP(), []int{0}
+	return file_anovel_genai_v0_generation_submit_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *GenerationSubmitRequest) GetOwnerId() string {
@@ -123,7 +123,7 @@ type GenerationSubmitResponse struct {
 
 func (x *GenerationSubmitResponse) Reset() {
 	*x = GenerationSubmitResponse{}
-	mi := &file_anovel_genai_v1_generation_submit_proto_msgTypes[1]
+	mi := &file_anovel_genai_v0_generation_submit_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -135,7 +135,7 @@ func (x *GenerationSubmitResponse) String() string {
 func (*GenerationSubmitResponse) ProtoMessage() {}
 
 func (x *GenerationSubmitResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_anovel_genai_v1_generation_submit_proto_msgTypes[1]
+	mi := &file_anovel_genai_v0_generation_submit_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -148,7 +148,7 @@ func (x *GenerationSubmitResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GenerationSubmitResponse.ProtoReflect.Descriptor instead.
 func (*GenerationSubmitResponse) Descriptor() ([]byte, []int) {
-	return file_anovel_genai_v1_generation_submit_proto_rawDescGZIP(), []int{1}
+	return file_anovel_genai_v0_generation_submit_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *GenerationSubmitResponse) GetGeneration() *Generation {
@@ -165,11 +165,11 @@ func (x *GenerationSubmitResponse) GetCreated() bool {
 	return false
 }
 
-var File_anovel_genai_v1_generation_submit_proto protoreflect.FileDescriptor
+var File_anovel_genai_v0_generation_submit_proto protoreflect.FileDescriptor
 
-const file_anovel_genai_v1_generation_submit_proto_rawDesc = "" +
+const file_anovel_genai_v0_generation_submit_proto_rawDesc = "" +
 	"\n" +
-	"'anovel/genai/v1/generation_submit.proto\x12\x0fanovel.genai.v1\x1a anovel/genai/v1/generation.proto\"\xb4\x01\n" +
+	"'anovel/genai/v0/generation_submit.proto\x12\x0fanovel.genai.v0\x1a anovel/genai/v0/generation.proto\"\xb4\x01\n" +
 	"\x17GenerationSubmitRequest\x12\x19\n" +
 	"\bowner_id\x18\x01 \x01(\tR\aownerId\x12\x18\n" +
 	"\apurpose\x18\x02 \x01(\tR\apurpose\x12'\n" +
@@ -178,35 +178,35 @@ const file_anovel_genai_v1_generation_submit_proto_rawDesc = "" +
 	"\fmax_attempts\x18\x05 \x01(\x05R\vmaxAttempts\"q\n" +
 	"\x18GenerationSubmitResponse\x12;\n" +
 	"\n" +
-	"generation\x18\x01 \x01(\v2\x1b.anovel.genai.v1.GenerationR\n" +
+	"generation\x18\x01 \x01(\v2\x1b.anovel.genai.v0.GenerationR\n" +
 	"generation\x12\x18\n" +
 	"\acreated\x18\x02 \x01(\bR\acreated2\x82\x01\n" +
 	"\x17GenerationSubmitService\x12g\n" +
-	"\x10GenerationSubmit\x12(.anovel.genai.v1.GenerationSubmitRequest\x1a).anovel.genai.v1.GenerationSubmitResponseB\xdf\x01\n" +
-	"\x13com.anovel.genai.v1B\x15GenerationSubmitProtoP\x01ZSgithub.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v1;genaiv1\xa2\x02\x03AGX\xaa\x02\x0fAnovel.Genai.V1\xca\x02\x0fAnovel\\Genai\\V1\xe2\x02\x1bAnovel\\Genai\\V1\\GPBMetadata\xea\x02\x11Anovel::Genai::V1b\x06proto3"
+	"\x10GenerationSubmit\x12(.anovel.genai.v0.GenerationSubmitRequest\x1a).anovel.genai.v0.GenerationSubmitResponseB\xd7\x01\n" +
+	"\x13com.anovel.genai.v0B\x15GenerationSubmitProtoP\x01ZKgithub.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v0\xa2\x02\x03AGV\xaa\x02\x0fAnovel.Genai.V0\xca\x02\x0fAnovel\\Genai\\V0\xe2\x02\x1bAnovel\\Genai\\V0\\GPBMetadata\xea\x02\x11Anovel::Genai::V0b\x06proto3"
 
 var (
-	file_anovel_genai_v1_generation_submit_proto_rawDescOnce sync.Once
-	file_anovel_genai_v1_generation_submit_proto_rawDescData []byte
+	file_anovel_genai_v0_generation_submit_proto_rawDescOnce sync.Once
+	file_anovel_genai_v0_generation_submit_proto_rawDescData []byte
 )
 
-func file_anovel_genai_v1_generation_submit_proto_rawDescGZIP() []byte {
-	file_anovel_genai_v1_generation_submit_proto_rawDescOnce.Do(func() {
-		file_anovel_genai_v1_generation_submit_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_anovel_genai_v1_generation_submit_proto_rawDesc), len(file_anovel_genai_v1_generation_submit_proto_rawDesc)))
+func file_anovel_genai_v0_generation_submit_proto_rawDescGZIP() []byte {
+	file_anovel_genai_v0_generation_submit_proto_rawDescOnce.Do(func() {
+		file_anovel_genai_v0_generation_submit_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_anovel_genai_v0_generation_submit_proto_rawDesc), len(file_anovel_genai_v0_generation_submit_proto_rawDesc)))
 	})
-	return file_anovel_genai_v1_generation_submit_proto_rawDescData
+	return file_anovel_genai_v0_generation_submit_proto_rawDescData
 }
 
-var file_anovel_genai_v1_generation_submit_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
-var file_anovel_genai_v1_generation_submit_proto_goTypes = []any{
-	(*GenerationSubmitRequest)(nil),  // 0: anovel.genai.v1.GenerationSubmitRequest
-	(*GenerationSubmitResponse)(nil), // 1: anovel.genai.v1.GenerationSubmitResponse
-	(*Generation)(nil),               // 2: anovel.genai.v1.Generation
+var file_anovel_genai_v0_generation_submit_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_anovel_genai_v0_generation_submit_proto_goTypes = []any{
+	(*GenerationSubmitRequest)(nil),  // 0: anovel.genai.v0.GenerationSubmitRequest
+	(*GenerationSubmitResponse)(nil), // 1: anovel.genai.v0.GenerationSubmitResponse
+	(*Generation)(nil),               // 2: anovel.genai.v0.Generation
 }
-var file_anovel_genai_v1_generation_submit_proto_depIdxs = []int32{
-	2, // 0: anovel.genai.v1.GenerationSubmitResponse.generation:type_name -> anovel.genai.v1.Generation
-	0, // 1: anovel.genai.v1.GenerationSubmitService.GenerationSubmit:input_type -> anovel.genai.v1.GenerationSubmitRequest
-	1, // 2: anovel.genai.v1.GenerationSubmitService.GenerationSubmit:output_type -> anovel.genai.v1.GenerationSubmitResponse
+var file_anovel_genai_v0_generation_submit_proto_depIdxs = []int32{
+	2, // 0: anovel.genai.v0.GenerationSubmitResponse.generation:type_name -> anovel.genai.v0.Generation
+	0, // 1: anovel.genai.v0.GenerationSubmitService.GenerationSubmit:input_type -> anovel.genai.v0.GenerationSubmitRequest
+	1, // 2: anovel.genai.v0.GenerationSubmitService.GenerationSubmit:output_type -> anovel.genai.v0.GenerationSubmitResponse
 	2, // [2:3] is the sub-list for method output_type
 	1, // [1:2] is the sub-list for method input_type
 	1, // [1:1] is the sub-list for extension type_name
@@ -214,27 +214,27 @@ var file_anovel_genai_v1_generation_submit_proto_depIdxs = []int32{
 	0, // [0:1] is the sub-list for field type_name
 }
 
-func init() { file_anovel_genai_v1_generation_submit_proto_init() }
-func file_anovel_genai_v1_generation_submit_proto_init() {
-	if File_anovel_genai_v1_generation_submit_proto != nil {
+func init() { file_anovel_genai_v0_generation_submit_proto_init() }
+func file_anovel_genai_v0_generation_submit_proto_init() {
+	if File_anovel_genai_v0_generation_submit_proto != nil {
 		return
 	}
-	file_anovel_genai_v1_generation_proto_init()
+	file_anovel_genai_v0_generation_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_anovel_genai_v1_generation_submit_proto_rawDesc), len(file_anovel_genai_v1_generation_submit_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_anovel_genai_v0_generation_submit_proto_rawDesc), len(file_anovel_genai_v0_generation_submit_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   2,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_anovel_genai_v1_generation_submit_proto_goTypes,
-		DependencyIndexes: file_anovel_genai_v1_generation_submit_proto_depIdxs,
-		MessageInfos:      file_anovel_genai_v1_generation_submit_proto_msgTypes,
+		GoTypes:           file_anovel_genai_v0_generation_submit_proto_goTypes,
+		DependencyIndexes: file_anovel_genai_v0_generation_submit_proto_depIdxs,
+		MessageInfos:      file_anovel_genai_v0_generation_submit_proto_msgTypes,
 	}.Build()
-	File_anovel_genai_v1_generation_submit_proto = out.File
-	file_anovel_genai_v1_generation_submit_proto_goTypes = nil
-	file_anovel_genai_v1_generation_submit_proto_depIdxs = nil
+	File_anovel_genai_v0_generation_submit_proto = out.File
+	file_anovel_genai_v0_generation_submit_proto_goTypes = nil
+	file_anovel_genai_v0_generation_submit_proto_depIdxs = nil
 }

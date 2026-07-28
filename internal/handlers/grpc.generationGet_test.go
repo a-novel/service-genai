@@ -12,7 +12,7 @@ import (
 	"github.com/a-novel/service-genai/internal/dao"
 	"github.com/a-novel/service-genai/internal/handlers"
 	handlersmocks "github.com/a-novel/service-genai/internal/handlers/mocks"
-	genaiv1 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v1"
+	genaiv0 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v0"
 )
 
 func TestGrpcGenerationGet(t *testing.T) {
@@ -26,7 +26,7 @@ func TestGrpcGenerationGet(t *testing.T) {
 	testCases := []struct {
 		name string
 
-		request *genaiv1.GenerationGetRequest
+		request *genaiv0.GenerationGetRequest
 
 		serviceMock *serviceMock
 
@@ -35,7 +35,7 @@ func TestGrpcGenerationGet(t *testing.T) {
 		{
 			name: "Success",
 
-			request:     &genaiv1.GenerationGetRequest{Id: testGenerationID, OwnerId: testOwnerID},
+			request:     &genaiv0.GenerationGetRequest{Id: testGenerationID, OwnerId: testOwnerID},
 			serviceMock: &serviceMock{resp: testGeneration()},
 		},
 		{
@@ -43,7 +43,7 @@ func TestGrpcGenerationGet(t *testing.T) {
 			// existence. A distinct "forbidden" would confirm it is real.
 			name: "Error/NotFound",
 
-			request:     &genaiv1.GenerationGetRequest{Id: testGenerationID, OwnerId: testOwnerID},
+			request:     &genaiv0.GenerationGetRequest{Id: testGenerationID, OwnerId: testOwnerID},
 			serviceMock: &serviceMock{err: core.ErrGenerationNotFound},
 
 			expectStatus: codes.NotFound,
@@ -51,21 +51,21 @@ func TestGrpcGenerationGet(t *testing.T) {
 		{
 			name: "Error/InvalidGenerationID",
 
-			request: &genaiv1.GenerationGetRequest{Id: "not-a-uuid", OwnerId: testOwnerID},
+			request: &genaiv0.GenerationGetRequest{Id: "not-a-uuid", OwnerId: testOwnerID},
 
 			expectStatus: codes.InvalidArgument,
 		},
 		{
 			name: "Error/InvalidOwnerID",
 
-			request: &genaiv1.GenerationGetRequest{Id: testGenerationID, OwnerId: "not-a-uuid"},
+			request: &genaiv0.GenerationGetRequest{Id: testGenerationID, OwnerId: "not-a-uuid"},
 
 			expectStatus: codes.InvalidArgument,
 		},
 		{
 			name: "Error/Internal",
 
-			request:     &genaiv1.GenerationGetRequest{Id: testGenerationID, OwnerId: testOwnerID},
+			request:     &genaiv0.GenerationGetRequest{Id: testGenerationID, OwnerId: testOwnerID},
 			serviceMock: &serviceMock{err: errFoo},
 
 			expectStatus: codes.Internal,
@@ -98,7 +98,7 @@ func TestGrpcGenerationGet(t *testing.T) {
 			require.Equal(t, testGenerationID, response.GetGeneration().GetId())
 			// The request and the provider call identifier are never published: the caller already
 			// has its request, and the identifier is this service's recovery mechanism.
-			require.Equal(t, genaiv1.GenerationStatus_GENERATION_STATUS_PENDING, response.GetGeneration().GetStatus())
+			require.Equal(t, genaiv0.GenerationStatus_GENERATION_STATUS_PENDING, response.GetGeneration().GetStatus())
 
 			service.AssertExpectations(t)
 		})

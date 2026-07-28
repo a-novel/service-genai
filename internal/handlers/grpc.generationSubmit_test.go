@@ -12,7 +12,7 @@ import (
 	"github.com/a-novel/service-genai/internal/core"
 	"github.com/a-novel/service-genai/internal/handlers"
 	handlersmocks "github.com/a-novel/service-genai/internal/handlers/mocks"
-	genaiv1 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v1"
+	genaiv0 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v0"
 )
 
 func TestGrpcGenerationSubmit(t *testing.T) {
@@ -26,7 +26,7 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 	testCases := []struct {
 		name string
 
-		request *genaiv1.GenerationSubmitRequest
+		request *genaiv0.GenerationSubmitRequest
 
 		serviceMock *serviceMock
 
@@ -36,7 +36,7 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 		{
 			name: "Success",
 
-			request: &genaiv1.GenerationSubmitRequest{
+			request: &genaiv0.GenerationSubmitRequest{
 				OwnerId: testOwnerID, Purpose: "studio.generation", IdempotencyKey: "key",
 				Request: []byte(`{"model": "a-model"}`), MaxAttempts: 3,
 			},
@@ -51,7 +51,7 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 			// flight, and is told that is what happened.
 			name: "Success/Replayed",
 
-			request: &genaiv1.GenerationSubmitRequest{
+			request: &genaiv0.GenerationSubmitRequest{
 				OwnerId: testOwnerID, Purpose: "studio.generation", IdempotencyKey: "key",
 				Request: []byte(`{"model": "a-model"}`),
 			},
@@ -62,7 +62,7 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 		{
 			name: "Error/InvalidOwnerID",
 
-			request: &genaiv1.GenerationSubmitRequest{
+			request: &genaiv0.GenerationSubmitRequest{
 				OwnerId: "not-a-uuid", Purpose: "studio.generation", IdempotencyKey: "key",
 				Request: []byte(`{"model": "a-model"}`),
 			},
@@ -73,7 +73,7 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 			// An unkeyed submission of a priced call is refused rather than defaulted.
 			name: "Error/NoIdempotencyKey",
 
-			request: &genaiv1.GenerationSubmitRequest{
+			request: &genaiv0.GenerationSubmitRequest{
 				OwnerId: testOwnerID, Purpose: "studio.generation",
 				Request: []byte(`{"model": "a-model"}`),
 			},
@@ -86,7 +86,7 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 			// answer a question the caller never asked.
 			name: "Error/IdempotencyConflict",
 
-			request: &genaiv1.GenerationSubmitRequest{
+			request: &genaiv0.GenerationSubmitRequest{
 				OwnerId: testOwnerID, Purpose: "studio.generation", IdempotencyKey: "key",
 				Request: []byte(`{"model": "something else"}`),
 			},
@@ -97,7 +97,7 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 		{
 			name: "Error/Internal",
 
-			request: &genaiv1.GenerationSubmitRequest{
+			request: &genaiv0.GenerationSubmitRequest{
 				OwnerId: testOwnerID, Purpose: "studio.generation", IdempotencyKey: "key",
 				Request: []byte(`{"model": "a-model"}`),
 			},

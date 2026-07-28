@@ -2,9 +2,9 @@
 // versions:
 // 	protoc-gen-go v1.36.11
 // 	protoc        (unknown)
-// source: anovel/genai/v1/status.proto
+// source: anovel/genai/v0/status.proto
 
-package genaiv1
+package v0
 
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
@@ -58,11 +58,11 @@ func (x DependencyStatus) String() string {
 }
 
 func (DependencyStatus) Descriptor() protoreflect.EnumDescriptor {
-	return file_anovel_genai_v1_status_proto_enumTypes[0].Descriptor()
+	return file_anovel_genai_v0_status_proto_enumTypes[0].Descriptor()
 }
 
 func (DependencyStatus) Type() protoreflect.EnumType {
-	return &file_anovel_genai_v1_status_proto_enumTypes[0]
+	return &file_anovel_genai_v0_status_proto_enumTypes[0]
 }
 
 func (x DependencyStatus) Number() protoreflect.EnumNumber {
@@ -71,7 +71,7 @@ func (x DependencyStatus) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use DependencyStatus.Descriptor instead.
 func (DependencyStatus) EnumDescriptor() ([]byte, []int) {
-	return file_anovel_genai_v1_status_proto_rawDescGZIP(), []int{0}
+	return file_anovel_genai_v0_status_proto_rawDescGZIP(), []int{0}
 }
 
 // DependencyHealth reports the health of a single external dependency.
@@ -81,14 +81,14 @@ func (DependencyStatus) EnumDescriptor() ([]byte, []int) {
 // operators.
 type DependencyHealth struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Status        DependencyStatus       `protobuf:"varint,1,opt,name=status,proto3,enum=anovel.genai.v1.DependencyStatus" json:"status,omitempty"`
+	Status        DependencyStatus       `protobuf:"varint,1,opt,name=status,proto3,enum=anovel.genai.v0.DependencyStatus" json:"status,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *DependencyHealth) Reset() {
 	*x = DependencyHealth{}
-	mi := &file_anovel_genai_v1_status_proto_msgTypes[0]
+	mi := &file_anovel_genai_v0_status_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -100,7 +100,7 @@ func (x *DependencyHealth) String() string {
 func (*DependencyHealth) ProtoMessage() {}
 
 func (x *DependencyHealth) ProtoReflect() protoreflect.Message {
-	mi := &file_anovel_genai_v1_status_proto_msgTypes[0]
+	mi := &file_anovel_genai_v0_status_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -113,7 +113,7 @@ func (x *DependencyHealth) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DependencyHealth.ProtoReflect.Descriptor instead.
 func (*DependencyHealth) Descriptor() ([]byte, []int) {
-	return file_anovel_genai_v1_status_proto_rawDescGZIP(), []int{0}
+	return file_anovel_genai_v0_status_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *DependencyHealth) GetStatus() DependencyStatus {
@@ -140,7 +140,7 @@ type QueueDepth struct {
 
 func (x *QueueDepth) Reset() {
 	*x = QueueDepth{}
-	mi := &file_anovel_genai_v1_status_proto_msgTypes[1]
+	mi := &file_anovel_genai_v0_status_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -152,7 +152,7 @@ func (x *QueueDepth) String() string {
 func (*QueueDepth) ProtoMessage() {}
 
 func (x *QueueDepth) ProtoReflect() protoreflect.Message {
-	mi := &file_anovel_genai_v1_status_proto_msgTypes[1]
+	mi := &file_anovel_genai_v0_status_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -165,7 +165,7 @@ func (x *QueueDepth) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QueueDepth.ProtoReflect.Descriptor instead.
 func (*QueueDepth) Descriptor() ([]byte, []int) {
-	return file_anovel_genai_v1_status_proto_rawDescGZIP(), []int{1}
+	return file_anovel_genai_v0_status_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *QueueDepth) GetPending() int64 {
@@ -191,7 +191,7 @@ type StatusRequest struct {
 
 func (x *StatusRequest) Reset() {
 	*x = StatusRequest{}
-	mi := &file_anovel_genai_v1_status_proto_msgTypes[2]
+	mi := &file_anovel_genai_v0_status_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -203,7 +203,7 @@ func (x *StatusRequest) String() string {
 func (*StatusRequest) ProtoMessage() {}
 
 func (x *StatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_anovel_genai_v1_status_proto_msgTypes[2]
+	mi := &file_anovel_genai_v0_status_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -216,7 +216,7 @@ func (x *StatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatusRequest.ProtoReflect.Descriptor instead.
 func (*StatusRequest) Descriptor() ([]byte, []int) {
-	return file_anovel_genai_v1_status_proto_rawDescGZIP(), []int{2}
+	return file_anovel_genai_v0_status_proto_rawDescGZIP(), []int{2}
 }
 
 // StatusResponse reports the health of each dependency the service relies on, and the backlog.
@@ -232,7 +232,7 @@ type StatusResponse struct {
 
 func (x *StatusResponse) Reset() {
 	*x = StatusResponse{}
-	mi := &file_anovel_genai_v1_status_proto_msgTypes[3]
+	mi := &file_anovel_genai_v0_status_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -244,7 +244,7 @@ func (x *StatusResponse) String() string {
 func (*StatusResponse) ProtoMessage() {}
 
 func (x *StatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_anovel_genai_v1_status_proto_msgTypes[3]
+	mi := &file_anovel_genai_v0_status_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -257,7 +257,7 @@ func (x *StatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatusResponse.ProtoReflect.Descriptor instead.
 func (*StatusResponse) Descriptor() ([]byte, []int) {
-	return file_anovel_genai_v1_status_proto_rawDescGZIP(), []int{3}
+	return file_anovel_genai_v0_status_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *StatusResponse) GetPostgres() *DependencyHealth {
@@ -274,56 +274,56 @@ func (x *StatusResponse) GetQueue() *QueueDepth {
 	return nil
 }
 
-var File_anovel_genai_v1_status_proto protoreflect.FileDescriptor
+var File_anovel_genai_v0_status_proto protoreflect.FileDescriptor
 
-const file_anovel_genai_v1_status_proto_rawDesc = "" +
+const file_anovel_genai_v0_status_proto_rawDesc = "" +
 	"\n" +
-	"\x1canovel/genai/v1/status.proto\x12\x0fanovel.genai.v1\"X\n" +
+	"\x1canovel/genai/v0/status.proto\x12\x0fanovel.genai.v0\"X\n" +
 	"\x10DependencyHealth\x129\n" +
-	"\x06status\x18\x01 \x01(\x0e2!.anovel.genai.v1.DependencyStatusR\x06statusJ\x04\b\x02\x10\x03R\x03err\"c\n" +
+	"\x06status\x18\x01 \x01(\x0e2!.anovel.genai.v0.DependencyStatusR\x06statusJ\x04\b\x02\x10\x03R\x03err\"c\n" +
 	"\n" +
 	"QueueDepth\x12\x18\n" +
 	"\apending\x18\x01 \x01(\x03R\apending\x12;\n" +
 	"\x1aoldest_pending_age_seconds\x18\x02 \x01(\x01R\x17oldestPendingAgeSeconds\"\x0f\n" +
 	"\rStatusRequest\"\x82\x01\n" +
 	"\x0eStatusResponse\x12=\n" +
-	"\bpostgres\x18\x01 \x01(\v2!.anovel.genai.v1.DependencyHealthR\bpostgres\x121\n" +
-	"\x05queue\x18\x02 \x01(\v2\x1b.anovel.genai.v1.QueueDepthR\x05queue*k\n" +
+	"\bpostgres\x18\x01 \x01(\v2!.anovel.genai.v0.DependencyHealthR\bpostgres\x121\n" +
+	"\x05queue\x18\x02 \x01(\v2\x1b.anovel.genai.v0.QueueDepthR\x05queue*k\n" +
 	"\x10DependencyStatus\x12!\n" +
 	"\x1dDEPENDENCY_STATUS_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14DEPENDENCY_STATUS_UP\x10\x01\x12\x1a\n" +
 	"\x16DEPENDENCY_STATUS_DOWN\x10\x022Z\n" +
 	"\rStatusService\x12I\n" +
-	"\x06Status\x12\x1e.anovel.genai.v1.StatusRequest\x1a\x1f.anovel.genai.v1.StatusResponseB\xd5\x01\n" +
-	"\x13com.anovel.genai.v1B\vStatusProtoP\x01ZSgithub.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v1;genaiv1\xa2\x02\x03AGX\xaa\x02\x0fAnovel.Genai.V1\xca\x02\x0fAnovel\\Genai\\V1\xe2\x02\x1bAnovel\\Genai\\V1\\GPBMetadata\xea\x02\x11Anovel::Genai::V1b\x06proto3"
+	"\x06Status\x12\x1e.anovel.genai.v0.StatusRequest\x1a\x1f.anovel.genai.v0.StatusResponseB\xcd\x01\n" +
+	"\x13com.anovel.genai.v0B\vStatusProtoP\x01ZKgithub.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v0\xa2\x02\x03AGV\xaa\x02\x0fAnovel.Genai.V0\xca\x02\x0fAnovel\\Genai\\V0\xe2\x02\x1bAnovel\\Genai\\V0\\GPBMetadata\xea\x02\x11Anovel::Genai::V0b\x06proto3"
 
 var (
-	file_anovel_genai_v1_status_proto_rawDescOnce sync.Once
-	file_anovel_genai_v1_status_proto_rawDescData []byte
+	file_anovel_genai_v0_status_proto_rawDescOnce sync.Once
+	file_anovel_genai_v0_status_proto_rawDescData []byte
 )
 
-func file_anovel_genai_v1_status_proto_rawDescGZIP() []byte {
-	file_anovel_genai_v1_status_proto_rawDescOnce.Do(func() {
-		file_anovel_genai_v1_status_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_anovel_genai_v1_status_proto_rawDesc), len(file_anovel_genai_v1_status_proto_rawDesc)))
+func file_anovel_genai_v0_status_proto_rawDescGZIP() []byte {
+	file_anovel_genai_v0_status_proto_rawDescOnce.Do(func() {
+		file_anovel_genai_v0_status_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_anovel_genai_v0_status_proto_rawDesc), len(file_anovel_genai_v0_status_proto_rawDesc)))
 	})
-	return file_anovel_genai_v1_status_proto_rawDescData
+	return file_anovel_genai_v0_status_proto_rawDescData
 }
 
-var file_anovel_genai_v1_status_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_anovel_genai_v1_status_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
-var file_anovel_genai_v1_status_proto_goTypes = []any{
-	(DependencyStatus)(0),    // 0: anovel.genai.v1.DependencyStatus
-	(*DependencyHealth)(nil), // 1: anovel.genai.v1.DependencyHealth
-	(*QueueDepth)(nil),       // 2: anovel.genai.v1.QueueDepth
-	(*StatusRequest)(nil),    // 3: anovel.genai.v1.StatusRequest
-	(*StatusResponse)(nil),   // 4: anovel.genai.v1.StatusResponse
+var file_anovel_genai_v0_status_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_anovel_genai_v0_status_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_anovel_genai_v0_status_proto_goTypes = []any{
+	(DependencyStatus)(0),    // 0: anovel.genai.v0.DependencyStatus
+	(*DependencyHealth)(nil), // 1: anovel.genai.v0.DependencyHealth
+	(*QueueDepth)(nil),       // 2: anovel.genai.v0.QueueDepth
+	(*StatusRequest)(nil),    // 3: anovel.genai.v0.StatusRequest
+	(*StatusResponse)(nil),   // 4: anovel.genai.v0.StatusResponse
 }
-var file_anovel_genai_v1_status_proto_depIdxs = []int32{
-	0, // 0: anovel.genai.v1.DependencyHealth.status:type_name -> anovel.genai.v1.DependencyStatus
-	1, // 1: anovel.genai.v1.StatusResponse.postgres:type_name -> anovel.genai.v1.DependencyHealth
-	2, // 2: anovel.genai.v1.StatusResponse.queue:type_name -> anovel.genai.v1.QueueDepth
-	3, // 3: anovel.genai.v1.StatusService.Status:input_type -> anovel.genai.v1.StatusRequest
-	4, // 4: anovel.genai.v1.StatusService.Status:output_type -> anovel.genai.v1.StatusResponse
+var file_anovel_genai_v0_status_proto_depIdxs = []int32{
+	0, // 0: anovel.genai.v0.DependencyHealth.status:type_name -> anovel.genai.v0.DependencyStatus
+	1, // 1: anovel.genai.v0.StatusResponse.postgres:type_name -> anovel.genai.v0.DependencyHealth
+	2, // 2: anovel.genai.v0.StatusResponse.queue:type_name -> anovel.genai.v0.QueueDepth
+	3, // 3: anovel.genai.v0.StatusService.Status:input_type -> anovel.genai.v0.StatusRequest
+	4, // 4: anovel.genai.v0.StatusService.Status:output_type -> anovel.genai.v0.StatusResponse
 	4, // [4:5] is the sub-list for method output_type
 	3, // [3:4] is the sub-list for method input_type
 	3, // [3:3] is the sub-list for extension type_name
@@ -331,27 +331,27 @@ var file_anovel_genai_v1_status_proto_depIdxs = []int32{
 	0, // [0:3] is the sub-list for field type_name
 }
 
-func init() { file_anovel_genai_v1_status_proto_init() }
-func file_anovel_genai_v1_status_proto_init() {
-	if File_anovel_genai_v1_status_proto != nil {
+func init() { file_anovel_genai_v0_status_proto_init() }
+func file_anovel_genai_v0_status_proto_init() {
+	if File_anovel_genai_v0_status_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_anovel_genai_v1_status_proto_rawDesc), len(file_anovel_genai_v1_status_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_anovel_genai_v0_status_proto_rawDesc), len(file_anovel_genai_v0_status_proto_rawDesc)),
 			NumEnums:      1,
 			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_anovel_genai_v1_status_proto_goTypes,
-		DependencyIndexes: file_anovel_genai_v1_status_proto_depIdxs,
-		EnumInfos:         file_anovel_genai_v1_status_proto_enumTypes,
-		MessageInfos:      file_anovel_genai_v1_status_proto_msgTypes,
+		GoTypes:           file_anovel_genai_v0_status_proto_goTypes,
+		DependencyIndexes: file_anovel_genai_v0_status_proto_depIdxs,
+		EnumInfos:         file_anovel_genai_v0_status_proto_enumTypes,
+		MessageInfos:      file_anovel_genai_v0_status_proto_msgTypes,
 	}.Build()
-	File_anovel_genai_v1_status_proto = out.File
-	file_anovel_genai_v1_status_proto_goTypes = nil
-	file_anovel_genai_v1_status_proto_depIdxs = nil
+	File_anovel_genai_v0_status_proto = out.File
+	file_anovel_genai_v0_status_proto_goTypes = nil
+	file_anovel_genai_v0_status_proto_depIdxs = nil
 }

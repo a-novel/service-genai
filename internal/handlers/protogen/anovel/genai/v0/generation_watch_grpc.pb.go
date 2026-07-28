@@ -2,9 +2,9 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.2
 // - protoc             (unknown)
-// source: anovel/genai/v1/generation_watch.proto
+// source: anovel/genai/v0/generation_watch.proto
 
-package genaiv1
+package v0
 
 import (
 	context "context"
@@ -19,7 +19,7 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	GenerationWatchService_GenerationWatch_FullMethodName = "/anovel.genai.v1.GenerationWatchService/GenerationWatch"
+	GenerationWatchService_GenerationWatch_FullMethodName = "/anovel.genai.v0.GenerationWatchService/GenerationWatch"
 )
 
 // GenerationWatchServiceClient is the client API for GenerationWatchService service.
@@ -131,7 +131,7 @@ type GenerationWatchService_GenerationWatchServer = grpc.ServerStreamingServer[G
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var GenerationWatchService_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "anovel.genai.v1.GenerationWatchService",
+	ServiceName: "anovel.genai.v0.GenerationWatchService",
 	HandlerType: (*GenerationWatchServiceServer)(nil),
 	Methods:     []grpc.MethodDesc{},
 	Streams: []grpc.StreamDesc{
@@ -141,5 +141,5 @@ var GenerationWatchService_ServiceDesc = grpc.ServiceDesc{
 			ServerStreams: true,
 		},
 	},
-	Metadata: "anovel/genai/v1/generation_watch.proto",
+	Metadata: "anovel/genai/v0/generation_watch.proto",
 }

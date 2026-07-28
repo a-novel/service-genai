@@ -16,7 +16,7 @@ import (
 	"github.com/a-novel/service-genai/internal/dao"
 	"github.com/a-novel/service-genai/internal/handlers"
 	handlersmocks "github.com/a-novel/service-genai/internal/handlers/mocks"
-	genaiv1 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v1"
+	genaiv0 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v0"
 )
 
 // watchStream records what the handler sent, standing in for a connected caller.
@@ -29,12 +29,12 @@ type watchStream struct {
 	grpc.ServerStream
 
 	ctx  context.Context
-	sent []*genaiv1.GenerationWatchResponse
+	sent []*genaiv0.GenerationWatchResponse
 }
 
 func (stream *watchStream) Context() context.Context { return stream.ctx }
 
-func (stream *watchStream) Send(response *genaiv1.GenerationWatchResponse) error {
+func (stream *watchStream) Send(response *genaiv0.GenerationWatchResponse) error {
 	stream.sent = append(stream.sent, response)
 
 	return nil
@@ -66,7 +66,7 @@ func TestGrpcGenerationWatch(t *testing.T) {
 	testCases := []struct {
 		name string
 
-		request *genaiv1.GenerationWatchRequest
+		request *genaiv0.GenerationWatchRequest
 
 		serviceMock *serviceMock
 
@@ -79,7 +79,7 @@ func TestGrpcGenerationWatch(t *testing.T) {
 			// Already terminal on subscribe: one snapshot, then the stream ends rather than idling.
 			name: "Success/AlreadySettled",
 
-			request:     &genaiv1.GenerationWatchRequest{Id: testGenerationID, OwnerId: testOwnerID},
+			request:     &genaiv0.GenerationWatchRequest{Id: testGenerationID, OwnerId: testOwnerID},
 			serviceMock: &serviceMock{reads: []*dao.Generation{settledGeneration()}},
 
 			expectSent: 1,
@@ -87,7 +87,7 @@ func TestGrpcGenerationWatch(t *testing.T) {
 		{
 			name: "Success/StreamsUntilTerminal",
 
-			request: &genaiv1.GenerationWatchRequest{Id: testGenerationID, OwnerId: testOwnerID},
+			request: &genaiv0.GenerationWatchRequest{Id: testGenerationID, OwnerId: testOwnerID},
 			serviceMock: &serviceMock{reads: []*dao.Generation{
 				testGeneration(), settledGeneration(),
 			}},
@@ -99,7 +99,7 @@ func TestGrpcGenerationWatch(t *testing.T) {
 			// make the stream a poll the caller pays for.
 			name: "Success/SendsNothingForAnUnchangedTick",
 
-			request: &genaiv1.GenerationWatchRequest{Id: testGenerationID, OwnerId: testOwnerID},
+			request: &genaiv0.GenerationWatchRequest{Id: testGenerationID, OwnerId: testOwnerID},
 			serviceMock: &serviceMock{reads: []*dao.Generation{
 				testGeneration(), testGeneration(), settledGeneration(),
 			}},
@@ -111,7 +111,7 @@ func TestGrpcGenerationWatch(t *testing.T) {
 			// not.
 			name: "Error/NotFound",
 
-			request:     &genaiv1.GenerationWatchRequest{Id: testGenerationID, OwnerId: testOwnerID},
+			request:     &genaiv0.GenerationWatchRequest{Id: testGenerationID, OwnerId: testOwnerID},
 			serviceMock: &serviceMock{err: core.ErrGenerationNotFound},
 
 			expectStatus: codes.NotFound,
@@ -119,7 +119,7 @@ func TestGrpcGenerationWatch(t *testing.T) {
 		{
 			name: "Error/InvalidOwnerID",
 
-			request: &genaiv1.GenerationWatchRequest{Id: testGenerationID, OwnerId: "not-a-uuid"},
+			request: &genaiv0.GenerationWatchRequest{Id: testGenerationID, OwnerId: "not-a-uuid"},
 
 			expectStatus: codes.InvalidArgument,
 		},
@@ -158,7 +158,7 @@ func TestGrpcGenerationWatch(t *testing.T) {
 			// The last snapshot is always the terminal one, so a caller that reads only the final
 			// message still has the outcome.
 			last := stream.sent[len(stream.sent)-1]
-			require.Equal(t, genaiv1.GenerationStatus_GENERATION_STATUS_SUCCEEDED, last.GetGeneration().GetStatus())
+			require.Equal(t, genaiv0.GenerationStatus_GENERATION_STATUS_SUCCEEDED, last.GetGeneration().GetStatus())
 
 			service.AssertExpectations(t)
 		})
@@ -184,7 +184,7 @@ func TestGrpcGenerationWatchStopsWhenTheCallerGoesAway(t *testing.T) {
 	stream := &watchStream{ctx: ctx}
 
 	err := handlers.NewGrpcGenerationWatch(handlers.NewGrpcGenerationGet(service)).
-		GenerationWatch(&genaiv1.GenerationWatchRequest{Id: testGenerationID, OwnerId: testOwnerID}, stream)
+		GenerationWatch(&genaiv0.GenerationWatchRequest{Id: testGenerationID, OwnerId: testOwnerID}, stream)
 	require.ErrorIs(t, err, context.Canceled)
 
 	// The subscribe snapshot still went out before the caller went away.

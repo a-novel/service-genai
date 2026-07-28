@@ -26,7 +26,7 @@ eval "$(a-novel run env service-genai)"
 Check it is alive:
 
 ```bash
-grpcurl -plaintext localhost:${SERVICE_GENAI_GRPC_PORT} anovel.genai.v1.StatusService/Status
+grpcurl -plaintext localhost:${SERVICE_GENAI_GRPC_PORT} anovel.genai.v0.StatusService/Status
 ```
 
 There is no REST surface: callers are other services on the internal network, so a second transport would be a second contract to keep in step with no consumer asking for it.

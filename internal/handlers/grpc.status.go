@@ -10,7 +10,7 @@ import (
 	"github.com/a-novel-kit/golib/postgres"
 
 	"github.com/a-novel/service-genai/internal/core"
-	genaiv1 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v1"
+	genaiv0 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v0"
 )
 
 // NewGrpcHealthStatus converts an error into a DependencyHealth proto message,
@@ -19,12 +19,12 @@ import (
 // The error itself is dropped from the message: a raw dependency error routinely embeds
 // internal hostnames, ports, or schema names. The health probe records it on its trace
 // span, where operators can read it.
-func NewGrpcHealthStatus(err error) *genaiv1.DependencyHealth {
-	return &genaiv1.DependencyHealth{
+func NewGrpcHealthStatus(err error) *genaiv0.DependencyHealth {
+	return &genaiv0.DependencyHealth{
 		Status: lo.Ternary(
 			err == nil,
-			genaiv1.DependencyStatus_DEPENDENCY_STATUS_UP,
-			genaiv1.DependencyStatus_DEPENDENCY_STATUS_DOWN,
+			genaiv0.DependencyStatus_DEPENDENCY_STATUS_UP,
+			genaiv0.DependencyStatus_DEPENDENCY_STATUS_DOWN,
 		),
 	}
 }
@@ -37,7 +37,7 @@ type GrpcStatusQueueDepthService interface {
 // GrpcStatus is the gRPC handler for the Status RPC, reporting the health of the
 // service's external dependencies and the queue's own backlog.
 type GrpcStatus struct {
-	genaiv1.UnimplementedStatusServiceServer
+	genaiv0.UnimplementedStatusServiceServer
 
 	queueDepth GrpcStatusQueueDepthService
 }
@@ -47,11 +47,11 @@ func NewGrpcStatus(queueDepth GrpcStatusQueueDepthService) *GrpcStatus {
 }
 
 // Status probes each dependency and returns its current health, with the backlog beside it.
-func (handler *GrpcStatus) Status(ctx context.Context, _ *genaiv1.StatusRequest) (*genaiv1.StatusResponse, error) {
+func (handler *GrpcStatus) Status(ctx context.Context, _ *genaiv0.StatusRequest) (*genaiv0.StatusResponse, error) {
 	ctx, span := otel.Tracer().Start(ctx, "grpc.Status")
 	defer span.End()
 
-	response := &genaiv1.StatusResponse{
+	response := &genaiv0.StatusResponse{
 		Postgres: NewGrpcHealthStatus(handler.reportPostgres(ctx)),
 	}
 
@@ -64,7 +64,7 @@ func (handler *GrpcStatus) Status(ctx context.Context, _ *genaiv1.StatusRequest)
 		return response, nil
 	}
 
-	response.Queue = &genaiv1.QueueDepth{
+	response.Queue = &genaiv0.QueueDepth{
 		Pending:                 depth.Pending,
 		OldestPendingAgeSeconds: depth.OldestPendingAge.Seconds(),
 	}
