@@ -395,6 +395,9 @@ func (worker *Worker) logFailure(
 	generation *dao.Generation,
 	reason string,
 ) {
+	ctx, span := otel.Tracer().Start(ctx, "core.Worker.logFailure")
+	defer span.End()
+
 	if reason == "" {
 		reason = "provider returned no failure reason"
 	}
