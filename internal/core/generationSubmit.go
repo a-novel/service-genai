@@ -30,8 +30,8 @@ type GenerationSubmitRequest struct {
 	// IdempotencyKey deduplicates repeat submissions within one owner. Required — an unkeyed
 	// submission of a priced call is a bug, not a default.
 	IdempotencyKey string `validate:"required,notblank,max=255"`
-	// Request is the provider payload, forwarded verbatim. The max mirrors [RequestSizeCeiling].
-	Request json.RawMessage `validate:"required,max=1048576"`
+	// Request is the provider payload, forwarded verbatim. [RequestSizeCeiling] bounds its bytes.
+	Request json.RawMessage `validate:"required"`
 	// MaxAttempts caps the runs this generation gets. Zero means one, the right floor for a priced
 	// call.
 	MaxAttempts int16 `validate:"min=0,max=10"`
@@ -115,6 +115,15 @@ func validateSubmit(request *GenerationSubmitRequest) error {
 	err := validate.Struct(request)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalidRequest, err)
+	}
+
+	if len(request.Request) > RequestSizeCeiling {
+		return fmt.Errorf(
+			"%w: request contains %d bytes, limit is %d",
+			ErrInvalidRequest,
+			len(request.Request),
+			RequestSizeCeiling,
+		)
 	}
 
 	// The payload is opaque, but it still has to be an object: the provider adapter merges its own

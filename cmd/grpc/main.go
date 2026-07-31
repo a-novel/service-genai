@@ -83,6 +83,7 @@ func main() {
 			PollInterval: cfg.Worker.PollInterval,
 			Retention:    cfg.Retention,
 		},
+		cfg.Log,
 		provider,
 		postgres.NewTransactor(nil),
 		core.WorkerDaos{

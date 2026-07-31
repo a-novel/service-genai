@@ -15,8 +15,12 @@ import (
 	"github.com/a-novel/service-genai/internal/lib"
 )
 
-// Data-access dependencies of [Worker].
+// Dependencies of [Worker].
 type (
+	// WorkerLogger records failures whose provider details must remain server-side.
+	WorkerLogger interface {
+		Err(ctx context.Context, msg string, fields ...any)
+	}
 	// WorkerClaimDao takes a batch of pending generations.
 	WorkerClaimDao interface {
 		Exec(ctx context.Context, request *dao.GenerationClaimRequest) ([]*dao.Generation, error)
@@ -72,6 +76,7 @@ type WorkerConfig struct {
 type Worker struct {
 	config WorkerConfig
 
+	logger     WorkerLogger
 	provider   lib.Provider
 	transactor transaction.Transactor
 	daos       WorkerDaos
@@ -79,6 +84,7 @@ type Worker struct {
 
 func NewWorker(
 	config WorkerConfig,
+	logger WorkerLogger,
 	provider lib.Provider,
 	transactor transaction.Transactor,
 	daos WorkerDaos,
@@ -92,7 +98,13 @@ func NewWorker(
 		return nil, fmt.Errorf("%w: lease %s exceeds %s", ErrInvalidRequest, config.Lease, ClaimLeaseCeiling)
 	}
 
-	return &Worker{config: config, provider: provider, transactor: transactor, daos: daos}, nil
+	if logger == nil {
+		return nil, fmt.Errorf("%w: logger is required", ErrInvalidRequest)
+	}
+
+	return &Worker{
+		config: config, logger: logger, provider: provider, transactor: transactor, daos: daos,
+	}, nil
 }
 
 // RunOnce claims a batch and runs it to completion, reporting whether it found work. It is the
@@ -247,6 +259,10 @@ func (worker *Worker) settle(ctx context.Context, generation *dao.Generation, ca
 		attribute.String("generation.status", string(status)),
 	)
 
+	if status == dao.GenerationStatusFailed {
+		worker.logFailure(ctx, generation, call.Reason)
+	}
+
 	return otel.ReportSuccess(span, worker.transactor.WithinTx(ctx, func(ctx context.Context) error {
 		_, err := worker.daos.Settle.Exec(ctx, &dao.GenerationSettleRequest{
 			ID:        generation.ID,
@@ -330,7 +346,9 @@ func (worker *Worker) fail(ctx context.Context, generation *dao.Generation, caus
 		return otel.ReportSuccess(span, cause)
 	}
 
-	reason := cause.Error()
+	worker.logFailure(ctx, generation, cause.Error())
+
+	reason := generationFailedReason
 
 	_, err := worker.daos.Settle.Exec(ctx, &dao.GenerationSettleRequest{
 		ID:        generation.ID,
@@ -355,18 +373,36 @@ func settleOutcomeOf(call *lib.ProviderCall) (dao.GenerationStatus, *string) {
 	case lib.ProviderCallSucceeded:
 		return dao.GenerationStatusSucceeded, nil
 	case lib.ProviderCallCancelled:
-		reason := call.Reason
-
-		return dao.GenerationStatusCancelled, nonEmpty(reason)
+		return dao.GenerationStatusCancelled, nonEmpty(generationCancelledReason)
 	case lib.ProviderCallIncomplete, lib.ProviderCallFailed:
-		return dao.GenerationStatusFailed, nonEmpty(call.Reason)
+		return dao.GenerationStatusFailed, nonEmpty(generationFailedReason)
 	case lib.ProviderCallRunning:
 		fallthrough
 	default:
 		// Unreachable: await only returns on a terminal state. Settling as failed rather than
 		// panicking keeps a provider that grows a new status from stranding the generation.
-		return dao.GenerationStatusFailed, nonEmpty("provider reported a non-terminal state")
+		return dao.GenerationStatusFailed, nonEmpty(generationFailedReason)
 	}
+}
+
+const (
+	generationCancelledReason = "generation cancelled"
+	generationFailedReason    = "generation failed"
+)
+
+func (worker *Worker) logFailure(
+	ctx context.Context,
+	generation *dao.Generation,
+	reason string,
+) {
+	if reason == "" {
+		reason = "provider returned no failure reason"
+	}
+
+	worker.logger.Err(
+		ctx,
+		fmt.Sprintf("generation %s failed: %s", generation.ID, reason),
+	)
 }
 
 func nonEmpty(value string) *string {

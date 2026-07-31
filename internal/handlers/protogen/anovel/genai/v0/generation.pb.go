@@ -112,7 +112,8 @@ type Generation struct {
 	MaxAttempts int32 `protobuf:"varint,6,opt,name=max_attempts,json=maxAttempts,proto3" json:"max_attempts,omitempty"`
 	// Output is the provider's response on success, as JSON bytes. Empty until it succeeds.
 	Output []byte `protobuf:"bytes,7,opt,name=output,proto3" json:"output,omitempty"`
-	// Error is the serialised failure on a terminal failure. Empty otherwise.
+	// Error is a stable, opaque service-owned failure reason on a terminal failure. Provider and
+	// internal details remain in server-side logs. Empty otherwise.
 	Error string `protobuf:"bytes,8,opt,name=error,proto3" json:"error,omitempty"`
 	// Creation timestamp, formatted as RFC 3339.
 	CreatedAt string `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`

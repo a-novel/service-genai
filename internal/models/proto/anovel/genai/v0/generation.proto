@@ -22,7 +22,8 @@ message Generation {
   int32 max_attempts = 6;
   // Output is the provider's response on success, as JSON bytes. Empty until it succeeds.
   bytes output = 7;
-  // Error is the serialised failure on a terminal failure. Empty otherwise.
+  // Error is a stable, opaque service-owned failure reason on a terminal failure. Provider and
+  // internal details remain in server-side logs. Empty otherwise.
   string error = 8;
   // Creation timestamp, formatted as RFC 3339.
   string created_at = 9;

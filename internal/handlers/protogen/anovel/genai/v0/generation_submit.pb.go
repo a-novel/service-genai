@@ -35,7 +35,8 @@ type GenerationSubmitRequest struct {
 	// with a different request is a conflict, not a replay.
 	IdempotencyKey string `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
 	// Request is the provider payload, as JSON bytes, forwarded verbatim. The caller owns every
-	// parameter in it; this service merges in only what crash-safety requires.
+	// parameter in it; this service merges in only what crash-safety requires. At most 3,688,000
+	// bytes.
 	Request []byte `protobuf:"bytes,4,opt,name=request,proto3" json:"request,omitempty"`
 	// MaxAttempts caps the runs this generation gets. Zero means one, the right floor for a priced
 	// call.
