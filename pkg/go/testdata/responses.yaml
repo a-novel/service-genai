@@ -1,0 +1,47 @@
+- name: Success/TopLevel
+  output:
+    output_text: complete
+  expect: complete
+
+- name: Success/Nested
+  output:
+    output:
+      - content:
+          - type: output_text
+            text: com
+      - content:
+          - type: output_text
+            text: plete
+  expect: complete
+
+- name: Success/TopLevelPrecedesNested
+  output:
+    output_text: complete
+    output:
+      - content:
+          - type: output_text
+            text: duplicate
+  expect: complete
+
+- name: Error/RefusalPrecedesText
+  output:
+    output_text: ignored
+    output:
+      - content:
+          - type: output_text
+            text: also ignored
+          - type: refusal
+            refusal: private explanation
+  expect_error: refused
+
+- name: Error/Empty
+  expect_error: empty
+
+- name: Error/Malformed
+  raw: "{"
+  expect_error: malformed
+
+- name: Error/TextMissing
+  output:
+    output: []
+  expect_error: missing
