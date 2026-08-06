@@ -22,7 +22,8 @@ message GenerationSubmitRequest {
   // with a different request is a conflict, not a replay.
   string idempotency_key = 3;
   // Request is the provider payload, as JSON bytes, forwarded verbatim. The caller owns every
-  // parameter in it; this service merges in only what crash-safety requires.
+  // parameter in it; this service merges in only what crash-safety requires. At most 3,688,000
+  // bytes.
   bytes request = 4;
   // MaxAttempts caps the runs this generation gets. Zero means one, the right floor for a priced
   // call.

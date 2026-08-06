@@ -14,6 +14,15 @@ import (
 	"github.com/a-novel/service-genai/internal/dao"
 )
 
+func providerRequestWithSize(size int) json.RawMessage {
+	const (
+		prefix = "{\"input\":\""
+		suffix = "\"}"
+	)
+
+	return json.RawMessage(prefix + strings.Repeat("x", size-len(prefix)-len(suffix)) + suffix)
+}
+
 func TestGenerationSubmit(t *testing.T) {
 	t.Parallel()
 
@@ -131,12 +140,26 @@ func TestGenerationSubmit(t *testing.T) {
 			expectErr: core.ErrInvalidRequest,
 		},
 		{
+			name: "Success/RequestAtCeiling",
+
+			request: &core.GenerationSubmitRequest{
+				OwnerID: owner, Purpose: "studio.generation", IdempotencyKey: "key",
+				Request: providerRequestWithSize(core.RequestSizeCeiling),
+			},
+			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{
+				Generation: &dao.Generation{}, Created: true,
+			}},
+
+			expectMaxAttempts: 1,
+			expectCreated:     true,
+		},
+		{
 			// Refused here rather than at the transport, so the caller gets an error it can act on.
 			name: "Error/RequestTooLarge",
 
 			request: &core.GenerationSubmitRequest{
 				OwnerID: owner, Purpose: "studio.generation", IdempotencyKey: "key",
-				Request: json.RawMessage(`{"a": "` + strings.Repeat("x", core.RequestSizeCeiling) + `"}`),
+				Request: providerRequestWithSize(core.RequestSizeCeiling + 1),
 			},
 
 			expectErr: core.ErrInvalidRequest,

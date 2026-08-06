@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -30,6 +31,14 @@ const (
 // testResumeID stands in for an identifier a previous run already recorded.
 var testResumeID = "resp_resumed"
 
+type recordingWorkerLogger struct {
+	messages []string
+}
+
+func (logger *recordingWorkerLogger) Err(_ context.Context, msg string, _ ...any) {
+	logger.messages = append(logger.messages, msg)
+}
+
 func testWorkerConfig() core.WorkerConfig {
 	return core.WorkerConfig{
 		ID:           testWorkerID,
@@ -43,6 +52,7 @@ func testWorkerConfig() core.WorkerConfig {
 // workerMocks is every dependency a worker takes, kept together so a case scripts one and asserts
 // on the rest without rebuilding the set.
 type workerMocks struct {
+	logger   *recordingWorkerLogger
 	provider *libmocks.MockProvider
 	claim    *coremocks.MockWorkerClaimDao
 	record   *coremocks.MockWorkerRecordProviderCallDao
@@ -55,6 +65,7 @@ func newWorkerMocks(t *testing.T) *workerMocks {
 	t.Helper()
 
 	return &workerMocks{
+		logger:   &recordingWorkerLogger{},
 		provider: libmocks.NewMockProvider(t),
 		claim:    coremocks.NewMockWorkerClaimDao(t),
 		record:   coremocks.NewMockWorkerRecordProviderCallDao(t),
@@ -75,7 +86,7 @@ func (mocks *workerMocks) worker(t *testing.T) *core.Worker {
 	t.Helper()
 
 	worker, err := core.NewWorker(
-		testWorkerConfig(), mocks.provider, transactiontest.NewTransactor(), mocks.daos(),
+		testWorkerConfig(), mocks.logger, mocks.provider, transactiontest.NewTransactor(), mocks.daos(),
 	)
 	if err != nil {
 		panic(err)
@@ -447,6 +458,67 @@ func TestWorker(t *testing.T) {
 	}
 }
 
+func TestWorkerFailureDetailsStayServerSide(t *testing.T) {
+	t.Parallel()
+
+	const privateDetail = "provider response contained private-detail-123"
+
+	testCases := []struct {
+		name     string
+		call     *lib.ProviderCall
+		startErr error
+	}{
+		{
+			name: "TerminalProviderFailure",
+			call: &lib.ProviderCall{
+				ID: testCallID, State: lib.ProviderCallFailed, Reason: privateDetail,
+			},
+		},
+		{
+			name:     "InternalWorkerFailure",
+			startErr: errors.New(privateDetail),
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			generation := claimedGeneration(nil, false, 1)
+			mocks := newWorkerMocks(t)
+
+			mocks.claim.EXPECT().
+				Exec(mock.Anything, mock.Anything).
+				Return([]*dao.Generation{generation}, nil)
+			mocks.provider.EXPECT().Start(mock.Anything, mock.Anything).
+				Return(testCase.call, testCase.startErr)
+
+			if testCase.call != nil {
+				mocks.record.EXPECT().Exec(mock.Anything, mock.Anything).Return(generation, nil)
+			}
+
+			mocks.settle.EXPECT().Exec(
+				mock.Anything,
+				mock.MatchedBy(func(request *dao.GenerationSettleRequest) bool {
+					return request.Status == dao.GenerationStatusFailed &&
+						request.Error != nil &&
+						*request.Error == "generation failed" &&
+						!strings.Contains(*request.Error, privateDetail)
+				}),
+			).Return(generation, nil)
+
+			worked, err := mocks.worker(t).RunOnce(t.Context())
+			require.NoError(t, err)
+			require.True(t, worked)
+			require.Len(t, mocks.logger.messages, 1)
+			require.Contains(t, mocks.logger.messages[0], generation.ID.String())
+			require.Contains(t, mocks.logger.messages[0], privateDetail)
+
+			mocks.assertExpectations(t)
+		})
+	}
+}
+
 // Shutting down mid-run must neither settle nor requeue. Settling throws away an operation already
 // paid for; a requeue clears the identifier that lets the next run resume it. Leaving the claim
 // alone is what makes a rolling deploy free — the lease lapses, the reaper recovers the generation
@@ -557,7 +629,8 @@ func TestNewWorker(t *testing.T) {
 			mocks := newWorkerMocks(t)
 
 			worker, err := core.NewWorker(
-				testCase.config, mocks.provider, transactiontest.NewTransactor(), mocks.daos(),
+				testCase.config, mocks.logger, mocks.provider,
+				transactiontest.NewTransactor(), mocks.daos(),
 			)
 			require.ErrorIs(t, err, testCase.expectErr)
 

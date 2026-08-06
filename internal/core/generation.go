@@ -16,10 +16,15 @@ const (
 	ClaimLeaseCeiling = time.Hour
 	// ClaimLimitCeiling bounds one claim, so a single worker cannot take the whole queue.
 	ClaimLimitCeiling = 100
-	// RequestSizeCeiling bounds a submitted provider payload, mirroring the max on
-	// [GenerationSubmitRequest.Request]. gRPC's own default message limit is 4 MiB; refusing earlier
-	// turns a transport failure into an error a caller can act on.
-	RequestSizeCeiling = 1 << 20
+	// RequestSizeCeiling bounds a submitted provider payload. It estimates OpenAI's 922,000-token
+	// maximum input using the rough English heuristic of four characters per token and one byte per
+	// ASCII character, leaving the model's separate 128,000-token output allowance untouched.
+	// Tokenization and UTF-8 width vary, so this is a transport and storage bound, not a promise that
+	// every payload below it fits every model.
+	//
+	// The ceiling also remains below gRPC's default 4 MiB receive limit, leaving room for the
+	// protobuf envelope so an oversized request reaches application validation.
+	RequestSizeCeiling = 3_688_000
 )
 
 // Errors a caller can act on. Everything else is a fault.
