@@ -40,7 +40,7 @@ COPY --from=builder /grpc /grpc
 COPY --from=builder /usr/local/bin/grpcurl /usr/local/bin/grpcurl
 
 HEALTHCHECK --interval=1s --timeout=5s --retries=10 --start-period=1s \
-  CMD grpcurl --plaintext -d '' localhost:8080 grpc.health.v1.Health/Check || exit 1
+  CMD ["grpcurl", "--plaintext", "-d", "", "localhost:8080", "grpc.health.v1.Health/Check"]
 
 ENV GRPC_PORT=8080
 
