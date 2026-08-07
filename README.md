@@ -52,7 +52,7 @@ Pin every image to the same release tag — see the [latest release](https://git
 ```yaml
 services:
   postgres-genai:
-    image: ghcr.io/a-novel/service-genai/database:v0.2.0
+    image: ghcr.io/a-novel/service-genai/database:v0.3.0
     networks: [api]
     environment:
       POSTGRES_PASSWORD: postgres
@@ -64,7 +64,7 @@ services:
       - genai-postgres-data:/var/lib/postgresql/
 
   migrations-genai:
-    image: ghcr.io/a-novel/service-genai/migrations:v0.2.0
+    image: ghcr.io/a-novel/service-genai/migrations:v0.3.0
     depends_on:
       postgres-genai: { condition: service_healthy }
     environment:
@@ -72,7 +72,7 @@ services:
     networks: [api]
 
   service-genai:
-    image: ghcr.io/a-novel/service-genai/grpc:v0.2.0
+    image: ghcr.io/a-novel/service-genai/grpc:v0.3.0
     ports: ["${SERVICE_GENAI_GRPC_PORT}:8080"] # the container always listens on 8080
     depends_on:
       postgres-genai: { condition: service_healthy }
