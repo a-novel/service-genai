@@ -1,7 +1,7 @@
 # Exposes the service as a gRPC server.
 #
 # It needs a database instance with the schema migrations already applied.
-FROM docker.io/library/golang:1.26.5-alpine AS builder
+FROM docker.io/library/golang:1.27.0-alpine AS builder
 
 # Static binary: no libc dependency, so it runs on a bare alpine base.
 ENV CGO_ENABLED=0
