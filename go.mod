@@ -1,6 +1,6 @@
 module github.com/a-novel/service-genai
 
-go 1.26.5
+go 1.27.0
 
 require (
 	github.com/a-novel-kit/golib v0.30.1
