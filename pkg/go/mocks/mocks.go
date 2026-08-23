@@ -146,8 +146,8 @@ func (_c *MockClient_GenerationCancel_Call) Run(run func(ctx context.Context, re
 	return _c
 }
 
-func (_c *MockClient_GenerationCancel_Call) Return(v *servicegenai.GenerationCancelResponse, err error) *MockClient_GenerationCancel_Call {
-	_c.Call.Return(v, err)
+func (_c *MockClient_GenerationCancel_Call) Return(generationCancelResponse *servicegenai.GenerationCancelResponse, err error) *MockClient_GenerationCancel_Call {
+	_c.Call.Return(generationCancelResponse, err)
 	return _c
 }
 
@@ -229,8 +229,8 @@ func (_c *MockClient_GenerationGet_Call) Run(run func(ctx context.Context, req *
 	return _c
 }
 
-func (_c *MockClient_GenerationGet_Call) Return(v *servicegenai.GenerationGetResponse, err error) *MockClient_GenerationGet_Call {
-	_c.Call.Return(v, err)
+func (_c *MockClient_GenerationGet_Call) Return(generationGetResponse *servicegenai.GenerationGetResponse, err error) *MockClient_GenerationGet_Call {
+	_c.Call.Return(generationGetResponse, err)
 	return _c
 }
 
@@ -312,8 +312,8 @@ func (_c *MockClient_GenerationSubmit_Call) Run(run func(ctx context.Context, re
 	return _c
 }
 
-func (_c *MockClient_GenerationSubmit_Call) Return(v *servicegenai.GenerationSubmitResponse, err error) *MockClient_GenerationSubmit_Call {
-	_c.Call.Return(v, err)
+func (_c *MockClient_GenerationSubmit_Call) Return(generationSubmitResponse *servicegenai.GenerationSubmitResponse, err error) *MockClient_GenerationSubmit_Call {
+	_c.Call.Return(generationSubmitResponse, err)
 	return _c
 }
 
@@ -478,8 +478,8 @@ func (_c *MockClient_Status_Call) Run(run func(ctx context.Context, req *service
 	return _c
 }
 
-func (_c *MockClient_Status_Call) Return(v *servicegenai.StatusResponse, err error) *MockClient_Status_Call {
-	_c.Call.Return(v, err)
+func (_c *MockClient_Status_Call) Return(statusResponse *servicegenai.StatusResponse, err error) *MockClient_Status_Call {
+	_c.Call.Return(statusResponse, err)
 	return _c
 }
 
@@ -644,8 +644,8 @@ func (_c *MockClient_UsageQuery_Call) Run(run func(ctx context.Context, req *ser
 	return _c
 }
 
-func (_c *MockClient_UsageQuery_Call) Return(v *servicegenai.UsageQueryResponse, err error) *MockClient_UsageQuery_Call {
-	_c.Call.Return(v, err)
+func (_c *MockClient_UsageQuery_Call) Return(usageQueryResponse *servicegenai.UsageQueryResponse, err error) *MockClient_UsageQuery_Call {
+	_c.Call.Return(usageQueryResponse, err)
 	return _c
 }
 
