@@ -59,6 +59,7 @@ func TestClient(t *testing.T) {
 
 	response, err := client.Status(t.Context(), &servicegenai.StatusRequest{})
 	require.NoError(t, err)
+	require.NotNil(t, response.GetPostgres())
 	require.NotNil(t, response.GetQueue())
 }
 
