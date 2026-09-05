@@ -53,6 +53,9 @@ type Client interface {
 	UnaryEcho(
 		ctx context.Context, req *golibproto.UnaryEchoRequest, opts ...grpc.CallOption,
 	) (*golibproto.UnaryEchoResponse, error)
+	// Status verifies PostgreSQL and queue inspection, returning Unavailable if either fails.
+	// A successful response includes both reports. Use UnaryEcho for process-only liveness.
+	// Callers should set a deadline on ctx.
 	Status(ctx context.Context, req *StatusRequest, opts ...grpc.CallOption) (*StatusResponse, error)
 
 	// GenerationSubmit records a generation. The idempotency key is required: a replay attaches to
