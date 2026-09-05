@@ -56,7 +56,7 @@ importers:
         version: 1.6.3(zod@4.4.3)
       '@a-novel-kit/nodelib-config':
         specifier: ^1.3.18
-        version: 1.6.3(a80cd5a95942b4869236ef71bf1e2f84)
+        version: 1.6.3(a303d4c329dffbd60426127173d15caf)
       '@a-novel-kit/nodelib-test':
         specifier: ^1.3.18
         version: 1.6.3(@a-novel-kit/nodelib-browser@1.6.3(zod@4.4.3))(msw@2.15.0(@types/node@24.13.3)(typescript@6.0.3))
@@ -80,7 +80,7 @@ importers:
         version: 5.5.6(eslint-config-prettier@10.1.8(eslint@10.9.1(jiti@2.7.0)))(eslint@10.9.1(jiti@2.7.0))(prettier@3.9.6)
       eslint-plugin-storybook:
         specifier: ^10.2.8
-        version: 10.5.10(eslint@10.9.1(jiti@2.7.0))(typescript@6.0.3)
+        version: 10.6.0(eslint@10.9.1(jiti@2.7.0))(typescript@6.0.3)
       eslint-plugin-svelte:
         specifier: ^3.19.0
         version: 3.23.0(eslint@10.9.1(jiti@2.7.0))(svelte@5.56.10(@typescript-eslint/types@8.69.0))
@@ -1862,8 +1862,8 @@ packages:
       eslint-config-prettier:
         optional: true
 
-  eslint-plugin-storybook@10.5.10:
-    resolution: {integrity: sha512-NeOu3axmhNZfRuHRciFH0a/OVgvtAJLRHAwiJjcGkPAcElNmwEPp+pqoiwxytx7kHInz7mVVoBfPwVc8kPmOLw==}
+  eslint-plugin-storybook@10.6.0:
+    resolution: {integrity: sha512-HK3yD5Nslv97buJ5JfT1xFkTOoyJgGIENmBoZZI3F8t2UpBzb/dHpKyCh5bQ8AvJWnhoM/WAtDNqyd9nq6xgcg==}
     peerDependencies:
       eslint: '>=8'
 
@@ -3123,7 +3123,7 @@ snapshots:
     dependencies:
       zod: 4.4.3
 
-  '@a-novel-kit/nodelib-config@1.6.3(a80cd5a95942b4869236ef71bf1e2f84)':
+  '@a-novel-kit/nodelib-config@1.6.3(a303d4c329dffbd60426127173d15caf)':
     dependencies:
       '@eslint/compat': 2.1.0(eslint@10.9.1(jiti@2.7.0))
       '@eslint/config-helpers': 0.7.0
@@ -3136,7 +3136,7 @@ snapshots:
       '@vitest/browser-playwright': 4.1.11(msw@2.15.0(@types/node@24.13.3)(typescript@6.0.3))(playwright@1.62.0)(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))(vitest@4.1.10)
       eslint: 10.9.1(jiti@2.7.0)
       eslint-config-prettier: 10.1.8(eslint@10.9.1(jiti@2.7.0))
-      eslint-plugin-storybook: 10.5.10(eslint@10.9.1(jiti@2.7.0))(typescript@6.0.3)
+      eslint-plugin-storybook: 10.6.0(eslint@10.9.1(jiti@2.7.0))(typescript@6.0.3)
       eslint-plugin-svelte: 3.23.0(eslint@10.9.1(jiti@2.7.0))(svelte@5.56.10(@typescript-eslint/types@8.69.0))
       estree-walker: 3.0.3
       globals: 17.12.0
@@ -4544,7 +4544,7 @@ snapshots:
     optionalDependencies:
       eslint-config-prettier: 10.1.8(eslint@10.9.1(jiti@2.7.0))
 
-  eslint-plugin-storybook@10.5.10(eslint@10.9.1(jiti@2.7.0))(typescript@6.0.3):
+  eslint-plugin-storybook@10.6.0(eslint@10.9.1(jiti@2.7.0))(typescript@6.0.3):
     dependencies:
       '@typescript-eslint/types': 8.69.0
       '@typescript-eslint/utils': 8.69.0(eslint@10.9.1(jiti@2.7.0))(typescript@6.0.3)
