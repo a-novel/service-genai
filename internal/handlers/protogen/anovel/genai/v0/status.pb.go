@@ -80,8 +80,9 @@ func (DependencyStatus) EnumDescriptor() ([]byte, []int) {
 // internal hostnames, ports, or schema names. The error is recorded on the trace span for
 // operators.
 type DependencyHealth struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Status        DependencyStatus       `protobuf:"varint,1,opt,name=status,proto3,enum=anovel.genai.v0.DependencyStatus" json:"status,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// status is UP in a successful Status response.
+	Status        DependencyStatus `protobuf:"varint,1,opt,name=status,proto3,enum=anovel.genai.v0.DependencyStatus" json:"status,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -219,12 +220,12 @@ func (*StatusRequest) Descriptor() ([]byte, []int) {
 	return file_anovel_genai_v0_status_proto_rawDescGZIP(), []int{2}
 }
 
-// StatusResponse reports the health of each dependency the service relies on, and the backlog.
+// StatusResponse contains healthy dependency reports and the measured backlog.
 type StatusResponse struct {
-	state    protoimpl.MessageState `protogen:"open.v1"`
-	Postgres *DependencyHealth      `protobuf:"bytes,1,opt,name=postgres,proto3" json:"postgres,omitempty"`
-	// queue is the backlog report. Absent when the database is unreachable, since it cannot be
-	// measured — postgres reports down in that case.
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// postgres is the successfully probed database dependency.
+	Postgres *DependencyHealth `protobuf:"bytes,1,opt,name=postgres,proto3" json:"postgres,omitempty"`
+	// queue is present in every successful response, including when the backlog is empty.
 	Queue         *QueueDepth `protobuf:"bytes,2,opt,name=queue,proto3" json:"queue,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
