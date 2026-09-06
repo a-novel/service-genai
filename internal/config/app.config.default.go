@@ -43,8 +43,9 @@ var AppPresetDefault = App{
 		Name: env.AppName,
 	},
 	Grpc: Grpc{
-		Port: env.GrpcPort,
-		Ping: env.GrpcPing,
+		Port:     env.GrpcPort,
+		Ping:     env.GrpcPing,
+		Shutdown: env.GrpcTimeoutShutdown,
 	},
 
 	Worker: Worker{

@@ -8,11 +8,12 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
-	"net"
 	"os"
 	"os/signal"
 	"strconv"
+	"sync"
 	"syscall"
 	"time"
 
@@ -40,7 +41,11 @@ import (
 
 func main() {
 	cfg := config.AppPresetDefault
-	ctx := context.Background()
+
+	processCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	ctx := processCtx
 
 	otel.SetAppName(cfg.App.Name)
 
@@ -51,7 +56,10 @@ func main() {
 		log.SetFlags(log.Flags() &^ (log.Ldate | log.Ltime))
 	}
 
-	ctx = lo.Must(postgres.NewContext(ctx, config.PostgresPresetDefault))
+	ctx = lo.Must(postgres.NewContext(ctx, cfg.Postgres))
+
+	database := lo.Must(cfg.Postgres.DB(ctx))
+	defer closeDatabase(database)
 
 	// =================================================================================================================
 	// DAO
@@ -129,8 +137,6 @@ func main() {
 		return postgres.TransferContext(ctx, rpCtx)
 	}
 
-	listenerConfig := new(net.ListenConfig)
-	listener := lo.Must(listenerConfig.Listen(ctx, "tcp", fmt.Sprintf("0.0.0.0:%d", cfg.Grpc.Port)))
 	server := grpc.NewServer(
 		grpc.StatsHandler(otelgrpc.NewServerHandler()),
 		cfg.Otel.RpcInterceptor(),
@@ -167,24 +173,41 @@ func main() {
 	// They take the boot context, not a request one: a request context dies at the server's own
 	// timeout, and a generation outlives that by design. The stagger keeps two loops sharing an
 	// interval from waking together.
-	go runLoop(ctx, cfg.Log, "generation-worker", cfg.Worker.Interval, 0, generationWorker.RunOnce)
-	go runLoop(ctx, cfg.Log, "generation-reaper", cfg.Reaper.Interval, time.Second, reaper.RunOnce)
+	var loops sync.WaitGroup
+
+	loops.Add(1)
+	go func() {
+		defer loops.Done()
+
+		runLoop(ctx, cfg.Log, "generation-worker", cfg.Worker.Interval, 0, generationWorker.RunOnce)
+	}()
+
+	loops.Add(1)
+	go func() {
+		defer loops.Done()
+
+		runLoop(ctx, cfg.Log, "generation-reaper", cfg.Reaper.Interval, time.Second, reaper.RunOnce)
+	}()
 
 	log.Println("Starting gRPC server on :" + strconv.Itoa(cfg.Grpc.Port))
 
-	go func() {
-		err := server.Serve(listener)
-		if err != nil {
-			panic(err)
-		}
-	}()
+	serveErr := grpcf.Serve(ctx, server, fmt.Sprintf("0.0.0.0:%d", cfg.Grpc.Port), cfg.Grpc.Shutdown)
 
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
+	// A serving failure must stop the process-owned loops too. Waiting here keeps their spans and
+	// database calls ahead of the deferred resource close and telemetry flush.
+	stop()
+	loops.Wait()
 
-	log.Println("Shutting down gRPC server...")
-	server.GracefulStop()
+	if serveErr != nil {
+		panic(serveErr)
+	}
+}
+
+func closeDatabase(database io.Closer) {
+	err := database.Close()
+	if err != nil {
+		log.Println("Close Postgres: " + err.Error())
+	}
 }
 
 // runLoop drives a background loop under panic recovery.

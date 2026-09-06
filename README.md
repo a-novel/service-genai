@@ -101,10 +101,11 @@ Every variable is read from the process environment. Names can be globally prefi
 
 gRPC server:
 
-| Name        | Description                                              | Default |
-| ----------- | -------------------------------------------------------- | ------- |
-| `GRPC_PORT` | Port the server listens on.                              | `8080`  |
-| `GRPC_PING` | Refresh interval for the server's internal health check. | `5s`    |
+| Name                    | Description                                              | Default |
+| ----------------------- | -------------------------------------------------------- | ------- |
+| `GRPC_PORT`             | Port the server listens on.                              | `8080`  |
+| `GRPC_PING`             | Refresh interval for the server's internal health check. | `5s`    |
+| `GRPC_TIMEOUT_SHUTDOWN` | Graceful shutdown budget.                                | `30s`   |
 
 Database connection pool (server images). The limits are **per process**, so the database's `max_connections` has to cover every replica plus the migration job; the stock `postgres` default is 100.
 
