@@ -22,6 +22,7 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel/attribute"
 	"google.golang.org/grpc"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
 
 	"github.com/a-novel-kit/golib/grpcf"
@@ -154,7 +155,13 @@ func main() {
 		),
 	)
 
-	grpcf.SetEchoServersContext(ctx, server, cfg.Grpc.Ping)
+	healthcheck := grpcf.RegisterEchoServers(server)
+	healthcheck.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
+
+	go func() {
+		<-ctx.Done()
+		healthcheck.SetServingStatus("", healthpb.HealthCheckResponse_NOT_SERVING)
+	}()
 
 	genaiv0.RegisterStatusServiceServer(server, handlerStatus)
 	genaiv0.RegisterGenerationSubmitServiceServer(server, handlerSubmit)
