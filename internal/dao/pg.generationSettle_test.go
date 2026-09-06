@@ -74,12 +74,13 @@ func TestGenerationSettle(t *testing.T) {
 				claimed := claimGenerations(ctx, t)
 
 				settled, err := daoSettle.Exec(ctx, &dao.GenerationSettleRequest{
-					ID:        claimed[0].ID,
-					WorkerID:  testCase.worker,
-					Status:    testCase.status,
-					Output:    testCase.output,
-					Error:     testCase.error,
-					Retention: testRetention,
+					ClaimToken: claimed[0].ClaimToken,
+					ID:         claimed[0].ID,
+					WorkerID:   testCase.worker,
+					Status:     testCase.status,
+					Output:     testCase.output,
+					Error:      testCase.error,
+					Retention:  testRetention,
 				})
 				require.ErrorIs(t, err, testCase.expectErr)
 

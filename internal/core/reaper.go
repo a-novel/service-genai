@@ -19,21 +19,20 @@ type ReaperDao interface {
 
 // ReaperConfig is what a [Reaper] needs to run.
 type ReaperConfig struct {
-	// Grace is the head start a late settle gets over the sweep. Applied in the predicate rather
-	// than at boot, because other replicas would sweep straight through a boot-only grace.
+	// Grace delays recovery after lease expiry. Worker authority ends at expiry on every replica.
 	Grace time.Duration `validate:"min=0"`
 	// BatchSize caps one sweep. The loop repeats until a sweep comes back short, so a large backlog
 	// drains without one statement materialising all of it.
 	BatchSize int `validate:"required,min=1,max=100"`
-	// Retention applies to the generations a sweep abandons, which are terminal.
+	// Retention applies to every terminal outcome recorded by a sweep.
 	Retention time.Duration `validate:"required"`
 }
 
 // A Reaper recovers generations whose worker died mid-run.
 //
-// It never abandons work that can still be resumed: a recovered generation keeps its provider call
-// identifier, so the next claim re-attaches to the operation already paid for. Only a generation
-// with no attempt left settles here.
+// Known provider operations remain resumable under the same inference attempt. Start intent without
+// a provider identifier settles as an unknown outcome; unstarted work follows cancellation and
+// attempt-budget rules.
 type Reaper struct {
 	config ReaperConfig
 	dao    ReaperDao

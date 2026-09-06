@@ -19,6 +19,8 @@ var generationRequeueQuery string
 
 // GenerationRequeueRequest is the input to [GenerationRequeue.Exec].
 type GenerationRequeueRequest struct {
+	// ClaimToken must match the acquisition whose lease is still live.
+	ClaimToken     uuid.UUID
 	ID             uuid.UUID
 	WorkerID       string
 	ProviderCallID *string
@@ -52,7 +54,9 @@ func (dao *GenerationRequeue) Exec(ctx context.Context, request *GenerationReque
 
 	entity := new(Generation)
 
-	err = tx.NewRaw(generationRequeueQuery, request.ID, request.WorkerID, request.ProviderCallID).Scan(ctx, entity)
+	err = tx.NewRaw(
+		generationRequeueQuery, request.ID, request.WorkerID, request.ProviderCallID, request.ClaimToken,
+	).Scan(ctx, entity)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			err = errors.Join(err, ErrGenerationNotHeld)

@@ -21,9 +21,17 @@ type (
 	WorkerLogger interface {
 		Err(ctx context.Context, msg string, fields ...any)
 	}
-	// WorkerClaimDao takes a batch of pending generations.
+	// WorkerClaimDao acquires pending generations.
 	WorkerClaimDao interface {
 		Exec(ctx context.Context, request *dao.GenerationClaimRequest) ([]*dao.Generation, error)
+	}
+	// WorkerControlDao renews a live claim and returns current cancellation state.
+	WorkerControlDao interface {
+		Exec(ctx context.Context, request *dao.GenerationControlRequest) (*dao.Generation, error)
+	}
+	// WorkerBeginStartDao persists paid-call intent under the current claim.
+	WorkerBeginStartDao interface {
+		Exec(ctx context.Context, request *dao.GenerationBeginStartRequest) (*dao.Generation, error)
 	}
 	// WorkerRecordProviderCallDao attaches a provider operation to a running generation.
 	WorkerRecordProviderCallDao interface {
@@ -51,6 +59,8 @@ type (
 // swaps between interfaces that all take a request and return a generation.
 type WorkerDaos struct {
 	Claim        WorkerClaimDao
+	Control      WorkerControlDao
+	BeginStart   WorkerBeginStartDao
 	Record       WorkerRecordProviderCallDao
 	Settle       WorkerSettleDao
 	ObserveLater WorkerObserveLaterDao
@@ -62,13 +72,12 @@ type WorkerDaos struct {
 type WorkerConfig struct {
 	// ID identifies this worker on the claims it holds, so a stranded one can be traced.
 	ID string `validate:"required,notblank"`
-	// Lease is how long a claim holds. Size it to the expected run, not a multiple of it: an outrun
-	// lease is recoverable, and safety comes from MaxAttempts plus the recorded provider call.
-	Lease time.Duration `validate:"required"`
-	// BatchSize caps one claim.
+	// Lease is the renewable ownership window, measured by the database clock.
+	Lease time.Duration `validate:"required,gt=0"`
+	// BatchSize caps the jobs processed in one pass. Each is claimed only when ready to execute.
 	BatchSize int `validate:"required,min=1,max=100"`
 	// PollInterval is how long the provider is given between polls of a running operation.
-	PollInterval time.Duration `validate:"required"`
+	PollInterval time.Duration `validate:"required,gt=0"`
 	// Retention is how long a settled generation's user content survives before the purge.
 	Retention time.Duration `validate:"required"`
 }
@@ -112,33 +121,124 @@ func NewWorker(
 	}, nil
 }
 
-// RunOnce claims a batch and runs it to completion, reporting whether it found work. It is the
-// function the poll loop drives.
+// RunOnce processes up to BatchSize jobs, acquiring each only when the execution slot is free.
 func (worker *Worker) RunOnce(ctx context.Context) (bool, error) {
 	ctx, span := otel.Tracer().Start(ctx, "core.Worker.RunOnce")
 	defer span.End()
 
-	claimed, err := worker.daos.Claim.Exec(ctx, &dao.GenerationClaimRequest{
-		WorkerID: worker.config.ID,
-		Limit:    worker.config.BatchSize,
-		Lease:    worker.config.Lease,
-	})
-	if err != nil {
-		return false, otel.ReportError(span, fmt.Errorf("claim generations: %w", err))
-	}
+	worked := false
 
-	span.SetAttributes(attribute.Int("worker.claimed", len(claimed)))
+	for range worker.config.BatchSize {
+		err := ctx.Err()
+		if err != nil {
+			return worked, otel.ReportError(span, err)
+		}
 
-	for _, generation := range claimed {
-		// One generation's failure is recorded on that generation and must not abandon the rest of
-		// the batch, which is already claimed and would sit until its lease lapsed.
-		runErr := worker.run(ctx, generation)
+		claimed, err := worker.daos.Claim.Exec(ctx, &dao.GenerationClaimRequest{
+			WorkerID: worker.config.ID, Limit: 1, Lease: worker.config.Lease,
+		})
+		if err != nil {
+			return worked, otel.ReportError(span, fmt.Errorf("claim generation: %w", err))
+		}
+
+		if len(claimed) == 0 {
+			break
+		}
+
+		worked = true
+
+		runErr := worker.runWithLease(ctx, claimed[0])
 		if runErr != nil {
-			_ = otel.ReportError(span, fmt.Errorf("run generation %s: %w", generation.ID, runErr))
+			// Individual failures belong to their generation; the next slot can still make progress.
+			_ = otel.ReportError(span, fmt.Errorf("run generation %s: %w", claimed[0].ID, runErr))
 		}
 	}
 
-	return otel.ReportSuccess(span, len(claimed) > 0), nil
+	err := ctx.Err()
+	if err != nil {
+		return worked, otel.ReportError(span, err)
+	}
+
+	return otel.ReportSuccess(span, worked), nil
+}
+
+// runWithLease keeps ownership checks independent of a slow provider request.
+func (worker *Worker) runWithLease(ctx context.Context, generation *dao.Generation) error {
+	ctx, span := otel.Tracer().Start(ctx, "core.Worker.runWithLease")
+	defer span.End()
+
+	claimCtx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+
+	request := &dao.GenerationControlRequest{
+		ID: generation.ID, WorkerID: worker.config.ID, ClaimToken: generation.ClaimToken,
+		Lease: worker.config.Lease,
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+
+		ticker := time.NewTicker(max(worker.config.Lease/claimRenewalDivisor, time.Nanosecond))
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-claimCtx.Done():
+				return
+			case <-ticker.C:
+				controlCtx, stopControl := context.WithTimeout(claimCtx, worker.config.Lease/claimRenewalDivisor)
+				_, err := worker.daos.Control.Exec(controlCtx, request)
+
+				stopControl()
+
+				if err != nil {
+					cancel(fmt.Errorf("renew claim: %w", err))
+
+					return
+				}
+			}
+		}
+	}()
+
+	err := worker.run(claimCtx, generation)
+
+	cause := context.Cause(claimCtx)
+
+	cancel(nil)
+	<-done
+
+	if err != nil {
+		err = errors.Join(err, cause)
+
+		return otel.ReportError(span, err)
+	}
+
+	return otel.ReportSuccess[error](span, nil)
+}
+
+// control refreshes authoritative state without granting ownership from the worker's clock.
+func (worker *Worker) control(ctx context.Context, generation *dao.Generation) (*dao.Generation, error) {
+	ctx, span := otel.Tracer().Start(ctx, "core.Worker.control")
+	defer span.End()
+
+	err := ctx.Err()
+	if err != nil {
+		return nil, otel.ReportError(span, err)
+	}
+
+	controlCtx, cancel := context.WithTimeout(ctx, worker.config.Lease/claimRenewalDivisor)
+	defer cancel()
+
+	current, err := worker.daos.Control.Exec(controlCtx, &dao.GenerationControlRequest{
+		ID: generation.ID, WorkerID: worker.config.ID, ClaimToken: generation.ClaimToken,
+		Lease: worker.config.Lease,
+	})
+	if err != nil {
+		return nil, otel.ReportError(span, fmt.Errorf("control claim: %w", err))
+	}
+
+	return otel.ReportSuccess(span, current), nil
 }
 
 // run takes one claimed generation to a terminal state, or back to the queue.
@@ -157,9 +257,35 @@ func (worker *Worker) run(ctx context.Context, generation *dao.Generation) error
 		err  error
 	)
 
+	generation, err = worker.control(ctx, generation)
+	if err != nil {
+		return otel.ReportError(span, err)
+	}
+
+	if generation.ProviderCallID == nil && generation.StartRequestedAt != nil {
+		return otel.ReportError(span, worker.failPersistence(ctx, generation, lib.ErrProviderStartAmbiguous))
+	}
+
+	if generation.ProviderCallID == nil && generation.CancelRequestedAt != nil {
+		err = worker.settle(ctx, generation, &lib.ProviderCall{State: lib.ProviderCallCancelled})
+		if err != nil {
+			return otel.ReportError(span, err)
+		}
+
+		return otel.ReportSuccess[error](span, nil)
+	}
+
 	if generation.ProviderCallID == nil {
 		call, err = worker.startInference(ctx, generation)
 		if err != nil {
+			if errors.Is(err, dao.ErrGenerationNotHeld) {
+				return otel.ReportError(span, err)
+			}
+
+			if errors.Is(err, errGenerationControl) {
+				return otel.ReportError(span, err)
+			}
+
 			if errors.Is(err, errProviderOperationPersistence) {
 				return otel.ReportError(span, worker.failPersistence(ctx, generation, err))
 			}
@@ -167,7 +293,7 @@ func (worker *Worker) run(ctx context.Context, generation *dao.Generation) error
 			return otel.ReportError(span, worker.failInference(ctx, generation, err))
 		}
 	} else {
-		call, err = worker.resumeProviderOperation(ctx, *generation.ProviderCallID)
+		call, err = worker.resumeProviderOperation(ctx, generation)
 		if err != nil {
 			return otel.ReportError(span, worker.failObservation(ctx, generation, err))
 		}
@@ -189,6 +315,22 @@ func (worker *Worker) startInference(
 	ctx, span := otel.Tracer().Start(ctx, "core.Worker.startInference")
 	defer span.End()
 
+	current, err := worker.daos.BeginStart.Exec(ctx, &dao.GenerationBeginStartRequest{
+		ID: generation.ID, WorkerID: worker.config.ID, ClaimToken: generation.ClaimToken,
+	})
+	if err != nil {
+		return nil, otel.ReportError(span, fmt.Errorf("%w: begin start: %w", errGenerationControl, err))
+	}
+
+	if current.CancelRequestedAt != nil {
+		return &lib.ProviderCall{State: lib.ProviderCallCancelled}, nil
+	}
+
+	err = ctx.Err()
+	if err != nil {
+		return nil, otel.ReportError(span, err)
+	}
+
 	call, err := worker.provider.Start(ctx, &lib.ProviderStartRequest{
 		Request:      generation.Request,
 		GenerationID: generation.ID.String(),
@@ -204,6 +346,7 @@ func (worker *Worker) startInference(
 
 	_, err = worker.daos.Record.Exec(recordCtx, &dao.GenerationRecordProviderCallRequest{
 		ID:             generation.ID,
+		ClaimToken:     generation.ClaimToken,
 		WorkerID:       worker.config.ID,
 		ProviderCallID: call.ID,
 	})
@@ -220,11 +363,13 @@ func (worker *Worker) startInference(
 }
 
 // resumeProviderOperation observes paid work whose provider identifier is already durable.
-func (worker *Worker) resumeProviderOperation(ctx context.Context, id string) (*lib.ProviderCall, error) {
+func (worker *Worker) resumeProviderOperation(
+	ctx context.Context, generation *dao.Generation,
+) (*lib.ProviderCall, error) {
 	ctx, span := otel.Tracer().Start(ctx, "core.Worker.resumeProviderOperation")
 	defer span.End()
 
-	call, err := worker.observeProviderOperation(ctx, id)
+	call, err := worker.observeProviderOperation(ctx, generation)
 	if err != nil {
 		return nil, otel.ReportError(span, fmt.Errorf("re-attach to provider operation: %w", err))
 	}
@@ -232,10 +377,7 @@ func (worker *Worker) resumeProviderOperation(ctx context.Context, id string) (*
 	return otel.ReportSuccess(span, call), nil
 }
 
-// await polls until the operation is terminal, stopping early if a cancel was requested.
-//
-// The lease bounds this: a poll loop that outran its lease has already had the generation recovered
-// underneath it, and its settle will be refused.
+// await observes current ownership and cancellation between provider polls until a terminal result.
 func (worker *Worker) await(
 	ctx context.Context, generation *dao.Generation, call *lib.ProviderCall,
 ) (*lib.ProviderCall, error) {
@@ -243,21 +385,12 @@ func (worker *Worker) await(
 	defer span.End()
 
 	for !call.State.Terminal() {
-		if generation.CancelRequestedAt != nil {
-			cancelled, err := worker.provider.Cancel(ctx, call.ID)
-			if err != nil {
-				return nil, otel.ReportError(span, fmt.Errorf("cancel provider call: %w", err))
-			}
-
-			return otel.ReportSuccess(span, cancelled), nil
-		}
-
 		err := waitForContext(ctx, worker.config.PollInterval)
 		if err != nil {
 			return nil, otel.ReportError(span, err)
 		}
 
-		polled, err := worker.observeProviderOperation(ctx, call.ID)
+		polled, err := worker.observeProviderOperation(ctx, generation)
 		if err != nil {
 			return nil, otel.ReportError(span, fmt.Errorf("poll provider operation: %w", err))
 		}
@@ -271,14 +404,27 @@ func (worker *Worker) await(
 }
 
 // observeProviderOperation retries transient observation failures within one bounded claim budget.
-func (worker *Worker) observeProviderOperation(ctx context.Context, id string) (*lib.ProviderCall, error) {
+func (worker *Worker) observeProviderOperation(
+	ctx context.Context, generation *dao.Generation,
+) (*lib.ProviderCall, error) {
 	ctx, span := otel.Tracer().Start(ctx, "core.Worker.observeProviderOperation")
 	defer span.End()
 
 	for attempt := 1; attempt <= providerObservationAttempts; attempt++ {
 		span.SetAttributes(attribute.Int("observation.attempt", attempt))
 
-		call, err := worker.provider.Get(ctx, id)
+		current, err := worker.control(ctx, generation)
+		if err != nil {
+			return nil, otel.ReportError(span, fmt.Errorf("%w: %w", errGenerationControl, err))
+		}
+
+		var call *lib.ProviderCall
+		if current.CancelRequestedAt != nil {
+			call, err = worker.provider.Cancel(ctx, *generation.ProviderCallID)
+		} else {
+			call, err = worker.provider.Get(ctx, *generation.ProviderCallID)
+		}
+
 		if err == nil {
 			return otel.ReportSuccess(span, call), nil
 		}
@@ -345,7 +491,10 @@ func (worker *Worker) retryTerminalInferenceFailure(
 		}
 
 		_, err = worker.daos.Requeue.Exec(ctx, &dao.GenerationRequeueRequest{
-			ID: generation.ID, WorkerID: worker.config.ID, ProviderCallID: generation.ProviderCallID,
+			ID:             generation.ID,
+			WorkerID:       worker.config.ID,
+			ClaimToken:     generation.ClaimToken,
+			ProviderCallID: generation.ProviderCallID,
 		})
 		if err != nil {
 			return fmt.Errorf("requeue generation after terminal provider failure: %w", err)
@@ -378,12 +527,13 @@ func (worker *Worker) settle(ctx context.Context, generation *dao.Generation, ca
 
 	return otel.ReportSuccess(span, worker.transactor.WithinTx(ctx, func(ctx context.Context) error {
 		_, err := worker.daos.Settle.Exec(ctx, &dao.GenerationSettleRequest{
-			ID:        generation.ID,
-			WorkerID:  worker.config.ID,
-			Status:    status,
-			Output:    call.Output,
-			Error:     reason,
-			Retention: worker.config.Retention,
+			ID:         generation.ID,
+			ClaimToken: generation.ClaimToken,
+			WorkerID:   worker.config.ID,
+			Status:     status,
+			Output:     call.Output,
+			Error:      reason,
+			Retention:  worker.config.Retention,
 		})
 		if err != nil {
 			return fmt.Errorf("settle generation: %w", err)
@@ -458,7 +608,7 @@ func (worker *Worker) failInference(ctx context.Context, generation *dao.Generat
 
 	if retryable && hasAttemptsLeft {
 		_, err := worker.daos.Requeue.Exec(ctx, &dao.GenerationRequeueRequest{
-			ID: generation.ID, WorkerID: worker.config.ID,
+			ID: generation.ID, WorkerID: worker.config.ID, ClaimToken: generation.ClaimToken,
 		})
 		if err != nil {
 			return otel.ReportError(span, fmt.Errorf("requeue generation: %w", err))
@@ -479,6 +629,10 @@ func (worker *Worker) failObservation(
 	ctx, span := otel.Tracer().Start(ctx, "core.Worker.failObservation")
 	defer span.End()
 
+	if errors.Is(cause, dao.ErrGenerationNotHeld) || errors.Is(cause, errGenerationControl) {
+		return otel.ReportError(span, cause)
+	}
+
 	if ctx.Err() != nil {
 		span.SetAttributes(attribute.Bool("failure.shutdown", true))
 
@@ -488,6 +642,7 @@ func (worker *Worker) failObservation(
 	if errors.Is(cause, lib.ErrProviderRetryable) {
 		_, err := worker.daos.ObserveLater.Exec(ctx, &dao.GenerationObserveLaterRequest{
 			ID:         generation.ID,
+			ClaimToken: generation.ClaimToken,
 			WorkerID:   worker.config.ID,
 			RetryAfter: worker.observationBackoff(providerObservationAttempts),
 		})
@@ -533,11 +688,12 @@ func (worker *Worker) settleFailure(
 	worker.logFailure(ctx, generation, cause.Error())
 
 	_, err := worker.daos.Settle.Exec(ctx, &dao.GenerationSettleRequest{
-		ID:        generation.ID,
-		WorkerID:  worker.config.ID,
-		Status:    dao.GenerationStatusFailed,
-		Error:     &reason,
-		Retention: worker.config.Retention,
+		ID:         generation.ID,
+		ClaimToken: generation.ClaimToken,
+		WorkerID:   worker.config.ID,
+		Status:     dao.GenerationStatusFailed,
+		Error:      &reason,
+		Retention:  worker.config.Retention,
 	})
 	if err != nil {
 		return otel.ReportError(span, fmt.Errorf("settle failed generation: %w", err))
@@ -586,9 +742,13 @@ func settleOutcomeOf(call *lib.ProviderCall) (dao.GenerationStatus, *string) {
 	}
 }
 
-var errProviderOperationPersistence = errors.New("provider operation persistence failed")
+var (
+	errProviderOperationPersistence = errors.New("provider operation persistence failed")
+	errGenerationControl            = errors.New("generation control failed")
+)
 
 const (
+	claimRenewalDivisor            = 3
 	providerPersistenceTimeout     = 5 * time.Second
 	providerObservationAttempts    = 3
 	generationCancelledReason      = "generation cancelled"

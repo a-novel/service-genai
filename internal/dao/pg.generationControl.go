@@ -15,36 +15,36 @@ import (
 	"github.com/a-novel-kit/golib/postgres"
 )
 
-//go:embed pg.generationObserveLater.sql
-var generationObserveLaterQuery string
+//go:embed pg.generationControl.sql
+var generationControlQuery string
 
-// GenerationObserveLaterRequest schedules another observation of a known provider operation.
-type GenerationObserveLaterRequest struct {
+// GenerationControlRequest identifies the live claim to control.
+type GenerationControlRequest struct {
 	// ClaimToken must match the acquisition whose lease is still live.
 	ClaimToken uuid.UUID
 	ID         uuid.UUID
 	WorkerID   string
-	RetryAfter time.Duration
+	Lease      time.Duration
 }
 
-// GenerationObserveLater returns a generation to the queue while retaining its provider operation.
-type GenerationObserveLater struct{}
+// GenerationControl renews a live claim and returns current cancellation state.
+type GenerationControl struct{}
 
-func NewGenerationObserveLater() *GenerationObserveLater {
-	return &GenerationObserveLater{}
+func NewGenerationControl() *GenerationControl {
+	return &GenerationControl{}
 }
 
-func (dao *GenerationObserveLater) Exec(
+func (dao *GenerationControl) Exec(
 	ctx context.Context,
-	request *GenerationObserveLaterRequest,
+	request *GenerationControlRequest,
 ) (*Generation, error) {
-	ctx, span := otel.Tracer().Start(ctx, "dao.GenerationObserveLater")
+	ctx, span := otel.Tracer().Start(ctx, "dao.GenerationControl")
 	defer span.End()
 
 	span.SetAttributes(
 		attribute.String("generation.id", request.ID.String()),
 		attribute.String("generation.worker_id", request.WorkerID),
-		attribute.Float64("observation.retry_after_seconds", request.RetryAfter.Seconds()),
+		attribute.Float64("claim.lease_seconds", request.Lease.Seconds()),
 	)
 
 	tx, err := postgres.GetContext(ctx)
@@ -55,10 +55,10 @@ func (dao *GenerationObserveLater) Exec(
 	entity := &Generation{}
 
 	err = tx.NewRaw(
-		generationObserveLaterQuery,
+		generationControlQuery,
 		request.ID,
 		request.WorkerID,
-		request.RetryAfter.Seconds(),
+		request.Lease.Seconds(),
 		request.ClaimToken,
 	).Scan(ctx, entity)
 	if err != nil {

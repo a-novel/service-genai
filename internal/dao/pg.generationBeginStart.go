@@ -6,7 +6,6 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/attribute"
@@ -15,36 +14,34 @@ import (
 	"github.com/a-novel-kit/golib/postgres"
 )
 
-//go:embed pg.generationObserveLater.sql
-var generationObserveLaterQuery string
+//go:embed pg.generationBeginStart.sql
+var generationBeginStartQuery string
 
-// GenerationObserveLaterRequest schedules another observation of a known provider operation.
-type GenerationObserveLaterRequest struct {
+// GenerationBeginStartRequest identifies the live claim to control.
+type GenerationBeginStartRequest struct {
 	// ClaimToken must match the acquisition whose lease is still live.
 	ClaimToken uuid.UUID
 	ID         uuid.UUID
 	WorkerID   string
-	RetryAfter time.Duration
 }
 
-// GenerationObserveLater returns a generation to the queue while retaining its provider operation.
-type GenerationObserveLater struct{}
+// GenerationBeginStart records Start intent unless cancellation has already committed.
+type GenerationBeginStart struct{}
 
-func NewGenerationObserveLater() *GenerationObserveLater {
-	return &GenerationObserveLater{}
+func NewGenerationBeginStart() *GenerationBeginStart {
+	return &GenerationBeginStart{}
 }
 
-func (dao *GenerationObserveLater) Exec(
+func (dao *GenerationBeginStart) Exec(
 	ctx context.Context,
-	request *GenerationObserveLaterRequest,
+	request *GenerationBeginStartRequest,
 ) (*Generation, error) {
-	ctx, span := otel.Tracer().Start(ctx, "dao.GenerationObserveLater")
+	ctx, span := otel.Tracer().Start(ctx, "dao.GenerationBeginStart")
 	defer span.End()
 
 	span.SetAttributes(
 		attribute.String("generation.id", request.ID.String()),
 		attribute.String("generation.worker_id", request.WorkerID),
-		attribute.Float64("observation.retry_after_seconds", request.RetryAfter.Seconds()),
 	)
 
 	tx, err := postgres.GetContext(ctx)
@@ -55,10 +52,9 @@ func (dao *GenerationObserveLater) Exec(
 	entity := &Generation{}
 
 	err = tx.NewRaw(
-		generationObserveLaterQuery,
+		generationBeginStartQuery,
 		request.ID,
 		request.WorkerID,
-		request.RetryAfter.Seconds(),
 		request.ClaimToken,
 	).Scan(ctx, entity)
 	if err != nil {

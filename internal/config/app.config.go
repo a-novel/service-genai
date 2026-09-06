@@ -35,7 +35,7 @@ type Worker struct {
 	Interval time.Duration `json:"interval" yaml:"interval"`
 	// Lease is how long a claim holds before the reaper may recover it.
 	Lease time.Duration `json:"lease" yaml:"lease"`
-	// BatchSize caps one claim.
+	// BatchSize caps the jobs processed per pass; each is claimed when the worker is ready.
 	BatchSize int `json:"batchSize" yaml:"batchSize"`
 	// PollInterval is how long the provider is given between polls of a running operation.
 	PollInterval time.Duration `json:"pollInterval" yaml:"pollInterval"`
@@ -45,7 +45,7 @@ type Worker struct {
 type Reaper struct {
 	// Interval is how often the reaper sweeps.
 	Interval time.Duration `json:"interval" yaml:"interval"`
-	// Grace is the head start a late settle gets over the sweep.
+	// Grace delays recovery after expiry without extending worker authority.
 	Grace time.Duration `json:"grace" yaml:"grace"`
 	// BatchSize caps one sweep.
 	BatchSize int `json:"batchSize" yaml:"batchSize"`

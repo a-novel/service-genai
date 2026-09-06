@@ -98,6 +98,8 @@ func main() {
 		postgres.NewTransactor(nil),
 		core.WorkerDaos{
 			Claim:        daoClaim,
+			Control:      dao.NewGenerationControl(),
+			BeginStart:   dao.NewGenerationBeginStart(),
 			Record:       daoRecordProviderCall,
 			Settle:       daoSettle,
 			ObserveLater: daoObserveLater,

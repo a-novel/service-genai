@@ -38,15 +38,14 @@ func TestGenerationRecordProviderCall(t *testing.T) {
 			expect: "resp_1",
 		},
 		{
-			// Whoever started a replacement operation after the first stalled is the authority on
-			// which identifier is live.
-			name: "Success/OverwritesAPreviousIdentifier",
+			// An operation already made durable cannot be replaced by a different ID.
+			name: "Error/RefusesAReplacementIdentifier",
 
 			recordFirst:    "resp_1",
 			worker:         testWorker,
 			providerCallID: "resp_2",
 
-			expect: "resp_2",
+			expectErr: dao.ErrGenerationNotHeld,
 		},
 		{
 			name: "Error/NotHeldByThisWorker",
@@ -72,13 +71,15 @@ func TestGenerationRecordProviderCall(t *testing.T) {
 
 				if testCase.recordFirst != "" {
 					_, err := daoRecord.Exec(ctx, &dao.GenerationRecordProviderCallRequest{
-						ID: claimed[0].ID, WorkerID: testWorker, ProviderCallID: testCase.recordFirst,
+						ClaimToken: claimed[0].ClaimToken,
+						ID:         claimed[0].ID, WorkerID: testWorker, ProviderCallID: testCase.recordFirst,
 					})
 					require.NoError(t, err)
 				}
 
 				result, err := daoRecord.Exec(ctx, &dao.GenerationRecordProviderCallRequest{
-					ID: claimed[0].ID, WorkerID: testCase.worker, ProviderCallID: testCase.providerCallID,
+					ClaimToken: claimed[0].ClaimToken,
+					ID:         claimed[0].ID, WorkerID: testCase.worker, ProviderCallID: testCase.providerCallID,
 				})
 				require.ErrorIs(t, err, testCase.expectErr)
 
