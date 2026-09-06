@@ -1,8 +1,9 @@
--- Lock first so expiry is evaluated after any wait for a concurrent transaction.
+-- Read authority from the locked CTE row: filtering the target table can evaluate expiry
+-- before the lock wait, even when the CTE is materialized.
 WITH
   held AS MATERIALIZED (
     SELECT
-      id AS held_id
+      generations.*
     FROM
       generations
     WHERE
@@ -20,11 +21,11 @@ SET
 FROM
   held
 WHERE
-  id = held.held_id
-  AND claimed_by = ?1
-  AND claim_token = ?3
-  AND status = 'running'
-  AND lease_expires_at > clock_timestamp()
-  AND provider_call_id IS NOT NULL
+  generations.id = held.id
+  AND held.claimed_by = ?1
+  AND held.claim_token = ?3
+  AND held.status = 'running'
+  AND held.lease_expires_at > clock_timestamp()
+  AND held.provider_call_id IS NOT NULL
 RETURNING
   generations.*;

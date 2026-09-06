@@ -434,3 +434,54 @@ WHERE datname = current_database() AND wait_event_type = 'Lock')`).Scan(ctx, &wa
 		require.Nil(t, started.StartRequestedAt)
 	})
 }
+
+func TestGenerationControlCannotReviveLeaseAfterReadLock(t *testing.T) {
+	t.Parallel()
+	postgres.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
+		t.Helper()
+		seedGeneration(ctx, t, 3)
+		generation := claimGenerations(ctx, t)[0]
+		db, err := postgres.GetContext(ctx)
+		require.NoError(t, err)
+
+		var deadline time.Time
+
+		err = db.NewRaw(`UPDATE generations SET lease_expires_at = clock_timestamp() + interval '1 second'
+WHERE id = ? RETURNING lease_expires_at`, generation.ID).Scan(ctx, &deadline)
+		require.NoError(t, err)
+		tx, err := db.BeginTx(ctx, nil)
+		require.NoError(t, err)
+
+		defer func() { _ = tx.Rollback() }()
+
+		_, err = tx.NewRaw("SELECT id FROM generations WHERE id = ? FOR UPDATE", generation.ID).Exec(ctx)
+		require.NoError(t, err)
+
+		done := make(chan error, 1)
+
+		go func() {
+			_, controlErr := dao.NewGenerationControl().Exec(ctx, &dao.GenerationControlRequest{
+				ID: generation.ID, WorkerID: testWorker, ClaimToken: generation.ClaimToken, Lease: testLease,
+			})
+			done <- controlErr
+		}()
+
+		require.Eventually(t, func() bool {
+			var waiting bool
+
+			queryErr := db.NewRaw(`SELECT EXISTS (SELECT 1 FROM pg_stat_activity
+WHERE datname = current_database() AND wait_event_type = 'Lock')`).Scan(ctx, &waiting)
+
+			return queryErr == nil && waiting
+		}, 5*time.Second, time.Millisecond)
+		require.Eventually(t, func() bool {
+			var expired bool
+
+			queryErr := db.NewRaw("SELECT clock_timestamp() > ?", deadline).Scan(ctx, &expired)
+
+			return queryErr == nil && expired
+		}, 5*time.Second, time.Millisecond)
+		require.NoError(t, tx.Commit())
+		require.ErrorIs(t, <-done, dao.ErrGenerationNotHeld)
+	})
+}
