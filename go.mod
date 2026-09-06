@@ -3,7 +3,7 @@ module github.com/a-novel/service-genai
 go 1.27.1
 
 require (
-	github.com/a-novel-kit/golib v0.32.1-0.20260906015559-d3901e997601
+	github.com/a-novel-kit/golib v0.33.0
 	github.com/go-playground/validator/v10 v10.30.4
 	github.com/google/uuid v1.6.0
 	github.com/openai/openai-go/v3 v3.56.0
