@@ -68,6 +68,7 @@ func main() {
 	daoClaim := dao.NewGenerationClaim()
 	daoRecordProviderCall := dao.NewGenerationRecordProviderCall()
 	daoSettle := dao.NewGenerationSettle()
+	daoObserveLater := dao.NewGenerationObserveLater()
 	daoRequeue := dao.NewGenerationRequeue()
 	daoUsageInsert := dao.NewGenerationUsageInsert()
 	daoReap := dao.NewGenerationReap()
@@ -95,11 +96,12 @@ func main() {
 		provider,
 		postgres.NewTransactor(nil),
 		core.WorkerDaos{
-			Claim:   daoClaim,
-			Record:  daoRecordProviderCall,
-			Settle:  daoSettle,
-			Requeue: daoRequeue,
-			Usage:   daoUsageInsert,
+			Claim:        daoClaim,
+			Record:       daoRecordProviderCall,
+			Settle:       daoSettle,
+			ObserveLater: daoObserveLater,
+			Requeue:      daoRequeue,
+			Usage:        daoUsageInsert,
 		},
 	))
 

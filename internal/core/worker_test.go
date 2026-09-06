@@ -52,33 +52,35 @@ func testWorkerConfig() core.WorkerConfig {
 // workerMocks is every dependency a worker takes, kept together so a case scripts one and asserts
 // on the rest without rebuilding the set.
 type workerMocks struct {
-	logger   *recordingWorkerLogger
-	provider *libmocks.MockProvider
-	claim    *coremocks.MockWorkerClaimDao
-	record   *coremocks.MockWorkerRecordProviderCallDao
-	settle   *coremocks.MockWorkerSettleDao
-	requeue  *coremocks.MockWorkerRequeueDao
-	usage    *coremocks.MockWorkerUsageInsertDao
+	logger       *recordingWorkerLogger
+	provider     *libmocks.MockProvider
+	claim        *coremocks.MockWorkerClaimDao
+	record       *coremocks.MockWorkerRecordProviderCallDao
+	settle       *coremocks.MockWorkerSettleDao
+	observeLater *coremocks.MockWorkerObserveLaterDao
+	requeue      *coremocks.MockWorkerRequeueDao
+	usage        *coremocks.MockWorkerUsageInsertDao
 }
 
 func newWorkerMocks(t *testing.T) *workerMocks {
 	t.Helper()
 
 	return &workerMocks{
-		logger:   &recordingWorkerLogger{},
-		provider: libmocks.NewMockProvider(t),
-		claim:    coremocks.NewMockWorkerClaimDao(t),
-		record:   coremocks.NewMockWorkerRecordProviderCallDao(t),
-		settle:   coremocks.NewMockWorkerSettleDao(t),
-		requeue:  coremocks.NewMockWorkerRequeueDao(t),
-		usage:    coremocks.NewMockWorkerUsageInsertDao(t),
+		logger:       &recordingWorkerLogger{},
+		provider:     libmocks.NewMockProvider(t),
+		claim:        coremocks.NewMockWorkerClaimDao(t),
+		record:       coremocks.NewMockWorkerRecordProviderCallDao(t),
+		settle:       coremocks.NewMockWorkerSettleDao(t),
+		observeLater: coremocks.NewMockWorkerObserveLaterDao(t),
+		requeue:      coremocks.NewMockWorkerRequeueDao(t),
+		usage:        coremocks.NewMockWorkerUsageInsertDao(t),
 	}
 }
 
 func (mocks *workerMocks) daos() core.WorkerDaos {
 	return core.WorkerDaos{
 		Claim: mocks.claim, Record: mocks.record, Settle: mocks.settle,
-		Requeue: mocks.requeue, Usage: mocks.usage,
+		ObserveLater: mocks.observeLater, Requeue: mocks.requeue, Usage: mocks.usage,
 	}
 }
 
@@ -102,6 +104,7 @@ func (mocks *workerMocks) assertExpectations(t *testing.T) {
 	mocks.claim.AssertExpectations(t)
 	mocks.record.AssertExpectations(t)
 	mocks.settle.AssertExpectations(t)
+	mocks.observeLater.AssertExpectations(t)
 	mocks.requeue.AssertExpectations(t)
 	mocks.usage.AssertExpectations(t)
 }
@@ -150,30 +153,42 @@ func TestWorker(t *testing.T) {
 	cancelled := call(lib.ProviderCallCancelled)
 	cancelled.Usage = &lib.ProviderUsage{InputTokens: 10, OutputTokens: 5}
 
+	retryableFailed := call(lib.ProviderCallFailed)
+	retryableFailed.Reason = "temporary provider failure"
+	retryableFailed.Retryable = true
+	retryableFailed.Usage = &lib.ProviderUsage{InputTokens: 10, OutputTokens: 5}
+
+	retryProviderCallID := testCallID
+
+	type providerObservation struct {
+		call *lib.ProviderCall
+		err  error
+	}
+
 	testCases := []struct {
 		name string
 
 		generation *dao.Generation
 		claimErr   error
 
-		// The provider script. gets are returned in order, so a case can hold a call running for a
-		// tick before it finishes.
-		start     *lib.ProviderCall
-		startErr  error
-		gets      []*lib.ProviderCall
-		getErr    error
-		cancel    *lib.ProviderCall
-		cancelErr error
+		start        *lib.ProviderCall
+		startErr     error
+		observations []providerObservation
+		cancel       *lib.ProviderCall
+		cancelErr    error
 
 		// Data-access failures, injected one at a time.
 		recordErr, settleErr, requeueErr, usageErr error
 
 		// An empty expectSettle asserts the generation is NOT settled.
-		expectSettle  dao.GenerationStatus
-		expectRequeue bool
-		expectUsage   bool
-		expectWorked  bool
-		expectErr     error
+		expectSettle                dao.GenerationStatus
+		expectSettleReason          string
+		expectObserveLater          bool
+		expectRequeue               bool
+		expectRequeueProviderCallID *string
+		expectUsage                 bool
+		expectWorked                bool
+		expectErr                   error
 	}{
 		{
 			name: "Success/FreshCall",
@@ -190,8 +205,8 @@ func TestWorker(t *testing.T) {
 			// resumed, so a crash costs a poll rather than a second priced call.
 			name: "Success/ResumesInsteadOfStartingAgain",
 
-			generation: claimedGeneration(&testResumeID, false, 1),
-			gets:       []*lib.ProviderCall{succeededCall()},
+			generation:   claimedGeneration(&testResumeID, false, 1),
+			observations: []providerObservation{{call: succeededCall()}},
 
 			expectSettle: dao.GenerationStatusSucceeded,
 			expectUsage:  true,
@@ -205,9 +220,9 @@ func TestWorker(t *testing.T) {
 			// state the provider never reached.
 			name: "Success/PollsUntilTerminal",
 
-			generation: claimedGeneration(nil, false, 1),
-			start:      call(lib.ProviderCallRunning),
-			gets:       []*lib.ProviderCall{call(lib.ProviderCallRunning), succeededCall()},
+			generation:   claimedGeneration(nil, false, 1),
+			start:        call(lib.ProviderCallRunning),
+			observations: []providerObservation{{call: call(lib.ProviderCallRunning)}, {call: succeededCall()}},
 
 			expectSettle: dao.GenerationStatusSucceeded,
 			expectUsage:  true,
@@ -245,6 +260,29 @@ func TestWorker(t *testing.T) {
 			start:      call(lib.ProviderCallFailed),
 
 			expectSettle: dao.GenerationStatusFailed,
+			expectWorked: true,
+		},
+		{
+			// A terminal provider failure can explicitly authorize a new paid attempt after the old one
+			// has been accounted for.
+			name: "Success/RetryableTerminalFailureRequeuesAfterUsage",
+
+			generation: claimedGeneration(nil, false, 3),
+			start:      retryableFailed,
+
+			expectRequeue:               true,
+			expectRequeueProviderCallID: &retryProviderCallID,
+			expectUsage:                 true,
+			expectWorked:                true,
+		},
+		{
+			name: "Success/RetryableTerminalFailureSettlesOnLastAttempt",
+
+			generation: claimedGeneration(nil, false, 1),
+			start:      retryableFailed,
+
+			expectSettle: dao.GenerationStatusFailed,
+			expectUsage:  true,
 			expectWorked: true,
 		},
 		{
@@ -293,7 +331,16 @@ func TestWorker(t *testing.T) {
 			expectWorked: true,
 		},
 		{
-			// Terminal: retrying only spends an attempt to be rejected again.
+			name: "Success/AmbiguousStartSettlesUnknownWithoutRetry",
+
+			generation: claimedGeneration(nil, false, 3),
+			startErr:   errors.Join(lib.ErrProviderStartAmbiguous, context.DeadlineExceeded),
+
+			expectSettle:       dao.GenerationStatusFailed,
+			expectSettleReason: "generation outcome unknown",
+			expectWorked:       true,
+		},
+		{
 			name: "Success/TerminalFailureSettlesEvenWithAttemptsLeft",
 
 			generation: claimedGeneration(nil, false, 3),
@@ -312,18 +359,45 @@ func TestWorker(t *testing.T) {
 			start:      call(lib.ProviderCallRunning),
 			recordErr:  errFoo,
 
-			expectSettle: dao.GenerationStatusFailed,
+			expectSettle:       dao.GenerationStatusFailed,
+			expectSettleReason: "generation outcome unknown",
+			expectWorked:       true,
+		},
+		{
+			name: "Success/TransientReattachFailureCompletes",
+
+			generation: claimedGeneration(&testResumeID, false, 3),
+			observations: []providerObservation{
+				{err: lib.ErrProviderRetryable},
+				{err: lib.ErrProviderRetryable},
+				{call: succeededCall()},
+			},
+
+			expectSettle: dao.GenerationStatusSucceeded,
+			expectUsage:  true,
 			expectWorked: true,
 		},
 		{
-			// The provider may simply be unreachable, so with an attempt left it goes back.
-			name: "Success/FailedReAttachRequeues",
+			name: "Success/ExhaustedReattachRetainsProviderOperation",
 
 			generation: claimedGeneration(&testResumeID, false, 3),
-			getErr:     lib.ErrProviderRetryable,
+			observations: []providerObservation{
+				{err: lib.ErrProviderRetryable},
+				{err: lib.ErrProviderRetryable},
+				{err: lib.ErrProviderRetryable},
+			},
 
-			expectRequeue: true,
-			expectWorked:  true,
+			expectObserveLater: true,
+			expectWorked:       true,
+		},
+		{
+			name: "Success/TerminalObservationFailureSettles",
+
+			generation:   claimedGeneration(&testResumeID, false, 3),
+			observations: []providerObservation{{err: errFoo}},
+
+			expectSettle: dao.GenerationStatusFailed,
+			expectWorked: true,
 		},
 		{
 			name: "Success/FailedCancelFallsBackToTheFailurePath",
@@ -392,12 +466,11 @@ func TestWorker(t *testing.T) {
 					Return(testCase.start, testCase.startErr)
 			}
 
-			for _, get := range testCase.gets {
-				mocks.provider.EXPECT().Get(mock.Anything, mock.Anything).Return(get, nil).Once()
-			}
-
-			if testCase.getErr != nil {
-				mocks.provider.EXPECT().Get(mock.Anything, mock.Anything).Return(nil, testCase.getErr)
+			for _, observation := range testCase.observations {
+				mocks.provider.EXPECT().
+					Get(mock.Anything, mock.Anything).
+					Return(observation.call, observation.err).
+					Once()
 			}
 
 			if testCase.cancel != nil || testCase.cancelErr != nil {
@@ -416,7 +489,12 @@ func TestWorker(t *testing.T) {
 			if testCase.expectSettle != "" {
 				mocks.settle.EXPECT().
 					Exec(mock.Anything, mock.MatchedBy(func(request *dao.GenerationSettleRequest) bool {
-						return request.Status == testCase.expectSettle && request.WorkerID == testWorkerID
+						if request.Status != testCase.expectSettle || request.WorkerID != testWorkerID {
+							return false
+						}
+
+						return testCase.expectSettleReason == "" ||
+							(request.Error != nil && *request.Error == testCase.expectSettleReason)
 					})).
 					Return(testCase.generation, testCase.settleErr)
 			}
@@ -431,9 +509,28 @@ func TestWorker(t *testing.T) {
 					Return(&dao.GenerationUsage{}, testCase.usageErr)
 			}
 
+			if testCase.expectObserveLater {
+				mocks.observeLater.EXPECT().
+					Exec(mock.Anything, &dao.GenerationObserveLaterRequest{
+						ID: testCase.generation.ID, WorkerID: testWorkerID, RetryAfter: 4 * time.Millisecond,
+					}).
+					Return(testCase.generation, nil)
+			}
+
 			if testCase.expectRequeue {
 				mocks.requeue.EXPECT().
-					Exec(mock.Anything, mock.Anything).
+					Exec(mock.Anything, mock.MatchedBy(func(request *dao.GenerationRequeueRequest) bool {
+						if request.ID != testCase.generation.ID || request.WorkerID != testWorkerID {
+							return false
+						}
+
+						if testCase.expectRequeueProviderCallID == nil {
+							return request.ProviderCallID == nil
+						}
+
+						return request.ProviderCallID != nil &&
+							*request.ProviderCallID == *testCase.expectRequeueProviderCallID
+					})).
 					Return(testCase.generation, testCase.requeueErr)
 			}
 
@@ -443,6 +540,10 @@ func TestWorker(t *testing.T) {
 
 			if testCase.expectSettle == "" {
 				mocks.settle.AssertNotCalled(t, "Exec", mock.Anything, mock.Anything)
+			}
+
+			if !testCase.expectObserveLater {
+				mocks.observeLater.AssertNotCalled(t, "Exec", mock.Anything, mock.Anything)
 			}
 
 			if !testCase.expectRequeue {

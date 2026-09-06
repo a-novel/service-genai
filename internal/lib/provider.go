@@ -32,10 +32,12 @@ func (state ProviderCallState) Terminal() bool {
 	return state != ProviderCallRunning
 }
 
-// ErrProviderRetryable marks a failure worth another attempt: a transport error, a rate limit, or a
-// provider-side fault. Everything else is terminal, because retrying a rejected request only spends
-// another attempt to be rejected again.
+// ErrProviderRetryable marks a provider interaction that can be retried within its current
+// lifecycle step. Only a definitive Start rejection permits a fresh inference attempt.
 var ErrProviderRetryable = errors.New("retryable provider failure")
+
+// ErrProviderStartAmbiguous means the provider may have accepted paid work without returning its ID.
+var ErrProviderStartAmbiguous = errors.New("provider start outcome is ambiguous")
 
 // ProviderUsage is what the provider reported consuming. The totals include the detail counts, as
 // the provider counts them.
@@ -61,6 +63,8 @@ type ProviderCall struct {
 	Usage *ProviderUsage
 	// Reason explains a non-successful terminal state — the incomplete reason, or the error.
 	Reason string
+	// Retryable permits a fresh inference attempt after this terminal provider failure is accounted for.
+	Retryable bool
 }
 
 // ProviderStartRequest is the input to [Provider.Start].
@@ -77,7 +81,8 @@ type ProviderStartRequest struct {
 // for a second provider without rewriting the worker.
 type Provider interface {
 	// Start begins an operation and returns as soon as the provider accepts it, without waiting for
-	// the model. The returned ID must be recorded before anything else happens.
+	// the model. The returned ID must be recorded before anything else happens. An
+	// [ErrProviderStartAmbiguous] outcome cannot safely be retried as a new operation.
 	Start(ctx context.Context, request *ProviderStartRequest) (*ProviderCall, error)
 	// Get reads an operation by id. It is both the poll and the re-attach: a generation recovered
 	// from a crash calls it and resumes the operation already paid for.
