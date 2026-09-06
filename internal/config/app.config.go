@@ -23,6 +23,8 @@ type Grpc struct {
 	Port int `json:"port" yaml:"port"`
 	// Ping is the refresh interval for the gRPC server's internal health check.
 	Ping time.Duration `json:"ping" yaml:"ping"`
+	// Shutdown bounds graceful RPC drain before remaining calls are stopped.
+	Shutdown time.Duration `json:"shutdown" yaml:"shutdown"`
 }
 
 // Worker holds the generation worker's settings.

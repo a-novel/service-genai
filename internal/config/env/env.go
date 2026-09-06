@@ -33,8 +33,9 @@ func defaultWorkerID() string {
 const (
 	AppNameDefault = "service-genai"
 
-	GrpcPortDefault = 8080
-	GrpcDefaultPing = time.Second * 5
+	GrpcPortDefault            = 8080
+	GrpcDefaultPing            = time.Second * 5
+	GrpcTimeoutShutdownDefault = 30 * time.Second
 
 	// WorkerIntervalDefault and the values below configure the generation worker. The lease is
 	// sized to an expected run rather than a multiple of it: an outrun lease is recoverable, and
@@ -74,9 +75,10 @@ var (
 	appName = getEnv("APP_NAME")
 	otel    = getEnv("OTEL")
 
-	grpcPort = getEnv("GRPC_PORT")
-	grpcUrl  = getEnv("GRPC_URL")
-	grpcPing = getEnv("GRPC_PING")
+	grpcPort            = getEnv("GRPC_PORT")
+	grpcUrl             = getEnv("GRPC_URL")
+	grpcPing            = getEnv("GRPC_PING")
+	grpcTimeoutShutdown = getEnv("GRPC_TIMEOUT_SHUTDOWN")
 
 	openaiAPIKey  = getEnv("OPENAI_API_KEY")
 	openaiBaseURL = getEnv("OPENAI_BASE_URL")
@@ -120,6 +122,11 @@ var (
 	GrpcUrl = grpcUrl
 	// GrpcPing is the refresh interval for the gRPC server's internal health check.
 	GrpcPing = config.LoadEnv(grpcPing, GrpcDefaultPing, config.DurationParser)
+
+	// GrpcTimeoutShutdown bounds graceful RPC drain before remaining calls are stopped.
+	GrpcTimeoutShutdown = config.LoadEnv(
+		grpcTimeoutShutdown, GrpcTimeoutShutdownDefault, config.DurationParser,
+	)
 
 	// OpenAIAPIKey authenticates against the provider. The only credential this service holds, and
 	// the reason no consumer holds one.
