@@ -37,9 +37,8 @@ const (
 	GrpcDefaultPing            = time.Second * 5
 	GrpcTimeoutShutdownDefault = 30 * time.Second
 
-	// WorkerIntervalDefault and the values below configure the generation worker. The lease is
-	// sized to an expected run rather than a multiple of it: an outrun lease is recoverable, and
-	// every lapse burns an attempt.
+	// WorkerIntervalDefault and the values below configure the generation worker. Active claims
+	// renew their leases; expired claims are recovered using durable provider execution evidence.
 	WorkerIntervalDefault     = 5 * time.Second
 	WorkerLeaseDefault        = 5 * time.Minute
 	WorkerBatchSizeDefault    = 10
@@ -142,7 +141,7 @@ var (
 	WorkerInterval = config.LoadEnv(workerInterval, WorkerIntervalDefault, config.DurationParser)
 	// WorkerLease is how long a claim holds before the reaper may recover it.
 	WorkerLease = config.LoadEnv(workerLease, WorkerLeaseDefault, config.DurationParser)
-	// WorkerBatchSize caps one claim.
+	// WorkerBatchSize caps the jobs processed per pass; the worker claims them individually.
 	WorkerBatchSize = config.LoadEnv(workerBatchSize, WorkerBatchSizeDefault, config.IntParser)
 	// WorkerPollInterval is how long the provider is given between polls of a running operation.
 	WorkerPollInterval = config.LoadEnv(workerPollInterval, WorkerPollIntervalDefault, config.DurationParser)
@@ -152,7 +151,7 @@ var (
 
 	// ReaperInterval is how often the reaper sweeps for lapsed leases.
 	ReaperInterval = config.LoadEnv(reaperInterval, ReaperIntervalDefault, config.DurationParser)
-	// ReaperGrace is how long past its lease a claim is left alone, so a late settle beats the sweep.
+	// ReaperGrace delays recovery after expiry without extending worker authority.
 	ReaperGrace = config.LoadEnv(reaperGrace, ReaperGraceDefault, config.DurationParser)
 	// ReaperBatchSize caps one sweep.
 	ReaperBatchSize = config.LoadEnv(reaperBatchSize, ReaperBatchSizeDefault, config.IntParser)

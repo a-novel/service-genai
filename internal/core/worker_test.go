@@ -43,7 +43,7 @@ func testWorkerConfig() core.WorkerConfig {
 	return core.WorkerConfig{
 		ID:           testWorkerID,
 		Lease:        time.Minute,
-		BatchSize:    10,
+		BatchSize:    1,
 		PollInterval: time.Millisecond,
 		Retention:    7 * 24 * time.Hour,
 	}
@@ -55,6 +55,8 @@ type workerMocks struct {
 	logger       *recordingWorkerLogger
 	provider     *libmocks.MockProvider
 	claim        *coremocks.MockWorkerClaimDao
+	control      *coremocks.MockWorkerControlDao
+	beginStart   *coremocks.MockWorkerBeginStartDao
 	record       *coremocks.MockWorkerRecordProviderCallDao
 	settle       *coremocks.MockWorkerSettleDao
 	observeLater *coremocks.MockWorkerObserveLaterDao
@@ -69,6 +71,8 @@ func newWorkerMocks(t *testing.T) *workerMocks {
 		logger:       &recordingWorkerLogger{},
 		provider:     libmocks.NewMockProvider(t),
 		claim:        coremocks.NewMockWorkerClaimDao(t),
+		control:      coremocks.NewMockWorkerControlDao(t),
+		beginStart:   coremocks.NewMockWorkerBeginStartDao(t),
 		record:       coremocks.NewMockWorkerRecordProviderCallDao(t),
 		settle:       coremocks.NewMockWorkerSettleDao(t),
 		observeLater: coremocks.NewMockWorkerObserveLaterDao(t),
@@ -79,9 +83,22 @@ func newWorkerMocks(t *testing.T) *workerMocks {
 
 func (mocks *workerMocks) daos() core.WorkerDaos {
 	return core.WorkerDaos{
-		Claim: mocks.claim, Record: mocks.record, Settle: mocks.settle,
+		Claim: mocks.claim, Control: mocks.control, BeginStart: mocks.beginStart, Record: mocks.record, Settle: mocks.settle,
 		ObserveLater: mocks.observeLater, Requeue: mocks.requeue, Usage: mocks.usage,
 	}
+}
+
+func (mocks *workerMocks) hold(generation *dao.Generation) {
+	mocks.control.EXPECT().Exec(mock.Anything, mock.MatchedBy(func(request *dao.GenerationControlRequest) bool {
+		return request.ID == generation.ID && request.ClaimToken == generation.ClaimToken
+	})).RunAndReturn(func(context.Context, *dao.GenerationControlRequest) (*dao.Generation, error) {
+		current := *generation
+
+		return &current, nil
+	}).Maybe()
+	mocks.beginStart.EXPECT().Exec(mock.Anything, mock.MatchedBy(func(request *dao.GenerationBeginStartRequest) bool {
+		return request.ID == generation.ID && request.ClaimToken == generation.ClaimToken
+	})).Return(generation, nil).Maybe()
 }
 
 func (mocks *workerMocks) worker(t *testing.T) *core.Worker {
@@ -111,6 +128,7 @@ func (mocks *workerMocks) assertExpectations(t *testing.T) {
 
 func claimedGeneration(providerCallID *string, cancelRequested bool, maxAttempts int16) *dao.Generation {
 	generation := &dao.Generation{
+		ClaimToken:     uuid.New(),
 		ID:             uuid.MustParse("01999999-0000-7000-8000-000000000001"),
 		OwnerID:        uuid.MustParse("00000000-0000-0000-0000-000000000001"),
 		Purpose:        "studio.generation",
@@ -273,8 +291,7 @@ func TestWorker(t *testing.T) {
 			// A cancelled call is not a free call.
 			name: "Success/CancelStopsTheCallAndRecordsWhatItSpent",
 
-			generation: claimedGeneration(nil, true, 1),
-			start:      call(lib.ProviderCallRunning),
+			generation: claimedGeneration(&testResumeID, true, 1),
 			cancel:     cancelled,
 
 			expectSettle: dao.GenerationStatusCancelled,
@@ -315,14 +332,9 @@ func TestWorker(t *testing.T) {
 			expectWorked: true,
 		},
 		{
-			// A state this worker does not treat as terminal must not strand the generation.
-			name: "Success/SettlesAnUnrecognisedProviderState",
-
-			generation: claimedGeneration(nil, true, 1),
-			start:      call(lib.ProviderCallRunning),
-			cancel:     call(lib.ProviderCallRunning),
-
-			expectSettle: dao.GenerationStatusFailed,
+			name:         "Success/PendingCancellationNeverStartsPaidWork",
+			generation:   claimedGeneration(nil, true, 1),
+			expectSettle: dao.GenerationStatusCancelled,
 			expectWorked: true,
 		},
 		{
@@ -431,8 +443,7 @@ func TestWorker(t *testing.T) {
 		{
 			name: "Success/FailedCancelFallsBackToTheFailurePath",
 
-			generation: claimedGeneration(nil, true, 1),
-			start:      call(lib.ProviderCallRunning),
+			generation: claimedGeneration(&testResumeID, true, 1),
 			cancelErr:  errFoo,
 
 			expectSettle: dao.GenerationStatusFailed,
@@ -481,11 +492,12 @@ func TestWorker(t *testing.T) {
 			var claimed []*dao.Generation
 			if testCase.generation != nil {
 				claimed = []*dao.Generation{testCase.generation}
+				mocks.hold(testCase.generation)
 			}
 
 			mocks.claim.EXPECT().
 				Exec(mock.Anything, &dao.GenerationClaimRequest{
-					WorkerID: testWorkerID, Limit: 10, Lease: time.Minute,
+					WorkerID: testWorkerID, Limit: 1, Lease: time.Minute,
 				}).
 				Return(claimed, testCase.claimErr)
 
@@ -509,7 +521,7 @@ func TestWorker(t *testing.T) {
 
 			if testCase.cancel != nil || testCase.cancelErr != nil {
 				mocks.provider.EXPECT().
-					Cancel(mock.Anything, testCallID).
+					Cancel(mock.Anything, observedID).
 					Return(testCase.cancel, testCase.cancelErr)
 			}
 
@@ -546,7 +558,10 @@ func TestWorker(t *testing.T) {
 			if testCase.expectObserveLater {
 				mocks.observeLater.EXPECT().
 					Exec(mock.Anything, &dao.GenerationObserveLaterRequest{
-						ID: testCase.generation.ID, WorkerID: testWorkerID, RetryAfter: 4 * time.Millisecond,
+						ID:         testCase.generation.ID,
+						WorkerID:   testWorkerID,
+						ClaimToken: testCase.generation.ClaimToken,
+						RetryAfter: 4 * time.Millisecond,
 					}).
 					Return(testCase.generation, nil)
 			}
@@ -621,6 +636,7 @@ func TestWorkerFailureDetailsStayServerSide(t *testing.T) {
 
 			generation := claimedGeneration(nil, false, 1)
 			mocks := newWorkerMocks(t)
+			mocks.hold(generation)
 
 			mocks.claim.EXPECT().
 				Exec(mock.Anything, mock.Anything).
@@ -665,6 +681,7 @@ func TestWorkerStopsCleanlyOnShutdown(t *testing.T) {
 
 	generation := claimedGeneration(nil, false, 3)
 	mocks := newWorkerMocks(t)
+	mocks.hold(generation)
 
 	ctx, cancel := context.WithCancel(t.Context())
 
@@ -683,15 +700,14 @@ func TestWorkerStopsCleanlyOnShutdown(t *testing.T) {
 		})
 
 	_, err := mocks.worker(t).RunOnce(ctx)
-	require.NoError(t, err)
+	require.ErrorIs(t, err, context.Canceled)
 
 	mocks.settle.AssertNotCalled(t, "Exec", mock.Anything, mock.Anything)
 	mocks.requeue.AssertNotCalled(t, "Exec", mock.Anything, mock.Anything)
 	mocks.assertExpectations(t)
 }
 
-// A batch is already claimed, so one generation failing must not strand the others until their
-// leases lapse. Out of the table because it is the only case with more than one generation.
+// A failed generation frees the serial slot before the next job is acquired.
 func TestWorkerContinuesTheBatchAfterOneFailure(t *testing.T) {
 	t.Parallel()
 
@@ -701,7 +717,12 @@ func TestWorkerContinuesTheBatchAfterOneFailure(t *testing.T) {
 
 	mocks := newWorkerMocks(t)
 
-	mocks.claim.EXPECT().Exec(mock.Anything, mock.Anything).Return([]*dao.Generation{first, second}, nil)
+	mocks.hold(first)
+	mocks.hold(second)
+	mocks.claim.EXPECT().Exec(mock.Anything, &dao.GenerationClaimRequest{
+		WorkerID: testWorkerID, Limit: 1, Lease: time.Minute,
+	}).Return([]*dao.Generation{first}, nil).Once()
+	mocks.claim.EXPECT().Exec(mock.Anything, mock.Anything).Return([]*dao.Generation{second}, nil).Once()
 	mocks.provider.EXPECT().Start(mock.Anything, mock.Anything).Return(nil, errFoo).Once()
 	mocks.provider.EXPECT().Start(mock.Anything, mock.Anything).Return(succeededCall(), nil).Once()
 	mocks.provider.EXPECT().Name().Return("openai")
@@ -709,7 +730,11 @@ func TestWorkerContinuesTheBatchAfterOneFailure(t *testing.T) {
 	mocks.settle.EXPECT().Exec(mock.Anything, mock.Anything).Return(first, nil).Twice()
 	mocks.usage.EXPECT().Exec(mock.Anything, mock.Anything).Return(&dao.GenerationUsage{}, nil).Once()
 
-	worked, err := mocks.worker(t).RunOnce(t.Context())
+	config := testWorkerConfig()
+	config.BatchSize = 2
+	worker, err := core.NewWorker(config, mocks.logger, mocks.provider, transactiontest.NewTransactor(), mocks.daos())
+	require.NoError(t, err)
+	worked, err := worker.RunOnce(t.Context())
 	require.NoError(t, err)
 	require.True(t, worked)
 
@@ -804,6 +829,7 @@ func TestWorkerPersistsStartOutcomeDuringShutdown(t *testing.T) {
 
 			generation := claimedGeneration(nil, false, 3)
 			mocks := newWorkerMocks(t)
+			mocks.hold(generation)
 
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
@@ -825,7 +851,7 @@ func TestWorkerPersistsStartOutcomeDuringShutdown(t *testing.T) {
 
 			if testCase.call != nil {
 				mocks.record.EXPECT().Exec(activeBoundedContext, &dao.GenerationRecordProviderCallRequest{
-					ID: generation.ID, WorkerID: testWorkerID, ProviderCallID: testCallID,
+					ID: generation.ID, WorkerID: testWorkerID, ClaimToken: generation.ClaimToken, ProviderCallID: testCallID,
 				}).Return(generation, nil).Once()
 			} else {
 				mocks.settle.EXPECT().Exec(activeBoundedContext,
@@ -836,7 +862,7 @@ func TestWorkerPersistsStartOutcomeDuringShutdown(t *testing.T) {
 			}
 
 			_, err := mocks.worker(t).RunOnce(ctx)
-			require.NoError(t, err)
+			require.ErrorIs(t, err, context.Canceled)
 			mocks.provider.AssertNotCalled(t, "Get", mock.Anything, mock.Anything)
 			mocks.requeue.AssertNotCalled(t, "Exec", mock.Anything, mock.Anything)
 			mocks.assertExpectations(t)
