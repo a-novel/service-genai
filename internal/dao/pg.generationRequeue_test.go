@@ -90,6 +90,11 @@ func TestGenerationRequeue(t *testing.T) {
 				require.Nil(t, requeued.ClaimedBy)
 				require.Nil(t, requeued.LeaseExpiresAt)
 				require.Nil(t, requeued.ProviderCallID)
+
+				reclaimed := claimGenerations(ctx, t)
+				require.Len(t, reclaimed, 1)
+				require.Equal(t, claimed[0].Attempt+1, reclaimed[0].Attempt)
+				require.Nil(t, reclaimed[0].ProviderCallID)
 			})
 		})
 	}

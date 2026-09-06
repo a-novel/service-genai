@@ -198,7 +198,11 @@ func (worker *Worker) startInference(
 		return nil, otel.ReportError(span, fmt.Errorf("start provider call: %w", err))
 	}
 
-	_, err = worker.daos.Record.Exec(ctx, &dao.GenerationRecordProviderCallRequest{
+	// A cancelled caller must not prevent an accepted operation from becoming recoverable.
+	recordCtx, cancelRecord := context.WithTimeout(context.WithoutCancel(ctx), providerPersistenceTimeout)
+	defer cancelRecord()
+
+	_, err = worker.daos.Record.Exec(recordCtx, &dao.GenerationRecordProviderCallRequest{
 		ID:             generation.ID,
 		WorkerID:       worker.config.ID,
 		ProviderCallID: call.ID,
@@ -305,11 +309,22 @@ func (worker *Worker) finishProviderOperation(
 	generation *dao.Generation,
 	call *lib.ProviderCall,
 ) error {
+	ctx, span := otel.Tracer().Start(ctx, "core.Worker.finishProviderOperation")
+	defer span.End()
+
+	var err error
+
 	if call.State == lib.ProviderCallFailed && call.Retryable && generation.Attempt < generation.MaxAttempts {
-		return worker.retryTerminalInferenceFailure(ctx, generation, call)
+		err = worker.retryTerminalInferenceFailure(ctx, generation, call)
+	} else {
+		err = worker.settle(ctx, generation, call)
 	}
 
-	return worker.settle(ctx, generation, call)
+	if err != nil {
+		return otel.ReportError(span, err)
+	}
+
+	return otel.ReportSuccess[error](span, nil)
 }
 
 // retryTerminalInferenceFailure accounts for the completed attempt before authorizing another one.
@@ -383,10 +398,13 @@ func (worker *Worker) recordUsage(
 	generation *dao.Generation,
 	call *lib.ProviderCall,
 ) error {
+	ctx, span := otel.Tracer().Start(ctx, "core.Worker.recordUsage")
+	defer span.End()
+
 	// Absent when the operation never reached the model, which is the one case with nothing to
 	// account for.
 	if call.Usage == nil {
-		return nil
+		return otel.ReportSuccess[error](span, nil)
 	}
 
 	_, err := worker.daos.Usage.Exec(ctx, &dao.GenerationUsageInsertRequest{
@@ -405,13 +423,13 @@ func (worker *Worker) recordUsage(
 	// A replay of the same provider result finds the row already there. That is the idempotent
 	// outcome, not a failure.
 	if err != nil && !errors.Is(err, dao.ErrGenerationUsageExists) {
-		return fmt.Errorf("record usage: %w", err)
+		return otel.ReportError(span, fmt.Errorf("record usage: %w", err))
 	}
 
-	return nil
+	return otel.ReportSuccess[error](span, nil)
 }
 
-// failInference applies the only policy that may authorize another paid provider operation.
+// failInference permits a fresh attempt only after a definitive retryable Start rejection.
 func (worker *Worker) failInference(ctx context.Context, generation *dao.Generation, cause error) error {
 	ctx, span := otel.Tracer().Start(ctx, "core.Worker.failInference")
 	defer span.End()
@@ -461,7 +479,7 @@ func (worker *Worker) failObservation(
 	ctx, span := otel.Tracer().Start(ctx, "core.Worker.failObservation")
 	defer span.End()
 
-	if errors.Is(cause, context.Canceled) || errors.Is(cause, context.DeadlineExceeded) {
+	if ctx.Err() != nil {
 		span.SetAttributes(attribute.Bool("failure.shutdown", true))
 
 		return otel.ReportSuccess(span, cause)
@@ -501,6 +519,17 @@ func (worker *Worker) settleFailure(
 	cause error,
 	reason string,
 ) error {
+	ctx, span := otel.Tracer().Start(ctx, "core.Worker.settleFailure")
+	defer span.End()
+
+	if reason == generationOutcomeUnknownReason {
+		// Persist uncertainty even when Start ended because its caller was cancelled.
+		var cancel context.CancelFunc
+
+		ctx, cancel = context.WithTimeout(context.WithoutCancel(ctx), providerPersistenceTimeout)
+		defer cancel()
+	}
+
 	worker.logFailure(ctx, generation, cause.Error())
 
 	_, err := worker.daos.Settle.Exec(ctx, &dao.GenerationSettleRequest{
@@ -511,10 +540,10 @@ func (worker *Worker) settleFailure(
 		Retention: worker.config.Retention,
 	})
 	if err != nil {
-		return fmt.Errorf("settle failed generation: %w", err)
+		return otel.ReportError(span, fmt.Errorf("settle failed generation: %w", err))
 	}
 
-	return cause
+	return otel.ReportError(span, cause)
 }
 
 func (worker *Worker) observationBackoff(attempt int) time.Duration {
@@ -522,14 +551,17 @@ func (worker *Worker) observationBackoff(attempt int) time.Duration {
 }
 
 func waitForContext(ctx context.Context, delay time.Duration) error {
+	ctx, span := otel.Tracer().Start(ctx, "core.waitForContext")
+	defer span.End()
+
 	timer := time.NewTimer(delay)
 	defer timer.Stop()
 
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
+		return otel.ReportError(span, ctx.Err())
 	case <-timer.C:
-		return nil
+		return otel.ReportSuccess[error](span, nil)
 	}
 }
 
@@ -557,6 +589,7 @@ func settleOutcomeOf(call *lib.ProviderCall) (dao.GenerationStatus, *string) {
 var errProviderOperationPersistence = errors.New("provider operation persistence failed")
 
 const (
+	providerPersistenceTimeout     = 5 * time.Second
 	providerObservationAttempts    = 3
 	generationCancelledReason      = "generation cancelled"
 	generationFailedReason         = "generation failed"

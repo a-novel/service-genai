@@ -229,6 +229,35 @@ func TestWorker(t *testing.T) {
 			expectWorked: true,
 		},
 		{
+			name: "Success/TransientPollingFailureCompletesWithOneStart",
+
+			generation: claimedGeneration(nil, false, 1),
+			start:      call(lib.ProviderCallRunning),
+			observations: []providerObservation{
+				{err: errors.Join(lib.ErrProviderRetryable, context.DeadlineExceeded)},
+				{err: lib.ErrProviderRetryable},
+				{call: succeededCall()},
+			},
+
+			expectSettle: dao.GenerationStatusSucceeded,
+			expectUsage:  true,
+			expectWorked: true,
+		},
+		{
+			name: "Success/ExhaustedPollingRetainsProviderOperation",
+
+			generation: claimedGeneration(nil, false, 1),
+			start:      call(lib.ProviderCallRunning),
+			observations: []providerObservation{
+				{err: lib.ErrProviderRetryable},
+				{err: lib.ErrProviderRetryable},
+				{err: lib.ErrProviderRetryable},
+			},
+
+			expectObserveLater: true,
+			expectWorked:       true,
+		},
+		{
 			// An output cap or a refusal is a failed generation but a real call: the tokens it
 			// consumed still have to be recorded.
 			name: "Success/IncompleteStillRecordsUsage",
@@ -256,7 +285,7 @@ func TestWorker(t *testing.T) {
 			// Nothing reached the model, so there is nothing to account for.
 			name: "Success/NoUsageWhenTheCallNeverRan",
 
-			generation: claimedGeneration(nil, false, 1),
+			generation: claimedGeneration(nil, false, 3),
 			start:      call(lib.ProviderCallFailed),
 
 			expectSettle: dao.GenerationStatusFailed,
@@ -463,12 +492,17 @@ func TestWorker(t *testing.T) {
 			if testCase.start != nil || testCase.startErr != nil {
 				mocks.provider.EXPECT().
 					Start(mock.Anything, mock.Anything).
-					Return(testCase.start, testCase.startErr)
+					Return(testCase.start, testCase.startErr).Once()
+			}
+
+			observedID := testCallID
+			if testCase.generation != nil && testCase.generation.ProviderCallID != nil {
+				observedID = *testCase.generation.ProviderCallID
 			}
 
 			for _, observation := range testCase.observations {
 				mocks.provider.EXPECT().
-					Get(mock.Anything, mock.Anything).
+					Get(mock.Anything, observedID).
 					Return(observation.call, observation.err).
 					Once()
 			}
@@ -742,6 +776,70 @@ func TestNewWorker(t *testing.T) {
 			}
 
 			require.NotNil(t, worker)
+		})
+	}
+}
+
+func TestWorkerPersistsStartOutcomeDuringShutdown(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name     string
+		call     *lib.ProviderCall
+		startErr error
+	}{
+		{
+			name: "AcceptedOperation",
+			call: call(lib.ProviderCallRunning),
+		},
+		{
+			name:     "AmbiguousStart",
+			startErr: errors.Join(lib.ErrProviderStartAmbiguous, context.Canceled),
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			generation := claimedGeneration(nil, false, 3)
+			mocks := newWorkerMocks(t)
+
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+
+			mocks.claim.EXPECT().Exec(mock.Anything, mock.Anything).
+				Return([]*dao.Generation{generation}, nil).Once()
+			mocks.provider.EXPECT().Start(mock.Anything, mock.Anything).
+				RunAndReturn(func(context.Context, *lib.ProviderStartRequest) (*lib.ProviderCall, error) {
+					cancel()
+
+					return testCase.call, testCase.startErr
+				}).Once()
+
+			activeBoundedContext := mock.MatchedBy(func(ctx context.Context) bool {
+				_, hasDeadline := ctx.Deadline()
+
+				return ctx.Err() == nil && hasDeadline
+			})
+
+			if testCase.call != nil {
+				mocks.record.EXPECT().Exec(activeBoundedContext, &dao.GenerationRecordProviderCallRequest{
+					ID: generation.ID, WorkerID: testWorkerID, ProviderCallID: testCallID,
+				}).Return(generation, nil).Once()
+			} else {
+				mocks.settle.EXPECT().Exec(activeBoundedContext,
+					mock.MatchedBy(func(request *dao.GenerationSettleRequest) bool {
+						return request.Status == dao.GenerationStatusFailed && request.Error != nil &&
+							*request.Error == "generation outcome unknown"
+					})).Return(generation, nil).Once()
+			}
+
+			_, err := mocks.worker(t).RunOnce(ctx)
+			require.NoError(t, err)
+			mocks.provider.AssertNotCalled(t, "Get", mock.Anything, mock.Anything)
+			mocks.requeue.AssertNotCalled(t, "Exec", mock.Anything, mock.Anything)
+			mocks.assertExpectations(t)
 		})
 	}
 }

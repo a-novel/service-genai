@@ -85,3 +85,33 @@ func TestGenerationObserveLater(t *testing.T) {
 		})
 	}
 }
+
+func TestGenerationObserveLaterPreservesInferenceAttempt(t *testing.T) {
+	t.Parallel()
+
+	postgres.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
+		t.Helper()
+
+		seedGeneration(ctx, t, 1)
+		claimed := claimGenerations(ctx, t)
+		generation := claimed[0]
+
+		_, err := dao.NewGenerationRecordProviderCall().Exec(ctx, &dao.GenerationRecordProviderCallRequest{
+			ID: generation.ID, WorkerID: testWorker, ProviderCallID: "resp_1",
+		})
+		require.NoError(t, err)
+
+		for range 3 {
+			_, err = dao.NewGenerationObserveLater().Exec(ctx, &dao.GenerationObserveLaterRequest{
+				ID: generation.ID, WorkerID: testWorker,
+			})
+			require.NoError(t, err)
+
+			resumed := claimGenerations(ctx, t)
+			require.Len(t, resumed, 1)
+			require.Equal(t, generation.Attempt, resumed[0].Attempt)
+			require.NotNil(t, resumed[0].ProviderCallID)
+			require.Equal(t, "resp_1", *resumed[0].ProviderCallID)
+		}
+	})
+}
