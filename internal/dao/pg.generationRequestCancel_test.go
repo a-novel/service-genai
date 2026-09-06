@@ -86,12 +86,13 @@ func TestGenerationRequestCancel(t *testing.T) {
 				generation := seedGeneration(ctx, t, 1)
 
 				if testCase.claimFirst {
-					claimGenerations(ctx, t)
+					generation = claimGenerations(ctx, t)[0]
 				}
 
 				if testCase.settleFirst {
 					_, err := dao.NewGenerationSettle().Exec(ctx, &dao.GenerationSettleRequest{
-						ID: generation.ID, WorkerID: testWorker,
+						ClaimToken: generation.ClaimToken,
+						ID:         generation.ID, WorkerID: testWorker,
 						Status: dao.GenerationStatusSucceeded, Retention: testRetention,
 					})
 					require.NoError(t, err)

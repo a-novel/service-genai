@@ -19,16 +19,16 @@ import (
 //go:embed pg.generationSettle.sql
 var generationSettleQuery string
 
-// ErrGenerationNotHeld is returned when the generation is not running under the given worker. It
-// covers a lost race with the reaper as well as a plain wrong id, and both mean the same thing to a
-// worker: stop, the claim is gone.
+// ErrGenerationNotHeld means the exact claim is absent or expired. The worker must stop mutating it.
 var ErrGenerationNotHeld = errors.New("generation is not held by this worker")
 
 // GenerationSettleRequest is the input to [GenerationSettle.Exec]. Exactly one of Output and Error
 // is set: an output on success, an error otherwise.
 type GenerationSettleRequest struct {
-	ID       uuid.UUID
-	WorkerID string
+	// ClaimToken must match the acquisition whose lease is still live.
+	ClaimToken uuid.UUID
+	ID         uuid.UUID
+	WorkerID   string
 	// Status is the terminal state to land in. The caller supplies a terminal one; the
 	// terminal-fields constraint rejects anything else.
 	Status GenerationStatus
@@ -49,7 +49,7 @@ type GenerationSettleRequest struct {
 type GenerationSettle struct{}
 
 func NewGenerationSettle() *GenerationSettle {
-	return new(GenerationSettle)
+	return &GenerationSettle{}
 }
 
 func (dao *GenerationSettle) Exec(ctx context.Context, request *GenerationSettleRequest) (*Generation, error) {
@@ -77,6 +77,7 @@ func (dao *GenerationSettle) Exec(ctx context.Context, request *GenerationSettle
 		request.Output,
 		request.Error,
 		request.Retention.Seconds(),
+		request.ClaimToken,
 	).Scan(ctx, entity)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

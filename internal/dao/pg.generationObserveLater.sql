@@ -1,16 +1,30 @@
--- Observation retries keep the provider operation attached so another claim continues polling the
--- paid work. Requiring the identifier keeps this transition separate from a fresh inference retry.
+-- Lock first so expiry is evaluated after any wait for a concurrent transaction.
+WITH
+  held AS MATERIALIZED (
+    SELECT
+      id AS held_id
+    FROM
+      generations
+    WHERE
+      id = ?0
+    FOR UPDATE
+  )
 UPDATE generations
 SET
   status = 'pending',
   claimed_by = NULL,
+  claim_token = NULL,
   lease_expires_at = NULL,
   run_at = clock_timestamp() + make_interval(secs => ?2),
   updated_at = clock_timestamp()
+FROM
+  held
 WHERE
-  id = ?0
+  id = held.held_id
   AND claimed_by = ?1
+  AND claim_token = ?3
   AND status = 'running'
+  AND lease_expires_at > clock_timestamp()
   AND provider_call_id IS NOT NULL
 RETURNING
-  *;
+  generations.*;

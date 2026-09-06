@@ -17,7 +17,7 @@ var generationReapQuery string
 
 // GenerationReapRequest is the input to [GenerationReap.Exec].
 type GenerationReapRequest struct {
-	// Grace is how long past its lease a claim is left alone, so a late settle beats the sweep.
+	// Grace is how long past its lease a claim is left alone, before recovery. It does not extend worker authority.
 	Grace time.Duration
 	// Retention applies to the generations this sweep abandons, which are terminal.
 	Retention time.Duration
@@ -29,7 +29,7 @@ type GenerationReapRequest struct {
 type GenerationReap struct{}
 
 func NewGenerationReap() *GenerationReap {
-	return new(GenerationReap)
+	return &GenerationReap{}
 }
 
 func (dao *GenerationReap) Exec(ctx context.Context, request *GenerationReapRequest) ([]*Generation, error) {

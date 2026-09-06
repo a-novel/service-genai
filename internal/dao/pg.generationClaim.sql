@@ -11,7 +11,8 @@ WITH
       status = 'pending'
       AND run_at <= clock_timestamp()
     ORDER BY
-      run_at
+      run_at,
+      id
     LIMIT
       ?1
     FOR UPDATE
@@ -20,8 +21,10 @@ WITH
 UPDATE generations
 SET
   status = 'running',
+  claim_token = uuidv7(),
   attempt = generations.attempt + CASE
-    WHEN generations.provider_call_id IS NULL THEN 1
+    WHEN generations.provider_call_id IS NULL
+    AND generations.start_requested_at IS NULL THEN 1
     ELSE 0
   END,
   claimed_by = ?0,

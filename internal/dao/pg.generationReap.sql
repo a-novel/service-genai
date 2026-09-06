@@ -1,50 +1,59 @@
--- Recovers generations whose lease lapsed. provider_call_id is PRESERVED: the worker died, the
--- provider's operation did not, so the next claim re-attaches instead of paying again.
--- An exhausted inference budget does not prevent observation of an operation already paid for.
---
--- The grace period is a head start for a late settle over the sweep. It is applied in the predicate
--- rather than at boot, because other replicas would sweep straight through a boot-only grace.
---
--- Bounded: a sweep that found every stranded claim at once would materialise the whole set back to
--- the caller. The caller repeats until a sweep comes back short.
+-- Expired claims have no authority during the recovery grace. A known provider operation remains
+-- resumable; Start intent without its ID is uncertain and cannot authorize another paid attempt.
 WITH
-  reapable AS (
+  reapable AS MATERIALIZED (
     SELECT
-      id
+      generations.*
     FROM
       generations
     WHERE
       status = 'running'
-      AND lease_expires_at < clock_timestamp() - make_interval(secs => ?0)
+      AND lease_expires_at <= clock_timestamp() - make_interval(secs => ?0)
     ORDER BY
-      lease_expires_at
+      lease_expires_at,
+      id
     LIMIT
       ?2
     FOR UPDATE
       SKIP LOCKED
+  ),
+  outcomes AS (
+    SELECT
+      id AS outcome_id,
+      CASE
+        WHEN provider_call_id IS NOT NULL THEN 'pending'::generation_status
+        WHEN start_requested_at IS NOT NULL THEN 'failed'::generation_status
+        WHEN cancel_requested_at IS NOT NULL THEN 'cancelled'::generation_status
+        WHEN attempt >= max_attempts THEN 'abandoned'::generation_status
+        ELSE 'pending'::generation_status
+      END AS outcome_status
+    FROM
+      reapable
   )
 UPDATE generations
 SET
-  status = CASE
-    WHEN generations.provider_call_id IS NULL
-    AND generations.attempt >= generations.max_attempts THEN 'abandoned'::generation_status
-    ELSE 'pending'::generation_status
+  status = outcomes.outcome_status,
+  error = CASE
+    WHEN outcomes.outcome_status = 'failed' THEN 'generation outcome unknown'
+    WHEN outcomes.outcome_status = 'cancelled' THEN 'generation cancelled'
+    ELSE error
   END,
   claimed_by = NULL,
+  claim_token = NULL,
   lease_expires_at = NULL,
   run_at = clock_timestamp(),
   settled_at = CASE
-    WHEN generations.provider_call_id IS NULL
-    AND generations.attempt >= generations.max_attempts THEN clock_timestamp()
+    WHEN outcomes.outcome_status <> 'pending' THEN clock_timestamp()
   END,
   expires_at = CASE
-    WHEN generations.provider_call_id IS NULL
-    AND generations.attempt >= generations.max_attempts THEN clock_timestamp() + make_interval(secs => ?1)
+    WHEN outcomes.outcome_status <> 'pending' THEN clock_timestamp() + make_interval(secs => ?1)
   END,
   updated_at = clock_timestamp()
 FROM
-  reapable
+  outcomes
 WHERE
-  generations.id = reapable.id
+  generations.id = outcomes.outcome_id
+  AND generations.status = 'running'
+  AND generations.lease_expires_at <= clock_timestamp() - make_interval(secs => ?0)
 RETURNING
   generations.*;

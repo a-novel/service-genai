@@ -19,8 +19,10 @@ var generationRecordProviderCallQuery string
 
 // GenerationRecordProviderCallRequest is the input to [GenerationRecordProviderCall.Exec].
 type GenerationRecordProviderCallRequest struct {
-	ID       uuid.UUID
-	WorkerID string
+	// ClaimToken must match the acquisition whose lease is still live.
+	ClaimToken uuid.UUID
+	ID         uuid.UUID
+	WorkerID   string
 	// ProviderCallID is the provider's own identifier for the operation just started. Recording it
 	// is what makes the generation resumable.
 	ProviderCallID string
@@ -30,7 +32,7 @@ type GenerationRecordProviderCallRequest struct {
 type GenerationRecordProviderCall struct{}
 
 func NewGenerationRecordProviderCall() *GenerationRecordProviderCall {
-	return new(GenerationRecordProviderCall)
+	return &GenerationRecordProviderCall{}
 }
 
 func (dao *GenerationRecordProviderCall) Exec(
@@ -52,7 +54,7 @@ func (dao *GenerationRecordProviderCall) Exec(
 	entity := new(Generation)
 
 	err = tx.NewRaw(
-		generationRecordProviderCallQuery, request.ID, request.WorkerID, request.ProviderCallID,
+		generationRecordProviderCallQuery, request.ID, request.WorkerID, request.ProviderCallID, request.ClaimToken,
 	).Scan(ctx, entity)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
