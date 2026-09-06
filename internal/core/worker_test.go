@@ -11,6 +11,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/codes"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
 	"github.com/a-novel-kit/golib/transaction/transactiontest"
 
@@ -739,6 +743,173 @@ func TestWorkerContinuesTheBatchAfterOneFailure(t *testing.T) {
 	require.True(t, worked)
 
 	mocks.assertExpectations(t)
+}
+
+//nolint:paralleltest // Replaces the process-wide tracer provider while workers run.
+func TestWorkerTelemetry(t *testing.T) {
+	recorder := tracetest.NewSpanRecorder()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	previous := otel.GetTracerProvider()
+
+	otel.SetTracerProvider(provider)
+	t.Cleanup(func() {
+		otel.SetTracerProvider(previous)
+		require.NoError(t, provider.Shutdown(context.WithoutCancel(t.Context())))
+	})
+
+	testCases := []struct {
+		name string
+
+		setup func(t *testing.T, mocks *workerMocks) *core.Worker
+
+		expectSpans map[string]codes.Code
+	}{
+		{
+			name: "Success",
+			setup: func(t *testing.T, mocks *workerMocks) *core.Worker {
+				t.Helper()
+
+				generation := claimedGeneration(nil, false, 1)
+				mocks.hold(generation)
+				mocks.claim.EXPECT().Exec(mock.Anything, mock.Anything).
+					Return([]*dao.Generation{generation}, nil).Once()
+				mocks.provider.EXPECT().Start(mock.Anything, mock.Anything).
+					Return(succeededCall(), nil).Once()
+				mocks.provider.EXPECT().Name().Return("openai").Once()
+				mocks.record.EXPECT().Exec(mock.Anything, mock.Anything).Return(generation, nil).Once()
+				mocks.settle.EXPECT().Exec(mock.Anything, mock.Anything).Return(generation, nil).Once()
+				mocks.usage.EXPECT().Exec(mock.Anything, mock.Anything).
+					Return(&dao.GenerationUsage{}, nil).Once()
+
+				return mocks.worker(t)
+			},
+			expectSpans: map[string]codes.Code{
+				"core.Worker.RunOnce":                 codes.Ok,
+				"core.Worker.startInference":          codes.Ok,
+				"core.Worker.finishProviderOperation": codes.Ok,
+				"core.Worker.settle":                  codes.Ok,
+			},
+		},
+		{
+			name: "Error/Transaction",
+			setup: func(t *testing.T, mocks *workerMocks) *core.Worker {
+				t.Helper()
+
+				generation := claimedGeneration(nil, false, 1)
+				mocks.hold(generation)
+				mocks.claim.EXPECT().Exec(mock.Anything, mock.Anything).
+					Return([]*dao.Generation{generation}, nil).Once()
+				mocks.provider.EXPECT().Start(mock.Anything, mock.Anything).
+					Return(succeededCall(), nil).Once()
+				mocks.record.EXPECT().Exec(mock.Anything, mock.Anything).Return(generation, nil).Once()
+
+				worker, err := core.NewWorker(
+					testWorkerConfig(), mocks.logger, mocks.provider,
+					transactiontest.NewFailingTransactor(errFoo), mocks.daos(),
+				)
+				require.NoError(t, err)
+
+				return worker
+			},
+			expectSpans: map[string]codes.Code{
+				"core.Worker.RunOnce":                 codes.Error,
+				"core.Worker.finishProviderOperation": codes.Error,
+				"core.Worker.settle":                  codes.Error,
+			},
+		},
+		{
+			name: "Error/Settlement",
+			setup: func(t *testing.T, mocks *workerMocks) *core.Worker {
+				t.Helper()
+
+				generation := claimedGeneration(nil, false, 1)
+				mocks.hold(generation)
+				mocks.claim.EXPECT().Exec(mock.Anything, mock.Anything).
+					Return([]*dao.Generation{generation}, nil).Once()
+				mocks.provider.EXPECT().Start(mock.Anything, mock.Anything).
+					Return(succeededCall(), nil).Once()
+				mocks.record.EXPECT().Exec(mock.Anything, mock.Anything).Return(generation, nil).Once()
+				mocks.settle.EXPECT().Exec(mock.Anything, mock.Anything).Return(generation, errFoo).Once()
+
+				return mocks.worker(t)
+			},
+			expectSpans: map[string]codes.Code{
+				"core.Worker.RunOnce":                 codes.Error,
+				"core.Worker.finishProviderOperation": codes.Error,
+				"core.Worker.settle":                  codes.Error,
+			},
+		},
+		{
+			name: "Error/MixedBatch",
+			setup: func(t *testing.T, mocks *workerMocks) *core.Worker {
+				t.Helper()
+
+				first := claimedGeneration(nil, false, 1)
+				second := claimedGeneration(nil, false, 1)
+				second.ID = uuid.MustParse("01999999-0000-7000-8000-000000000002")
+
+				mocks.hold(first)
+				mocks.hold(second)
+				mocks.claim.EXPECT().Exec(mock.Anything, mock.Anything).
+					Return([]*dao.Generation{first}, nil).Once()
+				mocks.claim.EXPECT().Exec(mock.Anything, mock.Anything).
+					Return([]*dao.Generation{second}, nil).Once()
+				mocks.provider.EXPECT().Start(mock.Anything, mock.Anything).Return(nil, errFoo).Once()
+				mocks.provider.EXPECT().Start(mock.Anything, mock.Anything).
+					Return(succeededCall(), nil).Once()
+				mocks.provider.EXPECT().Name().Return("openai").Once()
+				mocks.record.EXPECT().Exec(mock.Anything, mock.Anything).Return(second, nil).Once()
+				mocks.settle.EXPECT().Exec(mock.Anything, mock.Anything).Return(first, nil).Twice()
+				mocks.usage.EXPECT().Exec(mock.Anything, mock.Anything).
+					Return(&dao.GenerationUsage{}, nil).Once()
+
+				config := testWorkerConfig()
+				config.BatchSize = 2
+				worker, err := core.NewWorker(
+					config, mocks.logger, mocks.provider, transactiontest.NewTransactor(), mocks.daos(),
+				)
+				require.NoError(t, err)
+
+				return worker
+			},
+			expectSpans: map[string]codes.Code{
+				"core.Worker.RunOnce":       codes.Error,
+				"core.Worker.failInference": codes.Error,
+			},
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			recorder.Reset()
+
+			mocks := newWorkerMocks(t)
+			worker := testCase.setup(t, mocks)
+
+			worked, err := worker.RunOnce(t.Context())
+			require.NoError(t, err)
+			require.True(t, worked)
+
+			spans := make(map[string]sdktrace.ReadOnlySpan, len(testCase.expectSpans))
+			for _, span := range recorder.Ended() {
+				if _, ok := testCase.expectSpans[span.Name()]; ok {
+					spans[span.Name()] = span
+				}
+			}
+
+			for name, expectStatus := range testCase.expectSpans {
+				span, ok := spans[name]
+				require.True(t, ok, "span %s was not recorded", name)
+				require.Equal(t, expectStatus, span.Status().Code, name)
+
+				if expectStatus == codes.Error {
+					require.Contains(t, span.Status().Description, errFoo.Error())
+				}
+			}
+
+			mocks.assertExpectations(t)
+		})
+	}
 }
 
 func TestNewWorker(t *testing.T) {
