@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/a-novel-kit/golib/postgres"
+	"github.com/a-novel-kit/golib/postgres/postgrestest"
 
 	"github.com/a-novel/service-genai/internal/config/configtest"
 	"github.com/a-novel/service-genai/internal/dao"
@@ -131,7 +131,7 @@ func TestGenerationSubmit(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			postgres.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
+			postgrestest.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
 				t.Helper()
 
 				results := make([]*dao.GenerationSubmitResult, 0, len(testCase.submissions))
@@ -186,7 +186,7 @@ func TestGenerationSubmitConcurrent(t *testing.T) {
 
 	const concurrency = 8
 
-	postgres.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
+	postgrestest.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
 		t.Helper()
 
 		daoGenerationSubmit := dao.NewGenerationSubmit()
