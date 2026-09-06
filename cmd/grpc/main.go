@@ -7,6 +7,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -38,6 +39,11 @@ import (
 	"github.com/a-novel/service-genai/internal/handlers"
 	genaiv0 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v0"
 	"github.com/a-novel/service-genai/internal/lib"
+)
+
+var (
+	errLoopExitedUnexpectedly = errors.New("background loop exited unexpectedly")
+	errLoopPanicked           = errors.New("background loop panicked")
 )
 
 func main() {
@@ -160,10 +166,10 @@ func main() {
 	healthcheck := grpcf.RegisterEchoServers(server)
 	healthcheck.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
 
-	go func() {
-		<-ctx.Done()
+	beginShutdown := sync.OnceFunc(func() {
 		healthcheck.SetServingStatus("", healthpb.HealthCheckResponse_NOT_SERVING)
-	}()
+		stop()
+	})
 
 	genaiv0.RegisterStatusServiceServer(server, handlerStatus)
 	genaiv0.RegisterGenerationSubmitServiceServer(server, handlerSubmit)
@@ -184,34 +190,64 @@ func main() {
 	// They take the boot context, not a request one: a request context dies at the server's own
 	// timeout, and a generation outlives that by design. The stagger keeps two loops sharing an
 	// interval from waking together.
-	var loops sync.WaitGroup
-
-	loops.Add(1)
-	go func() {
-		defer loops.Done()
-
-		runLoop(ctx, cfg.Log, "generation-worker", cfg.Worker.Interval, 0, generationWorker.RunOnce)
-	}()
-
-	loops.Add(1)
-	go func() {
-		defer loops.Done()
-
-		runLoop(ctx, cfg.Log, "generation-reaper", cfg.Reaper.Interval, time.Second, reaper.RunOnce)
-	}()
-
 	log.Println("Starting gRPC server on :" + strconv.Itoa(cfg.Grpc.Port))
 
-	serveErr := grpcf.Serve(ctx, server, fmt.Sprintf("0.0.0.0:%d", cfg.Grpc.Port), cfg.Grpc.Shutdown)
-
-	// A serving failure must stop the process-owned loops too. Waiting here keeps their spans and
-	// database calls ahead of the deferred resource close and telemetry flush.
-	stop()
-	loops.Wait()
-
+	serveErr := runProcess(
+		ctx,
+		beginShutdown,
+		func(ctx context.Context) error {
+			return grpcf.Serve(ctx, server, fmt.Sprintf("0.0.0.0:%d", cfg.Grpc.Port), cfg.Grpc.Shutdown)
+		},
+		func(ctx context.Context) error {
+			return runLoop(
+				ctx, cfg.Log, "generation-worker", cfg.Worker.Interval, 0, generationWorker.RunOnce,
+			)
+		},
+		func(ctx context.Context) error {
+			return runLoop(
+				ctx, cfg.Log, "generation-reaper", cfg.Reaper.Interval, time.Second, reaper.RunOnce,
+			)
+		},
+	)
 	if serveErr != nil {
 		panic(serveErr)
 	}
+}
+
+// runProcess keeps the server and its background loops under one owner. Process cancellation or
+// the first component to stop makes the service unavailable and cancels its siblings; all
+// components are joined before the caller closes the database and flushes telemetry.
+func runProcess(
+	ctx context.Context,
+	beginShutdown func(),
+	components ...func(context.Context) error,
+) error {
+	results := make(chan error, len(components))
+
+	for _, component := range components {
+		go func() {
+			results <- component(ctx)
+		}()
+	}
+
+	var err error
+
+	completed := 0
+
+	select {
+	case err = <-results:
+		completed = 1
+	case <-ctx.Done():
+	}
+
+	beginShutdown()
+
+	for completed < len(components) {
+		err = errors.Join(err, <-results)
+		completed++
+	}
+
+	return err
 }
 
 func closeDatabase(database io.Closer) {
@@ -221,24 +257,41 @@ func closeDatabase(database io.Closer) {
 	}
 }
 
-// runLoop drives a background loop under panic recovery.
-//
-// The OpenTelemetry SDK does not recover panics, and a panic escaping a goroutine takes the whole
-// process with it — including the gRPC server, which had nothing to do with the fault.
+// runLoop drives a background loop until cancellation. A panic or premature return becomes a
+// process error without including the panic payload, which may contain private provider data.
 func runLoop(
 	ctx context.Context,
 	logger logging.Log,
 	name string,
 	interval, stagger time.Duration,
 	fn func(context.Context) (bool, error),
-) {
+) error {
+	return observeLoop(ctx, name, func() {
+		worker.Poll(ctx, logger, name, interval, stagger, fn)
+	})
+}
+
+// observeLoop turns a loop boundary into a normal cancellation or a safe, named process failure.
+func observeLoop(ctx context.Context, name string, loop func()) (err error) {
 	ctx, span := otel.Tracer().Start(ctx, "cmd.runLoop")
 	defer span.End()
-	defer otel.RecoverPanic(ctx, span)
+	defer func() {
+		if recover() != nil {
+			err = otel.ReportError(span, fmt.Errorf("%s: %w", name, errLoopPanicked))
+		}
+	}()
 
 	span.SetAttributes(attribute.String("loop.name", name))
 
-	worker.Poll(ctx, logger, name, interval, stagger, fn)
+	loop()
+
+	if ctx.Err() != nil {
+		otel.ReportSuccessNoContent(span)
+
+		return nil
+	}
+
+	return otel.ReportError(span, fmt.Errorf("%s: %w", name, errLoopExitedUnexpectedly))
 }
 
 // providerOptions builds the client options from configuration. An empty base URL leaves the
