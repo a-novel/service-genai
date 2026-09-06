@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/openai/openai-go/v3/option"
 	"github.com/stretchr/testify/require"
@@ -89,6 +91,12 @@ const (
 		"model": "gpt-5.6-terra",
 		"error": {"code": "server_error", "message": "the model failed"}
 	}`
+	responseFailedTerminal = `{
+		"id": "resp_1",
+		"status": "failed",
+		"model": "gpt-5.6-terra",
+		"error": {"code": "invalid_prompt", "message": "the prompt was rejected"}
+	}`
 	responseCancelled = `{"id": "resp_1", "status": "cancelled", "model": "gpt-5.6-terra"}`
 )
 
@@ -100,11 +108,12 @@ func TestOpenAI(t *testing.T) {
 
 		script *scriptedProvider
 
-		expectState  lib.ProviderCallState
-		expectModel  string
-		expectReason string
-		expectUsage  *lib.ProviderUsage
-		expectErr    error
+		expectState     lib.ProviderCallState
+		expectModel     string
+		expectReason    string
+		expectUsage     *lib.ProviderUsage
+		expectRetryable bool
+		expectErr       error
 	}{
 		{
 			name: "Success/Completed",
@@ -143,13 +152,23 @@ func TestOpenAI(t *testing.T) {
 			},
 		},
 		{
-			name: "Success/Failed",
+			name: "Success/RetryableFailure",
 
 			script: &scriptedProvider{status: http.StatusOK, body: responseFailed},
 
+			expectState:     lib.ProviderCallFailed,
+			expectModel:     "gpt-5.6-terra",
+			expectReason:    "the model failed",
+			expectRetryable: true,
+		},
+		{
+			name: "Success/TerminalFailure",
+
+			script: &scriptedProvider{status: http.StatusOK, body: responseFailedTerminal},
+
 			expectState:  lib.ProviderCallFailed,
 			expectModel:  "gpt-5.6-terra",
-			expectReason: "the model failed",
+			expectReason: "the prompt was rejected",
 		},
 		{
 			name: "Success/Cancelled",
@@ -168,11 +187,11 @@ func TestOpenAI(t *testing.T) {
 			expectErr: lib.ErrProviderRetryable,
 		},
 		{
-			name: "Error/Retryable/ProviderFault",
+			name: "Error/Ambiguous/ProviderFault",
 
 			script: &scriptedProvider{status: http.StatusBadGateway, body: `{"error":{"message":"bad gateway"}}`},
 
-			expectErr: lib.ErrProviderRetryable,
+			expectErr: lib.ErrProviderStartAmbiguous,
 		},
 		{
 			// Terminal: retrying only spends an attempt to be rejected again.
@@ -219,6 +238,7 @@ func TestOpenAI(t *testing.T) {
 			require.Equal(t, testCase.expectModel, call.Model)
 			require.Equal(t, testCase.expectReason, call.Reason)
 			require.Equal(t, testCase.expectUsage, call.Usage)
+			require.Equal(t, testCase.expectRetryable, call.Retryable)
 			require.Equal(t, testCase.expectState != lib.ProviderCallRunning, call.State.Terminal())
 			// The output is the provider's response verbatim, so the caller reads whatever it asked
 			// for without this service knowing the shape.
@@ -438,8 +458,50 @@ func TestOpenAICancel(t *testing.T) {
 	}
 }
 
-// A dial failure has no HTTP response to classify, and it is exactly the case where another attempt
-// is most likely to succeed.
+func TestOpenAIStartTimeoutIsAmbiguous(t *testing.T) {
+	t.Parallel()
+
+	var requests atomic.Int32
+
+	started := make(chan struct{}, 1)
+
+	release := make(chan struct{})
+	defer close(release)
+
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+
+		started <- struct{}{}
+
+		<-release
+	}))
+	t.Cleanup(server.Close)
+
+	provider := lib.NewOpenAI(
+		option.WithBaseURL(server.URL),
+		option.WithAPIKey("test-key"),
+		option.WithRequestTimeout(10*time.Millisecond),
+	)
+
+	result := make(chan error, 1)
+
+	go func() {
+		_, err := provider.Start(t.Context(), &lib.ProviderStartRequest{
+			Request:      json.RawMessage(`{"model": "gpt-5.6-terra"}`),
+			GenerationID: "01999999-0000-7000-8000-000000000001",
+			Attempt:      1,
+		})
+		result <- err
+	}()
+
+	<-started
+
+	err := <-result
+	require.ErrorIs(t, err, lib.ErrProviderStartAmbiguous)
+	require.Equal(t, int32(1), requests.Load())
+}
+
+// A dial failure gives no proof that the provider rejected the operation.
 func TestOpenAITransportFailure(t *testing.T) {
 	t.Parallel()
 
@@ -455,7 +517,7 @@ func TestOpenAITransportFailure(t *testing.T) {
 		GenerationID: "01999999-0000-7000-8000-000000000001",
 		Attempt:      1,
 	})
-	require.ErrorIs(t, err, lib.ErrProviderRetryable)
+	require.ErrorIs(t, err, lib.ErrProviderStartAmbiguous)
 }
 
 // A request that is not a JSON object cannot have the two owned fields merged into it, and that is

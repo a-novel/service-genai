@@ -19,11 +19,13 @@ var generationRequeueQuery string
 
 // GenerationRequeueRequest is the input to [GenerationRequeue.Exec].
 type GenerationRequeueRequest struct {
-	ID       uuid.UUID
-	WorkerID string
+	ID             uuid.UUID
+	WorkerID       string
+	ProviderCallID *string
 }
 
-// GenerationRequeue returns a generation to the queue after a retryable failure.
+// GenerationRequeue authorizes a fresh inference attempt after a definitive retryable failure.
+// The expected provider operation makes that authorization stale-safe.
 //
 // It is not a public operation on its own: a worker reports an outcome, and a retryable failure with
 // attempts remaining lands here rather than in [GenerationSettle]. Folding the two together is what
@@ -31,7 +33,7 @@ type GenerationRequeueRequest struct {
 type GenerationRequeue struct{}
 
 func NewGenerationRequeue() *GenerationRequeue {
-	return new(GenerationRequeue)
+	return &GenerationRequeue{}
 }
 
 func (dao *GenerationRequeue) Exec(ctx context.Context, request *GenerationRequeueRequest) (*Generation, error) {
@@ -50,7 +52,7 @@ func (dao *GenerationRequeue) Exec(ctx context.Context, request *GenerationReque
 
 	entity := new(Generation)
 
-	err = tx.NewRaw(generationRequeueQuery, request.ID, request.WorkerID).Scan(ctx, entity)
+	err = tx.NewRaw(generationRequeueQuery, request.ID, request.WorkerID, request.ProviderCallID).Scan(ctx, entity)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			err = errors.Join(err, ErrGenerationNotHeld)

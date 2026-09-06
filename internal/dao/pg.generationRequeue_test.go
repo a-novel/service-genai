@@ -16,10 +16,14 @@ import (
 func TestGenerationRequeue(t *testing.T) {
 	t.Parallel()
 
+	providerCallID := "resp_1"
+
 	testCases := []struct {
 		name string
 
-		worker string
+		worker                 string
+		recordedProviderCallID *string
+		requestProviderCallID  *string
 
 		expectErr error
 	}{
@@ -27,6 +31,21 @@ func TestGenerationRequeue(t *testing.T) {
 			name: "Success",
 
 			worker: testWorker,
+		},
+		{
+			name: "Success/KnownTerminalProviderOperation",
+
+			worker:                 testWorker,
+			recordedProviderCallID: &providerCallID,
+			requestProviderCallID:  &providerCallID,
+		},
+		{
+			name: "Error/KnownProviderOperationWithoutAuthorization",
+
+			worker:                 testWorker,
+			recordedProviderCallID: &providerCallID,
+
+			expectErr: dao.ErrGenerationNotHeld,
 		},
 		{
 			name: "Error/NotHeldByThisWorker",
@@ -49,13 +68,15 @@ func TestGenerationRequeue(t *testing.T) {
 				seedGeneration(ctx, t, 3)
 				claimed := claimGenerations(ctx, t)
 
-				_, err := dao.NewGenerationRecordProviderCall().Exec(ctx, &dao.GenerationRecordProviderCallRequest{
-					ID: claimed[0].ID, WorkerID: testWorker, ProviderCallID: "resp_1",
-				})
-				require.NoError(t, err)
+				if testCase.recordedProviderCallID != nil {
+					_, err := dao.NewGenerationRecordProviderCall().Exec(ctx, &dao.GenerationRecordProviderCallRequest{
+						ID: claimed[0].ID, WorkerID: testWorker, ProviderCallID: *testCase.recordedProviderCallID,
+					})
+					require.NoError(t, err)
+				}
 
 				requeued, err := daoRequeue.Exec(ctx, &dao.GenerationRequeueRequest{
-					ID: claimed[0].ID, WorkerID: testCase.worker,
+					ID: claimed[0].ID, WorkerID: testCase.worker, ProviderCallID: testCase.requestProviderCallID,
 				})
 				require.ErrorIs(t, err, testCase.expectErr)
 
@@ -68,9 +89,12 @@ func TestGenerationRequeue(t *testing.T) {
 				require.Equal(t, dao.GenerationStatusPending, requeued.Status)
 				require.Nil(t, requeued.ClaimedBy)
 				require.Nil(t, requeued.LeaseExpiresAt)
-				// Cleared, unlike a reap: the worker that reported the failure declared its provider
-				// operation dead, so the next run starts a fresh one on purpose.
 				require.Nil(t, requeued.ProviderCallID)
+
+				reclaimed := claimGenerations(ctx, t)
+				require.Len(t, reclaimed, 1)
+				require.Equal(t, claimed[0].Attempt+1, reclaimed[0].Attempt)
+				require.Nil(t, reclaimed[0].ProviderCallID)
 			})
 		})
 	}

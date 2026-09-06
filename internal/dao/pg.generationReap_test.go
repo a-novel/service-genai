@@ -22,8 +22,9 @@ func TestGenerationReap(t *testing.T) {
 
 		// pending is how many generations are seeded and claimed.
 		pending int
-		// maxAttempts on each. One attempt means a lapsed lease is terminal.
-		maxAttempts int16
+		// maxAttempts limits fresh inference attempts, not observations of known provider work.
+		maxAttempts        int16
+		recordProviderCall bool
 		// leaseAge is how long ago the lease lapsed. Zero leaves it live.
 		leaseAge time.Duration
 
@@ -45,7 +46,18 @@ func TestGenerationReap(t *testing.T) {
 		{
 			name: "Success/RequeuesWithAttemptsLeft",
 
-			pending: 1, maxAttempts: 3, leaseAge: time.Hour,
+			recordProviderCall: true,
+			pending:            1, maxAttempts: 3, leaseAge: time.Hour,
+			request: &dao.GenerationReapRequest{Grace: 0, Retention: testRetention, Limit: 10},
+
+			expectReaped: 1,
+			expectStatus: dao.GenerationStatusPending,
+		},
+		{
+			name: "Success/ResumesKnownOperationOnLastAttempt",
+
+			recordProviderCall: true,
+			pending:            1, maxAttempts: 1, leaseAge: time.Hour,
 			request: &dao.GenerationReapRequest{Grace: 0, Retention: testRetention, Limit: 10},
 
 			expectReaped: 1,
@@ -97,15 +109,15 @@ func TestGenerationReap(t *testing.T) {
 
 				claimed := claimGenerations(ctx, t)
 
-				// Recorded on every claim, so the preservation assertion below has something to
-				// check: a crash must not cost the provider call already paid for.
 				daoRecord := dao.NewGenerationRecordProviderCall()
 
 				for _, generation := range claimed {
-					_, err := daoRecord.Exec(ctx, &dao.GenerationRecordProviderCallRequest{
-						ID: generation.ID, WorkerID: testWorker, ProviderCallID: "resp_" + generation.ID.String(),
-					})
-					require.NoError(t, err)
+					if testCase.recordProviderCall {
+						_, err := daoRecord.Exec(ctx, &dao.GenerationRecordProviderCallRequest{
+							ID: generation.ID, WorkerID: testWorker, ProviderCallID: "resp_" + generation.ID.String(),
+						})
+						require.NoError(t, err)
+					}
 
 					if testCase.leaseAge > 0 {
 						expireLease(ctx, t, generation.ID, testCase.leaseAge)
@@ -120,9 +132,15 @@ func TestGenerationReap(t *testing.T) {
 					require.Equal(t, testCase.expectStatus, generation.Status)
 					require.Nil(t, generation.ClaimedBy)
 					require.Nil(t, generation.LeaseExpiresAt)
-					// Preserved, unlike a requeue: the worker died, the provider's operation did
-					// not, so the next claim re-attaches instead of paying again.
-					require.NotNil(t, generation.ProviderCallID)
+
+					if testCase.recordProviderCall {
+						require.NotNil(t, generation.ProviderCallID)
+						require.Equal(t, "resp_"+generation.ID.String(), *generation.ProviderCallID)
+						require.Nil(t, generation.SettledAt)
+						require.Nil(t, generation.ExpiresAt)
+					} else {
+						require.Nil(t, generation.ProviderCallID)
+					}
 
 					if testCase.expectStatus == dao.GenerationStatusAbandoned {
 						require.NotNil(t, generation.SettledAt)

@@ -58,9 +58,9 @@ func (provider *OpenAI) Start(ctx context.Context, request *ProviderStartRequest
 
 	response := new(responses.Response)
 
-	err = provider.client.Post(ctx, responsesPath, body, response)
+	err = provider.client.Post(ctx, responsesPath, body, response, option.WithMaxRetries(0))
 	if err != nil {
-		return nil, otel.ReportError(span, classifyOpenAIError(err))
+		return nil, otel.ReportError(span, classifyOpenAIStartError(err))
 	}
 
 	return otel.ReportSuccess(span, providerCallOf(response)), nil
@@ -145,6 +145,7 @@ func providerCallOf(response *responses.Response) *ProviderCall {
 	case ProviderCallIncomplete:
 		call.Reason = response.IncompleteDetails.Reason
 	case ProviderCallFailed:
+		call.Retryable = providerFailureRetryable(response.Error.Code)
 		call.Reason = response.Error.Message
 	case ProviderCallRunning, ProviderCallSucceeded, ProviderCallCancelled:
 	}
@@ -161,6 +162,17 @@ func providerCallOf(response *responses.Response) *ProviderCall {
 	}
 
 	return call
+}
+
+func providerFailureRetryable(code responses.ResponseErrorCode) bool {
+	switch code {
+	case responses.ResponseErrorCodeServerError,
+		responses.ResponseErrorCodeRateLimitExceeded,
+		responses.ResponseErrorCodeVectorStoreTimeout:
+		return true
+	default:
+		return false
+	}
 }
 
 func providerCallStateOf(status responses.ResponseStatus) ProviderCallState {
@@ -180,6 +192,24 @@ func providerCallStateOf(status responses.ResponseStatus) ProviderCallState {
 		// cheap, and settling on a status we do not understand throws away work already paid for.
 		return ProviderCallRunning
 	}
+}
+
+// classifyOpenAIStartError separates definitive rejection from a response that may have been lost.
+func classifyOpenAIStartError(err error) error {
+	var apiErr *openai.Error
+
+	if !errors.As(err, &apiErr) {
+		return fmt.Errorf("%w: %w", ErrProviderStartAmbiguous, err)
+	}
+
+	switch status := apiErr.StatusCode; {
+	case status == http.StatusTooManyRequests:
+		return fmt.Errorf("%w: %w", ErrProviderRetryable, err)
+	case status == http.StatusRequestTimeout, status >= http.StatusInternalServerError:
+		return fmt.Errorf("%w: %w", ErrProviderStartAmbiguous, err)
+	}
+
+	return fmt.Errorf("provider rejected the request: %w", err)
 }
 
 // classifyOpenAIError decides whether another attempt is worth spending.

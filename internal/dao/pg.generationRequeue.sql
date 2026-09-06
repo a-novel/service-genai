@@ -1,6 +1,5 @@
--- A retryable failure with attempts left. The worker that reported it declared its provider
--- operation dead, so provider_call_id is cleared and the next run starts a fresh one — the opposite
--- of what the reaper does.
+-- A definitive provider outcome authorizes another inference attempt only when the worker names
+-- the exact operation it observed. A NULL expectation covers provider rejection before creation.
 UPDATE generations
 SET
   status = 'pending',
@@ -13,5 +12,6 @@ WHERE
   id = ?0
   AND claimed_by = ?1
   AND status = 'running'
+  AND provider_call_id IS NOT DISTINCT FROM ?2
 RETURNING
   *;
