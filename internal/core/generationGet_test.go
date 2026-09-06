@@ -1,7 +1,9 @@
 package core_test
 
 import (
+	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
@@ -17,6 +19,11 @@ func TestGenerationGet(t *testing.T) {
 
 	owner := uuid.MustParse("00000000-0000-0000-0000-000000000001")
 	generationID := uuid.MustParse("01999999-0000-7000-8000-000000000001")
+	createdAt := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	updatedAt := createdAt.Add(time.Minute)
+	settledAt := updatedAt.Add(time.Minute)
+	expiresAt := settledAt.Add(time.Hour)
+	generationError := "provider error"
 
 	type daoMock struct {
 		resp *dao.Generation
@@ -30,13 +37,27 @@ func TestGenerationGet(t *testing.T) {
 
 		daoMock *daoMock
 
+		expect    *core.Generation
 		expectErr error
 	}{
 		{
 			name: "Success",
 
 			request: &core.GenerationGetRequest{ID: generationID, OwnerID: owner},
-			daoMock: &daoMock{resp: &dao.Generation{ID: generationID}},
+			daoMock: &daoMock{resp: &dao.Generation{
+				ID: generationID, OwnerID: owner, Purpose: "studio.generation",
+				Output: json.RawMessage(`{"text":"done"}`), Error: &generationError,
+				Status: dao.GenerationStatusFailed, Attempt: 2, MaxAttempts: 3,
+				CreatedAt: createdAt, UpdatedAt: updatedAt, SettledAt: &settledAt,
+				ExpiresAt: &expiresAt,
+			}},
+			expect: &core.Generation{
+				ID: generationID, OwnerID: owner, Purpose: "studio.generation",
+				Output: json.RawMessage(`{"text":"done"}`), Error: &generationError,
+				Status: core.GenerationStatusFailed, Attempt: 2, MaxAttempts: 3,
+				CreatedAt: createdAt, UpdatedAt: updatedAt, SettledAt: &settledAt,
+				ExpiresAt: &expiresAt,
+			},
 		},
 		{
 			// The data access reports not-found for another owner's generation too, so the
@@ -92,7 +113,7 @@ func TestGenerationGet(t *testing.T) {
 			if testCase.expectErr != nil {
 				require.Nil(t, result)
 			} else {
-				require.Equal(t, testCase.daoMock.resp, result)
+				require.Equal(t, testCase.expect, result)
 			}
 
 			getDao.AssertExpectations(t)

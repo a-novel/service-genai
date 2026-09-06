@@ -39,7 +39,7 @@ func NewGenerationCancel(cancelDao GenerationCancelDao) *GenerationCancel {
 
 func (service *GenerationCancel) Exec(
 	ctx context.Context, request *GenerationCancelRequest,
-) (*dao.Generation, error) {
+) (*Generation, error) {
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCancel")
 	defer span.End()
 
@@ -65,5 +65,5 @@ func (service *GenerationCancel) Exec(
 		return nil, otel.ReportError(span, fmt.Errorf("cancel generation: %w", err))
 	}
 
-	return otel.ReportSuccess(span, generation), nil
+	return otel.ReportSuccess(span, newGeneration(generation)), nil
 }

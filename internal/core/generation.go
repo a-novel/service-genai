@@ -1,8 +1,13 @@
 package core
 
 import (
+	"encoding/json"
 	"errors"
 	"time"
+
+	"github.com/google/uuid"
+
+	"github.com/a-novel/service-genai/internal/dao"
 )
 
 // Ceilings the worker configuration is held to. They live here because validation is this layer's
@@ -26,6 +31,73 @@ const (
 	// protobuf envelope so an oversized request reaches application validation.
 	RequestSizeCeiling = 3_688_000
 )
+
+// GenerationStatus identifies where a generation sits in its lifecycle.
+type GenerationStatus string
+
+const (
+	// GenerationStatusPending means the generation is waiting for a worker.
+	GenerationStatusPending GenerationStatus = "pending"
+	// GenerationStatusRunning means a worker is executing the generation.
+	GenerationStatusRunning GenerationStatus = "running"
+	// GenerationStatusSucceeded means the provider returned a usable output.
+	GenerationStatusSucceeded GenerationStatus = "succeeded"
+	// GenerationStatusFailed means the generation exhausted its attempts without a usable output.
+	GenerationStatusFailed GenerationStatus = "failed"
+	// GenerationStatusAbandoned means the final worker lease expired before settlement.
+	GenerationStatusAbandoned GenerationStatus = "abandoned"
+	// GenerationStatusCancelled means the generation settled after its owner requested cancellation.
+	GenerationStatusCancelled GenerationStatus = "cancelled"
+)
+
+// Generation is the core result exposed to generation transports.
+type Generation struct {
+	// ID identifies the generation.
+	ID uuid.UUID
+	// OwnerID identifies the user who owns the generation.
+	OwnerID uuid.UUID
+	// Purpose groups the generation under the caller's workflow vocabulary.
+	Purpose string
+	// Output is the provider response when the generation succeeds.
+	Output json.RawMessage
+	// Error is the serialized failure when the generation does not succeed.
+	Error *string
+	// Status identifies the generation's current lifecycle state.
+	Status GenerationStatus
+	// Attempt is the zero-based attempt currently running or most recently completed.
+	Attempt int16
+	// MaxAttempts caps the number of provider attempts.
+	MaxAttempts int16
+	// CreatedAt is when the generation was submitted.
+	CreatedAt time.Time
+	// UpdatedAt is when the generation last changed.
+	UpdatedAt time.Time
+	// SettledAt is when the generation reached a terminal state.
+	SettledAt *time.Time
+	// ExpiresAt is when the generation content becomes eligible for removal.
+	ExpiresAt *time.Time
+}
+
+func newGeneration(generation *dao.Generation) *Generation {
+	if generation == nil {
+		return nil
+	}
+
+	return &Generation{
+		ID:          generation.ID,
+		OwnerID:     generation.OwnerID,
+		Purpose:     generation.Purpose,
+		Output:      generation.Output,
+		Error:       generation.Error,
+		Status:      GenerationStatus(generation.Status),
+		Attempt:     generation.Attempt,
+		MaxAttempts: generation.MaxAttempts,
+		CreatedAt:   generation.CreatedAt,
+		UpdatedAt:   generation.UpdatedAt,
+		SettledAt:   generation.SettledAt,
+		ExpiresAt:   generation.ExpiresAt,
+	}
+}
 
 // Errors a caller can act on. Everything else is a fault.
 var (
