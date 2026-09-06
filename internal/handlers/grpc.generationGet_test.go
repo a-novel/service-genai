@@ -9,7 +9,6 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/a-novel/service-genai/internal/core"
-	"github.com/a-novel/service-genai/internal/dao"
 	"github.com/a-novel/service-genai/internal/handlers"
 	handlersmocks "github.com/a-novel/service-genai/internal/handlers/mocks"
 	genaiv0 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v0"
@@ -19,7 +18,7 @@ func TestGrpcGenerationGet(t *testing.T) {
 	t.Parallel()
 
 	type serviceMock struct {
-		resp *dao.Generation
+		resp *core.Generation
 		err  error
 	}
 

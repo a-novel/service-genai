@@ -5,7 +5,7 @@ import (
 
 	"github.com/a-novel-kit/golib/otel"
 
-	"github.com/a-novel/service-genai/internal/dao"
+	"github.com/a-novel/service-genai/internal/core"
 	genaiv0 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v0"
 )
 
@@ -38,7 +38,7 @@ func (handler *GrpcGenerationWatch) GenerationWatch(
 	ctx, span := otel.Tracer().Start(stream.Context(), "grpc.GenerationWatch")
 	defer span.End()
 
-	var last *dao.Generation
+	var last *core.Generation
 
 	for {
 		generation, err := handler.reader.read(ctx, request.GetId(), request.GetOwnerId())

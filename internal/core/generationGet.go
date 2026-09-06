@@ -34,7 +34,7 @@ func NewGenerationGet(getDao GenerationGetDao) *GenerationGet {
 	return &GenerationGet{dao: getDao}
 }
 
-func (service *GenerationGet) Exec(ctx context.Context, request *GenerationGetRequest) (*dao.Generation, error) {
+func (service *GenerationGet) Exec(ctx context.Context, request *GenerationGetRequest) (*Generation, error) {
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationGet")
 	defer span.End()
 
@@ -60,5 +60,5 @@ func (service *GenerationGet) Exec(ctx context.Context, request *GenerationGetRe
 		return nil, otel.ReportError(span, fmt.Errorf("get generation: %w", err))
 	}
 
-	return otel.ReportSuccess(span, generation), nil
+	return otel.ReportSuccess(span, newGeneration(generation)), nil
 }
