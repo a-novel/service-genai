@@ -132,8 +132,8 @@ func TestGenerationClaimFences(t *testing.T) {
 		for _, state := range []string{"Expired", "ReclaimedSameWorker", "ResumedSameAttempt"} {
 			t.Run(mutation.name+"/"+state, func(t *testing.T) {
 				t.Parallel()
-				postgrestest.RunDBTest(
-					t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
+				postgrestest.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations,
+					func(ctx context.Context, t *testing.T) {
 						t.Helper()
 						seedGeneration(ctx, t, 3)
 
