@@ -64,8 +64,7 @@ func TestGenerationReap(t *testing.T) {
 			expectStatus: dao.GenerationStatusPending,
 		},
 		{
-			// A worker that finished just past its lease must beat the sweep, or its work is run
-			// twice and billed twice.
+			// Grace delays recovery; it does not grant an expired claim authority to settle.
 			name: "Success/GraceLeavesARecentlyLapsedLeaseAlone",
 
 			pending: 1, maxAttempts: 1, leaseAge: time.Minute,
@@ -114,7 +113,8 @@ func TestGenerationReap(t *testing.T) {
 				for _, generation := range claimed {
 					if testCase.recordProviderCall {
 						_, err := daoRecord.Exec(ctx, &dao.GenerationRecordProviderCallRequest{
-							ID: generation.ID, WorkerID: testWorker, ProviderCallID: "resp_" + generation.ID.String(),
+							ClaimToken: generation.ClaimToken,
+							ID:         generation.ID, WorkerID: testWorker, ProviderCallID: "resp_" + generation.ID.String(),
 						})
 						require.NoError(t, err)
 					}

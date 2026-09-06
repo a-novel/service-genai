@@ -53,6 +53,11 @@ type Generation struct {
 	Attempt     int16            `bun:"attempt"`
 	MaxAttempts int16            `bun:"max_attempts"`
 
+	// ClaimToken identifies one acquisition, including a re-attachment to the same inference attempt.
+	ClaimToken uuid.UUID `bun:"claim_token,type:uuid,nullzero"`
+	// StartRequestedAt records that paid work may exist even before its provider ID is durable.
+	StartRequestedAt *time.Time `bun:"start_requested_at,nullzero"`
+
 	RunAt             time.Time  `bun:"run_at"`
 	LeaseExpiresAt    *time.Time `bun:"lease_expires_at,nullzero"`
 	ClaimedBy         *string    `bun:"claimed_by,nullzero"`

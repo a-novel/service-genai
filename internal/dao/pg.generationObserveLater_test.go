@@ -59,14 +59,16 @@ func TestGenerationObserveLater(t *testing.T) {
 
 				if testCase.recordProviderCall {
 					_, err := dao.NewGenerationRecordProviderCall().Exec(ctx, &dao.GenerationRecordProviderCallRequest{
-						ID: claimed[0].ID, WorkerID: testWorker, ProviderCallID: "resp_1",
+						ClaimToken: claimed[0].ClaimToken,
+						ID:         claimed[0].ID, WorkerID: testWorker, ProviderCallID: "resp_1",
 					})
 					require.NoError(t, err)
 				}
 
 				before := time.Now()
 				observedLater, err := daoObserveLater.Exec(ctx, &dao.GenerationObserveLaterRequest{
-					ID: claimed[0].ID, WorkerID: testCase.worker, RetryAfter: time.Second,
+					ClaimToken: claimed[0].ClaimToken,
+					ID:         claimed[0].ID, WorkerID: testCase.worker, RetryAfter: time.Second,
 				})
 				require.ErrorIs(t, err, testCase.expectErr)
 
@@ -97,13 +99,15 @@ func TestGenerationObserveLaterPreservesInferenceAttempt(t *testing.T) {
 		generation := claimed[0]
 
 		_, err := dao.NewGenerationRecordProviderCall().Exec(ctx, &dao.GenerationRecordProviderCallRequest{
-			ID: generation.ID, WorkerID: testWorker, ProviderCallID: "resp_1",
+			ClaimToken: generation.ClaimToken,
+			ID:         generation.ID, WorkerID: testWorker, ProviderCallID: "resp_1",
 		})
 		require.NoError(t, err)
 
 		for range 3 {
 			_, err = dao.NewGenerationObserveLater().Exec(ctx, &dao.GenerationObserveLaterRequest{
-				ID: generation.ID, WorkerID: testWorker,
+				ClaimToken: generation.ClaimToken,
+				ID:         generation.ID, WorkerID: testWorker,
 			})
 			require.NoError(t, err)
 
@@ -112,6 +116,8 @@ func TestGenerationObserveLaterPreservesInferenceAttempt(t *testing.T) {
 			require.Equal(t, generation.Attempt, resumed[0].Attempt)
 			require.NotNil(t, resumed[0].ProviderCallID)
 			require.Equal(t, "resp_1", *resumed[0].ProviderCallID)
+			require.NotEqual(t, generation.ClaimToken, resumed[0].ClaimToken)
+			generation = resumed[0]
 		}
 	})
 }

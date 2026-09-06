@@ -76,3 +76,46 @@ VALUES
     500,
     100
   );
+
+-- Live and stranded legacy attempts need conservative Start evidence after the ownership migration.
+INSERT INTO
+  generations (
+    id,
+    owner_id,
+    purpose,
+    idempotency_key,
+    request_fingerprint,
+    request,
+    status,
+    attempt,
+    max_attempts,
+    claimed_by,
+    lease_expires_at
+  )
+VALUES
+  (
+    '01999999-0000-7000-8000-000000000003',
+    '00000000-0000-0000-0000-000000000001',
+    'studio.generation',
+    'fixture-running',
+    '\x00'::bytea,
+    '{}'::jsonb,
+    'running',
+    1,
+    3,
+    'legacy-worker',
+    clock_timestamp() + interval '5 minutes'
+  ),
+  (
+    '01999999-0000-7000-8000-000000000004',
+    '00000000-0000-0000-0000-000000000001',
+    'studio.generation',
+    'fixture-stranded',
+    '\x00'::bytea,
+    '{}'::jsonb,
+    'pending',
+    1,
+    3,
+    NULL,
+    NULL
+  );

@@ -12,11 +12,7 @@ WITH
   )
 UPDATE generations
 SET
-  status = 'pending',
-  claimed_by = NULL,
-  claim_token = NULL,
-  lease_expires_at = NULL,
-  run_at = clock_timestamp() + make_interval(secs => ?2),
+  lease_expires_at = clock_timestamp() + make_interval(secs => ?2),
   updated_at = clock_timestamp()
 FROM
   held
@@ -26,6 +22,5 @@ WHERE
   AND held.claim_token = ?3
   AND held.status = 'running'
   AND held.lease_expires_at > clock_timestamp()
-  AND held.provider_call_id IS NOT NULL
 RETURNING
   generations.*;

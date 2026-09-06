@@ -70,13 +70,15 @@ func TestGenerationRequeue(t *testing.T) {
 
 				if testCase.recordedProviderCallID != nil {
 					_, err := dao.NewGenerationRecordProviderCall().Exec(ctx, &dao.GenerationRecordProviderCallRequest{
-						ID: claimed[0].ID, WorkerID: testWorker, ProviderCallID: *testCase.recordedProviderCallID,
+						ClaimToken: claimed[0].ClaimToken,
+						ID:         claimed[0].ID, WorkerID: testWorker, ProviderCallID: *testCase.recordedProviderCallID,
 					})
 					require.NoError(t, err)
 				}
 
 				requeued, err := daoRequeue.Exec(ctx, &dao.GenerationRequeueRequest{
-					ID: claimed[0].ID, WorkerID: testCase.worker, ProviderCallID: testCase.requestProviderCallID,
+					ClaimToken: claimed[0].ClaimToken,
+					ID:         claimed[0].ID, WorkerID: testCase.worker, ProviderCallID: testCase.requestProviderCallID,
 				})
 				require.ErrorIs(t, err, testCase.expectErr)
 
