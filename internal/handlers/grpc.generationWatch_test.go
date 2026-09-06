@@ -13,7 +13,6 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/a-novel/service-genai/internal/core"
-	"github.com/a-novel/service-genai/internal/dao"
 	"github.com/a-novel/service-genai/internal/handlers"
 	handlersmocks "github.com/a-novel/service-genai/internal/handlers/mocks"
 	genaiv0 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v0"
@@ -45,9 +44,9 @@ func (stream *watchStream) SendHeader(metadata.MD) error { return nil }
 func (stream *watchStream) SetTrailer(metadata.MD)       {}
 
 // settled returns a terminal generation, which is what ends the stream.
-func settledGeneration() *dao.Generation {
+func settledGeneration() *core.Generation {
 	generation := testGeneration()
-	generation.Status = dao.GenerationStatusSucceeded
+	generation.Status = core.GenerationStatusSucceeded
 	generation.UpdatedAt = generation.UpdatedAt.Add(time.Minute)
 	settledAt := generation.UpdatedAt
 	generation.SettledAt = &settledAt
@@ -59,7 +58,7 @@ func TestGrpcGenerationWatch(t *testing.T) {
 	t.Parallel()
 
 	type serviceMock struct {
-		reads []*dao.Generation
+		reads []*core.Generation
 		err   error
 	}
 
@@ -80,7 +79,7 @@ func TestGrpcGenerationWatch(t *testing.T) {
 			name: "Success/AlreadySettled",
 
 			request:     &genaiv0.GenerationWatchRequest{Id: testGenerationID, OwnerId: testOwnerID},
-			serviceMock: &serviceMock{reads: []*dao.Generation{settledGeneration()}},
+			serviceMock: &serviceMock{reads: []*core.Generation{settledGeneration()}},
 
 			expectSent: 1,
 		},
@@ -88,7 +87,7 @@ func TestGrpcGenerationWatch(t *testing.T) {
 			name: "Success/StreamsUntilTerminal",
 
 			request: &genaiv0.GenerationWatchRequest{Id: testGenerationID, OwnerId: testOwnerID},
-			serviceMock: &serviceMock{reads: []*dao.Generation{
+			serviceMock: &serviceMock{reads: []*core.Generation{
 				testGeneration(), settledGeneration(),
 			}},
 
@@ -100,7 +99,7 @@ func TestGrpcGenerationWatch(t *testing.T) {
 			name: "Success/SendsNothingForAnUnchangedTick",
 
 			request: &genaiv0.GenerationWatchRequest{Id: testGenerationID, OwnerId: testOwnerID},
-			serviceMock: &serviceMock{reads: []*dao.Generation{
+			serviceMock: &serviceMock{reads: []*core.Generation{
 				testGeneration(), testGeneration(), settledGeneration(),
 			}},
 
@@ -175,7 +174,7 @@ func TestGrpcGenerationWatchStopsWhenTheCallerGoesAway(t *testing.T) {
 
 	service.EXPECT().
 		Exec(mock.Anything, mock.Anything).
-		RunAndReturn(func(context.Context, *core.GenerationGetRequest) (*dao.Generation, error) {
+		RunAndReturn(func(context.Context, *core.GenerationGetRequest) (*core.Generation, error) {
 			cancel()
 
 			return testGeneration(), nil

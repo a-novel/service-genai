@@ -30,6 +30,7 @@ func TestGenerationCancel(t *testing.T) {
 
 		daoMock *daoMock
 
+		expect    *core.Generation
 		expectErr error
 	}{
 		{
@@ -39,6 +40,7 @@ func TestGenerationCancel(t *testing.T) {
 
 			request: &core.GenerationCancelRequest{ID: generationID, OwnerID: owner},
 			daoMock: &daoMock{resp: &dao.Generation{ID: generationID}},
+			expect:  &core.Generation{ID: generationID},
 		},
 		{
 			// A settled generation and somebody else's are one error, so an identifier cannot be
@@ -87,7 +89,7 @@ func TestGenerationCancel(t *testing.T) {
 			if testCase.expectErr != nil {
 				require.Nil(t, result)
 			} else {
-				require.Equal(t, testCase.daoMock.resp, result)
+				require.Equal(t, testCase.expect, result)
 			}
 
 			cancelDao.AssertExpectations(t)

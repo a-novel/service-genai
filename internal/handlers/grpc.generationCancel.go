@@ -11,13 +11,12 @@ import (
 	"github.com/a-novel-kit/golib/otel"
 
 	"github.com/a-novel/service-genai/internal/core"
-	"github.com/a-novel/service-genai/internal/dao"
 	genaiv0 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v0"
 )
 
 // GrpcGenerationCancelService is the service dependency of [GrpcGenerationCancel].
 type GrpcGenerationCancelService interface {
-	Exec(ctx context.Context, request *core.GenerationCancelRequest) (*dao.Generation, error)
+	Exec(ctx context.Context, request *core.GenerationCancelRequest) (*core.Generation, error)
 }
 
 // GrpcGenerationCancel is the gRPC handler for the GenerationCancel RPC.

@@ -214,6 +214,7 @@ func TestGenerationSubmit(t *testing.T) {
 			if testCase.expectErr != nil {
 				require.Nil(t, result)
 			} else {
+				require.Equal(t, &core.Generation{}, result.Generation)
 				require.Equal(t, testCase.expectCreated, result.Created)
 			}
 

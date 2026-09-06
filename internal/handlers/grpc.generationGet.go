@@ -11,13 +11,12 @@ import (
 	"github.com/a-novel-kit/golib/otel"
 
 	"github.com/a-novel/service-genai/internal/core"
-	"github.com/a-novel/service-genai/internal/dao"
 	genaiv0 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v0"
 )
 
 // GrpcGenerationGetService is the service dependency of [GrpcGenerationGet].
 type GrpcGenerationGetService interface {
-	Exec(ctx context.Context, request *core.GenerationGetRequest) (*dao.Generation, error)
+	Exec(ctx context.Context, request *core.GenerationGetRequest) (*core.Generation, error)
 }
 
 // GrpcGenerationGet is the gRPC handler for the GenerationGet RPC.
@@ -48,7 +47,7 @@ func (handler *GrpcGenerationGet) GenerationGet(
 }
 
 // read is shared with the watch handler, which needs the same lookup and the same refusals.
-func (handler *GrpcGenerationGet) read(ctx context.Context, id, owner string) (*dao.Generation, error) {
+func (handler *GrpcGenerationGet) read(ctx context.Context, id, owner string) (*core.Generation, error) {
 	ctx, span := otel.Tracer().Start(ctx, "grpc.GenerationGet(read)")
 	defer span.End()
 

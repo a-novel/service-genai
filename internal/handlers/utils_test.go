@@ -6,7 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/a-novel/service-genai/internal/dao"
+	"github.com/a-novel/service-genai/internal/core"
 )
 
 var errFoo = errors.New("foo")
@@ -17,12 +17,12 @@ const (
 )
 
 // testGeneration is a stored generation in flight, which is the state most handlers see.
-func testGeneration() *dao.Generation {
-	return &dao.Generation{
+func testGeneration() *core.Generation {
+	return &core.Generation{
 		ID:          uuid.MustParse(testGenerationID),
 		OwnerID:     uuid.MustParse(testOwnerID),
 		Purpose:     "studio.generation",
-		Status:      dao.GenerationStatusPending,
+		Status:      core.GenerationStatusPending,
 		Attempt:     0,
 		MaxAttempts: 1,
 		CreatedAt:   time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),

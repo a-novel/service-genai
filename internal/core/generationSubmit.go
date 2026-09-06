@@ -39,7 +39,7 @@ type GenerationSubmitRequest struct {
 
 // GenerationSubmitResult reports the stored generation and how it got there.
 type GenerationSubmitResult struct {
-	Generation *dao.Generation
+	Generation *Generation
 	// Created is false on a replay, so a retrying caller attaches to work already in flight rather
 	// than paying for a second run.
 	Created bool
@@ -106,7 +106,7 @@ func (service *GenerationSubmit) Exec(
 	)
 
 	return otel.ReportSuccess(span, &GenerationSubmitResult{
-		Generation: result.Generation,
+		Generation: newGeneration(result.Generation),
 		Created:    result.Created,
 	}), nil
 }

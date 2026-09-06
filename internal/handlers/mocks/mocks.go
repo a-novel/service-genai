@@ -8,7 +8,6 @@ import (
 	"context"
 
 	"github.com/a-novel/service-genai/internal/core"
-	"github.com/a-novel/service-genai/internal/dao"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -40,23 +39,23 @@ func (_m *MockGrpcGenerationCancelService) EXPECT() *MockGrpcGenerationCancelSer
 }
 
 // Exec provides a mock function for the type MockGrpcGenerationCancelService
-func (_mock *MockGrpcGenerationCancelService) Exec(ctx context.Context, request *core.GenerationCancelRequest) (*dao.Generation, error) {
+func (_mock *MockGrpcGenerationCancelService) Exec(ctx context.Context, request *core.GenerationCancelRequest) (*core.Generation, error) {
 	ret := _mock.Called(ctx, request)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Exec")
 	}
 
-	var r0 *dao.Generation
+	var r0 *core.Generation
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, *core.GenerationCancelRequest) (*dao.Generation, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *core.GenerationCancelRequest) (*core.Generation, error)); ok {
 		return returnFunc(ctx, request)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, *core.GenerationCancelRequest) *dao.Generation); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *core.GenerationCancelRequest) *core.Generation); ok {
 		r0 = returnFunc(ctx, request)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*dao.Generation)
+			r0 = ret.Get(0).(*core.Generation)
 		}
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, *core.GenerationCancelRequest) error); ok {
@@ -97,12 +96,12 @@ func (_c *MockGrpcGenerationCancelService_Exec_Call) Run(run func(ctx context.Co
 	return _c
 }
 
-func (_c *MockGrpcGenerationCancelService_Exec_Call) Return(generation *dao.Generation, err error) *MockGrpcGenerationCancelService_Exec_Call {
+func (_c *MockGrpcGenerationCancelService_Exec_Call) Return(generation *core.Generation, err error) *MockGrpcGenerationCancelService_Exec_Call {
 	_c.Call.Return(generation, err)
 	return _c
 }
 
-func (_c *MockGrpcGenerationCancelService_Exec_Call) RunAndReturn(run func(ctx context.Context, request *core.GenerationCancelRequest) (*dao.Generation, error)) *MockGrpcGenerationCancelService_Exec_Call {
+func (_c *MockGrpcGenerationCancelService_Exec_Call) RunAndReturn(run func(ctx context.Context, request *core.GenerationCancelRequest) (*core.Generation, error)) *MockGrpcGenerationCancelService_Exec_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -135,23 +134,23 @@ func (_m *MockGrpcGenerationGetService) EXPECT() *MockGrpcGenerationGetService_E
 }
 
 // Exec provides a mock function for the type MockGrpcGenerationGetService
-func (_mock *MockGrpcGenerationGetService) Exec(ctx context.Context, request *core.GenerationGetRequest) (*dao.Generation, error) {
+func (_mock *MockGrpcGenerationGetService) Exec(ctx context.Context, request *core.GenerationGetRequest) (*core.Generation, error) {
 	ret := _mock.Called(ctx, request)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Exec")
 	}
 
-	var r0 *dao.Generation
+	var r0 *core.Generation
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, *core.GenerationGetRequest) (*dao.Generation, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *core.GenerationGetRequest) (*core.Generation, error)); ok {
 		return returnFunc(ctx, request)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, *core.GenerationGetRequest) *dao.Generation); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *core.GenerationGetRequest) *core.Generation); ok {
 		r0 = returnFunc(ctx, request)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*dao.Generation)
+			r0 = ret.Get(0).(*core.Generation)
 		}
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, *core.GenerationGetRequest) error); ok {
@@ -192,12 +191,12 @@ func (_c *MockGrpcGenerationGetService_Exec_Call) Run(run func(ctx context.Conte
 	return _c
 }
 
-func (_c *MockGrpcGenerationGetService_Exec_Call) Return(generation *dao.Generation, err error) *MockGrpcGenerationGetService_Exec_Call {
+func (_c *MockGrpcGenerationGetService_Exec_Call) Return(generation *core.Generation, err error) *MockGrpcGenerationGetService_Exec_Call {
 	_c.Call.Return(generation, err)
 	return _c
 }
 
-func (_c *MockGrpcGenerationGetService_Exec_Call) RunAndReturn(run func(ctx context.Context, request *core.GenerationGetRequest) (*dao.Generation, error)) *MockGrpcGenerationGetService_Exec_Call {
+func (_c *MockGrpcGenerationGetService_Exec_Call) RunAndReturn(run func(ctx context.Context, request *core.GenerationGetRequest) (*core.Generation, error)) *MockGrpcGenerationGetService_Exec_Call {
 	_c.Call.Return(run)
 	return _c
 }
