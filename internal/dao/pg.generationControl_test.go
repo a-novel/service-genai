@@ -10,6 +10,7 @@ import (
 	"github.com/uptrace/bun"
 
 	"github.com/a-novel-kit/golib/postgres"
+	"github.com/a-novel-kit/golib/postgres/postgrestest"
 
 	"github.com/a-novel/service-genai/internal/config/configtest"
 	"github.com/a-novel/service-genai/internal/dao"
@@ -18,7 +19,7 @@ import (
 
 func TestGenerationControl(t *testing.T) {
 	t.Parallel()
-	postgres.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
+	postgrestest.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
 		t.Helper()
 		seedGeneration(ctx, t, 3)
 		generation := claimGenerations(ctx, t)[0]
@@ -131,63 +132,64 @@ func TestGenerationClaimFences(t *testing.T) {
 		for _, state := range []string{"Expired", "ReclaimedSameWorker", "ResumedSameAttempt"} {
 			t.Run(mutation.name+"/"+state, func(t *testing.T) {
 				t.Parallel()
-				postgres.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
-					t.Helper()
-					seedGeneration(ctx, t, 3)
+				postgrestest.RunDBTest(
+					t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
+						t.Helper()
+						seedGeneration(ctx, t, 3)
 
-					stale := claimGenerations(ctx, t)[0]
-					if state == "ResumedSameAttempt" || mutation.name == "ObserveLater" {
-						recorded, err := dao.NewGenerationRecordProviderCall().Exec(ctx, &dao.GenerationRecordProviderCallRequest{
-							ID:             stale.ID,
-							WorkerID:       testWorker,
-							ClaimToken:     stale.ClaimToken,
-							ProviderCallID: "resp_fenced",
-						})
-						require.NoError(t, err)
-
-						stale = recorded
-					}
-
-					current := stale
-					if state == "Expired" {
-						expireLease(ctx, t, stale.ID, time.Hour)
-					} else {
-						var err error
-						if state == "ResumedSameAttempt" {
-							_, err = dao.NewGenerationObserveLater().Exec(ctx, &dao.GenerationObserveLaterRequest{
-								ID:         stale.ID,
-								WorkerID:   testWorker,
-								ClaimToken: stale.ClaimToken,
-							})
-						} else {
-							_, err = dao.NewGenerationRequeue().Exec(ctx, &dao.GenerationRequeueRequest{
+						stale := claimGenerations(ctx, t)[0]
+						if state == "ResumedSameAttempt" || mutation.name == "ObserveLater" {
+							recorded, err := dao.NewGenerationRecordProviderCall().Exec(ctx, &dao.GenerationRecordProviderCallRequest{
 								ID:             stale.ID,
 								WorkerID:       testWorker,
 								ClaimToken:     stale.ClaimToken,
-								ProviderCallID: stale.ProviderCallID,
+								ProviderCallID: "resp_fenced",
 							})
+							require.NoError(t, err)
+
+							stale = recorded
 						}
 
+						current := stale
+						if state == "Expired" {
+							expireLease(ctx, t, stale.ID, time.Hour)
+						} else {
+							var err error
+							if state == "ResumedSameAttempt" {
+								_, err = dao.NewGenerationObserveLater().Exec(ctx, &dao.GenerationObserveLaterRequest{
+									ID:         stale.ID,
+									WorkerID:   testWorker,
+									ClaimToken: stale.ClaimToken,
+								})
+							} else {
+								_, err = dao.NewGenerationRequeue().Exec(ctx, &dao.GenerationRequeueRequest{
+									ID:             stale.ID,
+									WorkerID:       testWorker,
+									ClaimToken:     stale.ClaimToken,
+									ProviderCallID: stale.ProviderCallID,
+								})
+							}
+
+							require.NoError(t, err)
+							current = claimGenerations(ctx, t)[0]
+							require.NotEqual(t, stale.ClaimToken, current.ClaimToken)
+							require.Equal(t, *stale.ClaimedBy, *current.ClaimedBy)
+
+							if state == "ResumedSameAttempt" {
+								require.Equal(t, stale.Attempt, current.Attempt)
+							}
+						}
+
+						require.ErrorIs(t, mutation.exec(ctx, stale), dao.ErrGenerationNotHeld)
+						after, err := dao.NewGenerationGet().Exec(ctx, &dao.GenerationGetRequest{
+							ID:      current.ID,
+							OwnerID: current.OwnerID,
+						})
 						require.NoError(t, err)
-						current = claimGenerations(ctx, t)[0]
-						require.NotEqual(t, stale.ClaimToken, current.ClaimToken)
-						require.Equal(t, *stale.ClaimedBy, *current.ClaimedBy)
-
-						if state == "ResumedSameAttempt" {
-							require.Equal(t, stale.Attempt, current.Attempt)
-						}
-					}
-
-					require.ErrorIs(t, mutation.exec(ctx, stale), dao.ErrGenerationNotHeld)
-					after, err := dao.NewGenerationGet().Exec(ctx, &dao.GenerationGetRequest{
-						ID:      current.ID,
-						OwnerID: current.OwnerID,
+						require.Equal(t, current.ClaimToken, after.ClaimToken)
+						require.Equal(t, current.ProviderCallID, after.ProviderCallID)
+						require.Equal(t, dao.GenerationStatusRunning, after.Status)
 					})
-					require.NoError(t, err)
-					require.Equal(t, current.ClaimToken, after.ClaimToken)
-					require.Equal(t, current.ProviderCallID, after.ProviderCallID)
-					require.Equal(t, dao.GenerationStatusRunning, after.Status)
-				})
 			})
 		}
 	}
@@ -195,7 +197,7 @@ func TestGenerationClaimFences(t *testing.T) {
 
 func TestGenerationControlChecksExpiryAfterLock(t *testing.T) {
 	t.Parallel()
-	postgres.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
+	postgrestest.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
 		t.Helper()
 		seedGeneration(ctx, t, 3)
 		generation := claimGenerations(ctx, t)[0]
@@ -241,7 +243,7 @@ WHERE datname = current_database() AND wait_event_type = 'Lock')`).Scan(ctx, &wa
 
 func TestGenerationClaimSkipsLockedWork(t *testing.T) {
 	t.Parallel()
-	postgres.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
+	postgrestest.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
 		t.Helper()
 		first := seedGeneration(ctx, t, 3)
 		second := seedGeneration(ctx, t, 3)
@@ -285,7 +287,7 @@ func TestGenerationBeginStart(t *testing.T) {
 
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			postgres.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
+			postgrestest.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
 				t.Helper()
 				seedGeneration(ctx, t, 3)
 
@@ -340,7 +342,7 @@ func TestGenerationReaperSkipsRenewalAndSettlement(t *testing.T) {
 	for _, transition := range []string{"Renew", "Settle"} {
 		t.Run(transition, func(t *testing.T) {
 			t.Parallel()
-			postgres.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
+			postgrestest.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
 				t.Helper()
 				seedGeneration(ctx, t, 3)
 				generation := claimGenerations(ctx, t)[0]
@@ -389,7 +391,7 @@ func TestGenerationReaperSkipsRenewalAndSettlement(t *testing.T) {
 
 func TestGenerationBeginStartObservesConcurrentCancellation(t *testing.T) {
 	t.Parallel()
-	postgres.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
+	postgrestest.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
 		t.Helper()
 		seedGeneration(ctx, t, 3)
 		generation := claimGenerations(ctx, t)[0]
@@ -437,7 +439,7 @@ WHERE datname = current_database() AND wait_event_type = 'Lock')`).Scan(ctx, &wa
 
 func TestGenerationControlCannotReviveLeaseAfterReadLock(t *testing.T) {
 	t.Parallel()
-	postgres.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
+	postgrestest.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
 		t.Helper()
 		seedGeneration(ctx, t, 3)
 		generation := claimGenerations(ctx, t)[0]

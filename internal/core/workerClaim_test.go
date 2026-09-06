@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/a-novel-kit/golib/postgres"
+	"github.com/a-novel-kit/golib/postgres/postgrestest"
 
 	"github.com/a-novel/service-genai/internal/config/configtest"
 	"github.com/a-novel/service-genai/internal/core"
@@ -115,7 +116,7 @@ func waitWorkerResult(t *testing.T, done <-chan error) error {
 
 func TestWorkerCancellationAfterClaim(t *testing.T) {
 	t.Parallel()
-	postgres.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
+	postgrestest.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
 		t.Helper()
 		generation := seedWorkerGeneration(ctx, t)
 		provider := libmocks.NewMockProvider(t)
@@ -138,7 +139,7 @@ func TestWorkerCancellationAfterClaim(t *testing.T) {
 
 func TestWorkerCancellationDuringStart(t *testing.T) {
 	t.Parallel()
-	postgres.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
+	postgrestest.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
 		t.Helper()
 		generation := seedWorkerGeneration(ctx, t)
 		provider := libmocks.NewMockProvider(t)
@@ -200,7 +201,7 @@ func TestWorkerCancellationDuringStart(t *testing.T) {
 
 func TestWorkerRenewsWithoutIdleClaims(t *testing.T) {
 	t.Parallel()
-	postgres.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
+	postgrestest.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
 		t.Helper()
 		first := seedWorkerGeneration(ctx, t)
 		second := seedWorkerGeneration(ctx, t)
@@ -295,7 +296,7 @@ func TestWorkerRenewsWithoutIdleClaims(t *testing.T) {
 
 func TestWorkerLostLeaseDuringStartPreservesUncertainty(t *testing.T) {
 	t.Parallel()
-	postgres.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
+	postgrestest.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
 		t.Helper()
 		generation := seedWorkerGeneration(ctx, t)
 		started := make(chan struct{})
@@ -354,7 +355,7 @@ func TestWorkerLostLeaseDuringStartPreservesUncertainty(t *testing.T) {
 
 func TestWorkerUsageRollsBackWhenClaimLost(t *testing.T) {
 	t.Parallel()
-	postgres.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
+	postgrestest.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
 		t.Helper()
 		generation := seedWorkerGeneration(ctx, t)
 		provider := libmocks.NewMockProvider(t)
