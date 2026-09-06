@@ -2,8 +2,11 @@ syntax = "proto3";
 
 package anovel.genai.v0;
 
-// StatusService reports the health of the gRPC server's dependencies and the queue's own backlog.
+// StatusService reports dependency readiness and the queue's own backlog.
+// Process-only liveness is provided separately by UnaryEcho.
 service StatusService {
+  // Status succeeds only when PostgreSQL and queue inspection succeed.
+  // Otherwise it returns Unavailable with no response payload or private error details.
   rpc Status(StatusRequest) returns (StatusResponse);
 }
 
@@ -28,6 +31,7 @@ message DependencyHealth {
   reserved 2;
   reserved "err";
 
+  // status is UP in a successful Status response.
   DependencyStatus status = 1;
 }
 
@@ -46,10 +50,10 @@ message QueueDepth {
 // StatusRequest takes no parameters.
 message StatusRequest {}
 
-// StatusResponse reports the health of each dependency the service relies on, and the backlog.
+// StatusResponse contains healthy dependency reports and the measured backlog.
 message StatusResponse {
+  // postgres is the successfully probed database dependency.
   DependencyHealth postgres = 1;
-  // queue is the backlog report. Absent when the database is unreachable, since it cannot be
-  // measured — postgres reports down in that case.
+  // queue is present in every successful response, including when the backlog is empty.
   QueueDepth queue = 2;
 }

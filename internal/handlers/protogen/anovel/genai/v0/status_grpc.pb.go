@@ -26,8 +26,11 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// StatusService reports the health of the gRPC server's dependencies and the queue's own backlog.
+// StatusService reports dependency readiness and the queue's own backlog.
+// Process-only liveness is provided separately by UnaryEcho.
 type StatusServiceClient interface {
+	// Status succeeds only when PostgreSQL and queue inspection succeed.
+	// Otherwise it returns Unavailable with no response payload or private error details.
 	Status(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (*StatusResponse, error)
 }
 
@@ -53,8 +56,11 @@ func (c *statusServiceClient) Status(ctx context.Context, in *StatusRequest, opt
 // All implementations must embed UnimplementedStatusServiceServer
 // for forward compatibility.
 //
-// StatusService reports the health of the gRPC server's dependencies and the queue's own backlog.
+// StatusService reports dependency readiness and the queue's own backlog.
+// Process-only liveness is provided separately by UnaryEcho.
 type StatusServiceServer interface {
+	// Status succeeds only when PostgreSQL and queue inspection succeed.
+	// Otherwise it returns Unavailable with no response payload or private error details.
 	Status(context.Context, *StatusRequest) (*StatusResponse, error)
 	mustEmbedUnimplementedStatusServiceServer()
 }

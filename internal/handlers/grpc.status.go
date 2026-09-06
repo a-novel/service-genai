@@ -3,8 +3,9 @@ package handlers
 import (
 	"context"
 
-	"github.com/samber/lo"
 	"github.com/uptrace/bun"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/a-novel-kit/golib/otel"
 	"github.com/a-novel-kit/golib/postgres"
@@ -13,19 +14,10 @@ import (
 	genaiv0 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v0"
 )
 
-// NewGrpcHealthStatus converts an error into a DependencyHealth proto message,
-// mapping nil to DEPENDENCY_STATUS_UP and any non-nil error to DEPENDENCY_STATUS_DOWN.
-//
-// The error itself is dropped from the message: a raw dependency error routinely embeds
-// internal hostnames, ports, or schema names. The health probe records it on its trace
-// span, where operators can read it.
-func NewGrpcHealthStatus(err error) *genaiv0.DependencyHealth {
+// NewGrpcHealthStatus reports a successfully probed dependency.
+func NewGrpcHealthStatus() *genaiv0.DependencyHealth {
 	return &genaiv0.DependencyHealth{
-		Status: lo.Ternary(
-			err == nil,
-			genaiv0.DependencyStatus_DEPENDENCY_STATUS_UP,
-			genaiv0.DependencyStatus_DEPENDENCY_STATUS_DOWN,
-		),
+		Status: genaiv0.DependencyStatus_DEPENDENCY_STATUS_UP,
 	}
 }
 
@@ -42,34 +34,38 @@ type GrpcStatus struct {
 	queueDepth GrpcStatusQueueDepthService
 }
 
+// NewGrpcStatus creates a dependency-readiness handler with queue inspection.
 func NewGrpcStatus(queueDepth GrpcStatusQueueDepthService) *GrpcStatus {
 	return &GrpcStatus{queueDepth: queueDepth}
 }
 
-// Status probes each dependency and returns its current health, with the backlog beside it.
+// Status returns the backlog only after PostgreSQL and queue inspection succeed.
+// Failed or unassessable dependencies return Unavailable without private error details.
 func (handler *GrpcStatus) Status(ctx context.Context, _ *genaiv0.StatusRequest) (*genaiv0.StatusResponse, error) {
 	ctx, span := otel.Tracer().Start(ctx, "grpc.Status")
 	defer span.End()
 
-	response := &genaiv0.StatusResponse{
-		Postgres: NewGrpcHealthStatus(handler.reportPostgres(ctx)),
+	err := handler.reportPostgres(ctx)
+	if err != nil {
+		_ = otel.ReportError(span, err)
+
+		return nil, status.Error(codes.Unavailable, "service dependencies unavailable")
 	}
 
-	// The backlog cannot be measured without the database, and postgres already reports down in
-	// that case — so a missing queue is a consequence of the health above, not a second failure.
 	depth, err := handler.queueDepth.Exec(ctx)
 	if err != nil {
 		_ = otel.ReportError(span, err)
 
-		return response, nil
+		return nil, status.Error(codes.Unavailable, "service dependencies unavailable")
 	}
 
-	response.Queue = &genaiv0.QueueDepth{
-		Pending:                 depth.Pending,
-		OldestPendingAgeSeconds: depth.OldestPendingAge.Seconds(),
-	}
-
-	return response, nil
+	return otel.ReportSuccess(span, &genaiv0.StatusResponse{
+		Postgres: NewGrpcHealthStatus(),
+		Queue: &genaiv0.QueueDepth{
+			Pending:                 depth.Pending,
+			OldestPendingAgeSeconds: depth.OldestPendingAge.Seconds(),
+		},
+	}), nil
 }
 
 func (handler *GrpcStatus) reportPostgres(ctx context.Context) error {
@@ -83,12 +79,11 @@ func (handler *GrpcStatus) reportPostgres(ctx context.Context) error {
 
 	pgdb, ok := pg.(*bun.DB)
 	if !ok {
-		// In transaction mode the context carries a transaction, so there is no
-		// pooled connection to ping; treat the dependency as healthy.
-		return nil
+		// A transaction does not expose the pool needed to assess dependency readiness.
+		return otel.ReportError(span, postgres.ErrNoDbInContext)
 	}
 
-	err = pgdb.Ping()
+	err = pgdb.PingContext(ctx)
 	if err != nil {
 		return otel.ReportError(span, err)
 	}
