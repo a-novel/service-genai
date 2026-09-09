@@ -17,10 +17,19 @@ func NewMockGrpcGenerationCancelService(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockGrpcGenerationCancelService {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockGrpcGenerationCancelService{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -112,10 +121,19 @@ func NewMockGrpcGenerationGetService(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockGrpcGenerationGetService {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockGrpcGenerationGetService{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -207,10 +225,19 @@ func NewMockGrpcGenerationSubmitService(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockGrpcGenerationSubmitService {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockGrpcGenerationSubmitService{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -302,10 +329,19 @@ func NewMockGrpcStatusQueueDepthService(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockGrpcStatusQueueDepthService {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockGrpcStatusQueueDepthService{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -391,10 +427,19 @@ func NewMockGrpcUsageQueryService(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockGrpcUsageQueryService {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockGrpcUsageQueryService{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
