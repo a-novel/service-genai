@@ -87,8 +87,8 @@ github.com/mattn/go-runewidth v0.0.24 h1:cpokDiIn0MGnhdHwuWnJBITySJ20QyNGnY2kR/a
 github.com/mattn/go-runewidth v0.0.24/go.mod h1:XBkDxAl56ILZc9knddidhrOlY5R/pDhgLpndooCuJAs=
 github.com/muesli/cancelreader v0.2.2 h1:3I4Kt4BQjOR54NavqnDogx/MIoWBFa0StPA8ELUXHmA=
 github.com/muesli/cancelreader v0.2.2/go.mod h1:3XuTXfFS2VjM+HTLZY9Ak0l6eUKfijIfMUZ4EgX0QYo=
-github.com/openai/openai-go/v3 v3.62.0 h1:P3G1Ip9eOwCJxg2q1lPBFg7iuyDEJDuoqQinzZDaxJM=
-github.com/openai/openai-go/v3 v3.62.0/go.mod h1:dE39tezpSvL+SHpkZQm7XhSc8BOLDzu8CEh1mHc9MzU=
+github.com/openai/openai-go/v3 v3.63.0 h1:XlRLeiYcKCHicX5QDobB7Lfe5hJMQnrpXLDnqj/iEnI=
+github.com/openai/openai-go/v3 v3.63.0/go.mod h1:dE39tezpSvL+SHpkZQm7XhSc8BOLDzu8CEh1mHc9MzU=
 github.com/pingcap/errors v0.11.4 h1:lFuQV/oaUMGcD2tqt+01ROSmJs75VG1ToEOkZIZ4nE4=
 github.com/pingcap/errors v0.11.4/go.mod h1:Oi8TUi2kEtXXLMJk9l1cGmz20kV3TaQ0usTwv5KuLY8=
 github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
