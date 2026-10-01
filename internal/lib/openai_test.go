@@ -27,7 +27,7 @@ type scriptedProvider struct {
 func (script *scriptedProvider) serve(t *testing.T) *httptest.Server {
 	t.Helper()
 
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		script.lastPath = request.URL.Path
 
 		if request.Body != nil {
@@ -53,6 +53,7 @@ func newTestProvider(t *testing.T, script *scriptedProvider) *lib.OpenAI {
 	// retry loop deciding first.
 	return lib.NewOpenAI(
 		option.WithBaseURL(server.URL),
+		option.WithHTTPClient(server.Client()),
 		option.WithAPIKey("test-key"),
 		option.WithMaxRetries(0),
 	)
@@ -463,15 +464,11 @@ func TestOpenAIStartTimeoutIsAmbiguous(t *testing.T) {
 
 	var requests atomic.Int32
 
-	started := make(chan struct{}, 1)
-
 	release := make(chan struct{})
 	defer close(release)
 
-	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		requests.Add(1)
-
-		started <- struct{}{}
 
 		<-release
 	}))
@@ -479,24 +476,16 @@ func TestOpenAIStartTimeoutIsAmbiguous(t *testing.T) {
 
 	provider := lib.NewOpenAI(
 		option.WithBaseURL(server.URL),
+		option.WithHTTPClient(server.Client()),
 		option.WithAPIKey("test-key"),
-		option.WithRequestTimeout(10*time.Millisecond),
+		option.WithRequestTimeout(time.Second),
 	)
 
-	result := make(chan error, 1)
-
-	go func() {
-		_, err := provider.Start(t.Context(), &lib.ProviderStartRequest{
-			Request:      json.RawMessage(`{"model": "gpt-5.6-terra"}`),
-			GenerationID: "01999999-0000-7000-8000-000000000001",
-			Attempt:      1,
-		})
-		result <- err
-	}()
-
-	<-started
-
-	err := <-result
+	_, err := provider.Start(t.Context(), &lib.ProviderStartRequest{
+		Request:      json.RawMessage(`{"model": "gpt-5.6-terra"}`),
+		GenerationID: "01999999-0000-7000-8000-000000000001",
+		Attempt:      1,
+	})
 	require.ErrorIs(t, err, lib.ErrProviderStartAmbiguous)
 	require.Equal(t, int32(1), requests.Load())
 }
@@ -507,7 +496,7 @@ func TestOpenAITransportFailure(t *testing.T) {
 
 	// A port nothing listens on.
 	provider := lib.NewOpenAI(
-		option.WithBaseURL("http://127.0.0.1:1"),
+		option.WithBaseURL("https://127.0.0.1:1"),
 		option.WithAPIKey("test-key"),
 		option.WithMaxRetries(0),
 	)
