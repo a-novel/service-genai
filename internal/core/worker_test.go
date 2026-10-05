@@ -763,6 +763,9 @@ func TestWorkerTelemetry(t *testing.T) {
 		setup func(t *testing.T, mocks *workerMocks) *core.Worker
 
 		expectSpans map[string]codes.Code
+		// expectDescribedBy lists the spans whose status carries the error message: only the first
+		// to report it, since the spans it propagates through take the Error status alone.
+		expectDescribedBy []string
 	}{
 		{
 			name: "Success",
@@ -784,10 +787,10 @@ func TestWorkerTelemetry(t *testing.T) {
 				return mocks.worker(t)
 			},
 			expectSpans: map[string]codes.Code{
-				"core.Worker.RunOnce":                 codes.Ok,
-				"core.Worker.startInference":          codes.Ok,
-				"core.Worker.finishProviderOperation": codes.Ok,
-				"core.Worker.settle":                  codes.Ok,
+				"core.Worker.RunOnce":                 codes.Unset,
+				"core.Worker.startInference":          codes.Unset,
+				"core.Worker.finishProviderOperation": codes.Unset,
+				"core.Worker.settle":                  codes.Unset,
 			},
 		},
 		{
@@ -816,6 +819,7 @@ func TestWorkerTelemetry(t *testing.T) {
 				"core.Worker.finishProviderOperation": codes.Error,
 				"core.Worker.settle":                  codes.Error,
 			},
+			expectDescribedBy: []string{"core.Worker.settle"},
 		},
 		{
 			name: "Error/Settlement",
@@ -838,6 +842,7 @@ func TestWorkerTelemetry(t *testing.T) {
 				"core.Worker.finishProviderOperation": codes.Error,
 				"core.Worker.settle":                  codes.Error,
 			},
+			expectDescribedBy: []string{"core.Worker.settle"},
 		},
 		{
 			name: "Error/MixedBatch",
@@ -876,6 +881,7 @@ func TestWorkerTelemetry(t *testing.T) {
 				"core.Worker.RunOnce":       codes.Error,
 				"core.Worker.failInference": codes.Error,
 			},
+			expectDescribedBy: []string{"core.Worker.startInference"},
 		},
 	}
 
@@ -891,9 +897,16 @@ func TestWorkerTelemetry(t *testing.T) {
 			require.True(t, worked)
 
 			spans := make(map[string]sdktrace.ReadOnlySpan, len(testCase.expectSpans))
+
+			var describedBy []string
+
 			for _, span := range recorder.Ended() {
 				if _, ok := testCase.expectSpans[span.Name()]; ok {
 					spans[span.Name()] = span
+				}
+
+				if strings.Contains(span.Status().Description, errFoo.Error()) {
+					describedBy = append(describedBy, span.Name())
 				}
 			}
 
@@ -901,11 +914,9 @@ func TestWorkerTelemetry(t *testing.T) {
 				span, ok := spans[name]
 				require.True(t, ok, "span %s was not recorded", name)
 				require.Equal(t, expectStatus, span.Status().Code, name)
-
-				if expectStatus == codes.Error {
-					require.Contains(t, span.Status().Description, errFoo.Error())
-				}
 			}
+
+			require.Equal(t, testCase.expectDescribedBy, describedBy)
 
 			mocks.assertExpectations(t)
 		})
