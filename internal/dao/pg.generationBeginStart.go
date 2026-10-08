@@ -19,12 +19,15 @@ var generationBeginStartQuery string
 // GenerationBeginStartRequest identifies the generation to start.
 type GenerationBeginStartRequest struct {
 	ID uuid.UUID
+	// ProviderEpoch is the configuration the attempt runs on.
+	ProviderEpoch int32
 }
 
 // GenerationBeginStart takes the next attempt and records that its provider call may be sent.
 //
 // It refuses with [ErrGenerationChanged] unless the generation is pending, due, not cancelled and
-// not already starting, so one check at most sends each attempt.
+// not already starting, so one check at most sends each attempt. It also refuses a generation a newer
+// provider configuration took over.
 type GenerationBeginStart struct{}
 
 func NewGenerationBeginStart() *GenerationBeginStart {
@@ -42,7 +45,7 @@ func (dao *GenerationBeginStart) Exec(ctx context.Context, request *GenerationBe
 
 	entity := &Generation{}
 
-	err = tx.NewRaw(generationBeginStartQuery, request.ID).Scan(ctx, entity)
+	err = tx.NewRaw(generationBeginStartQuery, request.ID, request.ProviderEpoch).Scan(ctx, entity)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			err = errors.Join(err, ErrGenerationChanged)

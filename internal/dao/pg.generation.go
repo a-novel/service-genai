@@ -58,6 +58,8 @@ type Generation struct {
 	StartRequestedAt  *time.Time `bun:"start_requested_at,nullzero"`
 	ProviderCallID    *string    `bun:"provider_call_id,nullzero"`
 	CancelRequestedAt *time.Time `bun:"cancel_requested_at,nullzero"`
+	// ProviderEpoch is the newest provider configuration that started or restarted an attempt.
+	ProviderEpoch *int32 `bun:"provider_epoch,nullzero"`
 	// CheckedAt is when a check last looked at the generation, by the database clock.
 	CheckedAt time.Time `bun:"checked_at"`
 

@@ -18,6 +18,8 @@ import (
 func TestGenerationBeginStart(t *testing.T) {
 	t.Parallel()
 
+	const epoch = testEpoch + 1
+
 	testCases := []struct {
 		name string
 
@@ -28,6 +30,26 @@ func TestGenerationBeginStart(t *testing.T) {
 	}{
 		{
 			name: "Success",
+		},
+		{
+			// A generation requeued on an older configuration starts again on the caller's.
+			name: "Success/OlderEpoch",
+
+			prepare: func(ctx context.Context, t *testing.T, id uuid.UUID) {
+				t.Helper()
+				execute(ctx, t, "UPDATE generations SET provider_epoch = ?1 WHERE id = ?0", id, epoch-1)
+			},
+		},
+		{
+			// A replica still on an older configuration must not take a generation back.
+			name: "Error/NewerEpoch",
+
+			prepare: func(ctx context.Context, t *testing.T, id uuid.UUID) {
+				t.Helper()
+				execute(ctx, t, "UPDATE generations SET provider_epoch = ?1 WHERE id = ?0", id, epoch+1)
+			},
+
+			expectErr: dao.ErrGenerationChanged,
 		},
 		{
 			name: "Error/NotDue",
@@ -87,7 +109,9 @@ func TestGenerationBeginStart(t *testing.T) {
 					testCase.prepare(ctx, t, generation.ID)
 				}
 
-				started, err := daoBeginStart.Exec(ctx, &dao.GenerationBeginStartRequest{ID: generation.ID})
+				started, err := daoBeginStart.Exec(ctx, &dao.GenerationBeginStartRequest{
+					ID: generation.ID, ProviderEpoch: epoch,
+				})
 				require.ErrorIs(t, err, testCase.expectErr)
 
 				if testCase.expectErr != nil {
@@ -98,6 +122,7 @@ func TestGenerationBeginStart(t *testing.T) {
 				require.Equal(t, int16(1), started.Attempt)
 				require.NotNil(t, started.StartRequestedAt)
 				require.Nil(t, started.ProviderCallID)
+				require.Equal(t, new(epoch), started.ProviderEpoch)
 			})
 		})
 	}
