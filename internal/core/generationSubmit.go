@@ -15,10 +15,17 @@ import (
 	"github.com/a-novel/service-genai/internal/dao"
 )
 
-// GenerationSubmitDao is the data-access dependency of [GenerationSubmit].
-type GenerationSubmitDao interface {
-	Exec(ctx context.Context, request *dao.GenerationSubmitRequest) (*dao.GenerationSubmitResult, error)
-}
+// Dependencies of [GenerationSubmit].
+type (
+	// GenerationSubmitDao records the generation.
+	GenerationSubmitDao interface {
+		Exec(ctx context.Context, request *dao.GenerationSubmitRequest) (*dao.GenerationSubmitResult, error)
+	}
+	// GenerationSubmitServiceCheck starts a newly recorded generation.
+	GenerationSubmitServiceCheck interface {
+		Exec(ctx context.Context, request *GenerationCheckRequest) (*dao.Generation, error)
+	}
+)
 
 // GenerationSubmitRequest holds the parameters for a [GenerationSubmit.Exec] call.
 type GenerationSubmitRequest struct {
@@ -45,13 +52,17 @@ type GenerationSubmitResult struct {
 	Created bool
 }
 
-// A GenerationSubmit records a generation for a worker to run.
+// A GenerationSubmit records a generation and starts its provider call.
+//
+// A replay returns the recorded generation as it stands, without checking it: the caller polls
+// that generation next, and the poll checks it.
 type GenerationSubmit struct {
-	dao GenerationSubmitDao
+	dao   GenerationSubmitDao
+	check GenerationSubmitServiceCheck
 }
 
-func NewGenerationSubmit(submitDao GenerationSubmitDao) *GenerationSubmit {
-	return &GenerationSubmit{dao: submitDao}
+func NewGenerationSubmit(submitDao GenerationSubmitDao, check GenerationSubmitServiceCheck) *GenerationSubmit {
+	return &GenerationSubmit{dao: submitDao, check: check}
 }
 
 func (service *GenerationSubmit) Exec(
@@ -102,8 +113,17 @@ func (service *GenerationSubmit) Exec(
 
 	span.SetAttributes(attribute.String("generation.id", result.Generation.ID.String()))
 
+	generation := result.Generation
+
+	if result.Created {
+		generation, err = service.check.Exec(ctx, &GenerationCheckRequest{Generation: generation})
+		if err != nil {
+			return nil, otel.ReportError(span, fmt.Errorf("start generation: %w", err))
+		}
+	}
+
 	return &GenerationSubmitResult{
-		Generation: newGeneration(result.Generation),
+		Generation: newGeneration(generation),
 		Created:    result.Created,
 	}, nil
 }

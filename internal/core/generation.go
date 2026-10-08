@@ -10,17 +10,13 @@ import (
 	"github.com/a-novel/service-genai/internal/dao"
 )
 
-// Ceilings the worker configuration is held to. They live here because validation is this layer's
-// responsibility; the data access below takes what it is given.
-//
-// Request-shape ceilings are expressed as validate tags on the request structs instead, since the
-// tag syntax takes literals.
+// Ceilings the configuration and requests are held to. They live here because validation is this
+// layer's responsibility; the data access below takes what it is given.
 const (
-	// ClaimLeaseCeiling bounds a worker's lease. Longer than this outlives any generation we run,
-	// so a stranded claim would sit invisible for an hour.
-	ClaimLeaseCeiling = time.Hour
-	// ClaimLimitCeiling bounds one claim, so a single worker cannot take the whole queue.
-	ClaimLimitCeiling = 100
+	// SweepIntervalCeiling bounds how long an unpolled generation goes unchecked. A finished
+	// background response stays retrievable for only about ten minutes when it is not stored, so the
+	// sweep must reach it well inside that window.
+	SweepIntervalCeiling = 5 * time.Minute
 	// RequestSizeCeiling bounds a submitted provider payload. It estimates OpenAI's 922,000-token
 	// maximum input using the rough English heuristic of four characters per token and one byte per
 	// ASCII character, leaving the model's separate 128,000-token output allowance untouched.
@@ -36,16 +32,14 @@ const (
 type GenerationStatus string
 
 const (
-	// GenerationStatusPending means the generation is waiting for a worker.
+	// GenerationStatusPending means no provider call has been accepted for the current attempt yet.
 	GenerationStatusPending GenerationStatus = "pending"
-	// GenerationStatusRunning means a worker is executing the generation.
+	// GenerationStatusRunning means the provider accepted the call and it has not settled yet.
 	GenerationStatusRunning GenerationStatus = "running"
 	// GenerationStatusSucceeded means the provider returned a usable output.
 	GenerationStatusSucceeded GenerationStatus = "succeeded"
 	// GenerationStatusFailed means the generation exhausted its attempts without a usable output.
 	GenerationStatusFailed GenerationStatus = "failed"
-	// GenerationStatusAbandoned means the final worker lease expired before settlement.
-	GenerationStatusAbandoned GenerationStatus = "abandoned"
 	// GenerationStatusCancelled means the generation settled after its owner requested cancellation.
 	GenerationStatusCancelled GenerationStatus = "cancelled"
 )
@@ -64,7 +58,7 @@ type Generation struct {
 	Error *string
 	// Status identifies the generation's current lifecycle state.
 	Status GenerationStatus
-	// Attempt is the zero-based attempt currently running or most recently completed.
+	// Attempt counts the provider calls started, including one in flight.
 	Attempt int16
 	// MaxAttempts caps the number of provider attempts.
 	MaxAttempts int16

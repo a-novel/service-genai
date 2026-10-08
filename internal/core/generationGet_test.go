@@ -25,6 +25,8 @@ func TestGenerationGet(t *testing.T) {
 	expiresAt := settledAt.Add(time.Hour)
 	generationError := "provider error"
 
+	const checkInterval = 2 * time.Second
+
 	type daoMock struct {
 		resp *dao.Generation
 		err  error
@@ -35,10 +37,13 @@ func TestGenerationGet(t *testing.T) {
 
 		request *core.GenerationGetRequest
 
-		daoMock *daoMock
+		daoMock   *daoMock
+		electMock *daoMock
+		checkMock *daoMock
 
-		expect    *core.Generation
-		expectErr error
+		expect       *core.Generation
+		expectStatus core.GenerationStatus
+		expectErr    error
 	}{
 		{
 			name: "Success",
@@ -58,6 +63,45 @@ func TestGenerationGet(t *testing.T) {
 				CreatedAt: createdAt, UpdatedAt: updatedAt, SettledAt: &settledAt,
 				ExpiresAt: &expiresAt,
 			},
+		},
+		{
+			name: "Success/CheckedRecently",
+
+			request:   &core.GenerationGetRequest{ID: generationID, OwnerID: owner},
+			daoMock:   &daoMock{resp: runningGeneration(1)},
+			electMock: &daoMock{err: dao.ErrGenerationCheckNotDue},
+
+			expectStatus: core.GenerationStatusRunning,
+		},
+		{
+			// A stale generation is checked before it is returned: polls are what move it forward.
+			name: "Success/Checked",
+
+			request:   &core.GenerationGetRequest{ID: generationID, OwnerID: owner},
+			daoMock:   &daoMock{resp: runningGeneration(1)},
+			electMock: &daoMock{resp: runningGeneration(1)},
+			checkMock: &daoMock{resp: settledGeneration(dao.GenerationStatusSucceeded)},
+
+			expectStatus: core.GenerationStatusSucceeded,
+		},
+		{
+			name: "Error/Elect",
+
+			request:   &core.GenerationGetRequest{ID: generationID, OwnerID: owner},
+			daoMock:   &daoMock{resp: runningGeneration(1)},
+			electMock: &daoMock{err: errFoo},
+
+			expectErr: errFoo,
+		},
+		{
+			name: "Error/Check",
+
+			request:   &core.GenerationGetRequest{ID: generationID, OwnerID: owner},
+			daoMock:   &daoMock{resp: runningGeneration(1)},
+			electMock: &daoMock{resp: runningGeneration(1)},
+			checkMock: &daoMock{err: errFoo},
+
+			expectErr: errFoo,
 		},
 		{
 			// The data access reports not-found for another owner's generation too, so the
@@ -98,6 +142,8 @@ func TestGenerationGet(t *testing.T) {
 			t.Parallel()
 
 			getDao := coremocks.NewMockGenerationGetDao(t)
+			electDao := coremocks.NewMockGenerationGetElectCheckDao(t)
+			check := coremocks.NewMockGenerationGetServiceCheck(t)
 
 			if testCase.daoMock != nil {
 				getDao.EXPECT().
@@ -107,16 +153,40 @@ func TestGenerationGet(t *testing.T) {
 					Return(testCase.daoMock.resp, testCase.daoMock.err)
 			}
 
-			result, err := core.NewGenerationGet(getDao).Exec(t.Context(), testCase.request)
+			if testCase.electMock != nil {
+				electDao.EXPECT().
+					Exec(mock.Anything, &dao.GenerationElectCheckRequest{
+						ID: testCase.request.ID, OwnerID: testCase.request.OwnerID, Interval: checkInterval,
+					}).
+					Return(testCase.electMock.resp, testCase.electMock.err)
+			}
+
+			if testCase.checkMock != nil {
+				check.EXPECT().
+					Exec(mock.Anything, &core.GenerationCheckRequest{Generation: testCase.electMock.resp}).
+					Return(testCase.checkMock.resp, testCase.checkMock.err)
+			}
+
+			service, err := core.NewGenerationGet(
+				core.GenerationGetConfig{CheckInterval: checkInterval}, getDao, electDao, check,
+			)
+			require.NoError(t, err)
+
+			result, err := service.Exec(t.Context(), testCase.request)
 			require.ErrorIs(t, err, testCase.expectErr)
 
-			if testCase.expectErr != nil {
+			switch {
+			case testCase.expectErr != nil:
 				require.Nil(t, result)
-			} else {
+			case testCase.expect != nil:
 				require.Equal(t, testCase.expect, result)
+			default:
+				require.Equal(t, testCase.expectStatus, result.Status)
 			}
 
 			getDao.AssertExpectations(t)
+			electDao.AssertExpectations(t)
+			check.AssertExpectations(t)
 		})
 	}
 }
