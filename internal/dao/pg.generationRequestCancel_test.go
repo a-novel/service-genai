@@ -130,6 +130,7 @@ func TestGenerationRequestCancel(t *testing.T) {
 				if testCase.expectStatus == dao.GenerationStatusCancelled {
 					require.Equal(t, reason, *cancelled.Error)
 					require.NotNil(t, cancelled.SettledAt)
+					require.Equal(t, testRetention, cancelled.ExpiresAt.Sub(*cancelled.SettledAt))
 				} else {
 					require.Nil(t, cancelled.SettledAt)
 				}

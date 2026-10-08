@@ -3,10 +3,11 @@
 -- whatever it consumed.
 --
 -- Owner-scoped, and only while the generation can still be stopped: a terminal one is already paid
--- for and a cancel would be a no-op the caller should be told about.
+-- for and a cancel would be a no-op the caller should be told about. One instant serves every
+-- timestamp, so the retention between settled_at and expires_at is exact.
 UPDATE generations
 SET
-  cancel_requested_at = coalesce(cancel_requested_at, clock_timestamp()),
+  cancel_requested_at = coalesce(cancel_requested_at, cancel.at),
   status = CASE
     WHEN start_requested_at IS NULL THEN 'cancelled'::generation_status
     ELSE status
@@ -16,15 +17,20 @@ SET
     ELSE error
   END,
   settled_at = CASE
-    WHEN start_requested_at IS NULL THEN clock_timestamp()
+    WHEN start_requested_at IS NULL THEN cancel.at
   END,
   expires_at = CASE
-    WHEN start_requested_at IS NULL THEN clock_timestamp() + make_interval(secs => ?3)
+    WHEN start_requested_at IS NULL THEN cancel.at + make_interval(secs => ?3)
   END,
-  updated_at = clock_timestamp()
+  updated_at = cancel.at
+FROM
+  (
+    SELECT
+      clock_timestamp() AS at
+  ) AS cancel
 WHERE
-  id = ?0
-  AND owner_id = ?1
-  AND status IN ('pending', 'running')
+  generations.id = ?0
+  AND generations.owner_id = ?1
+  AND generations.status IN ('pending', 'running')
 RETURNING
-  *;
+  generations.*;
