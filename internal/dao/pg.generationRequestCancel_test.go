@@ -3,7 +3,6 @@ package dao_test
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -18,57 +17,68 @@ import (
 func TestGenerationRequestCancel(t *testing.T) {
 	t.Parallel()
 
-	otherOwner := uuid.MustParse("00000000-0000-0000-0000-000000000002")
+	const reason = "generation cancelled"
 
 	testCases := []struct {
 		name string
 
-		// claimFirst puts the generation in flight, which is still cancellable.
-		claimFirst bool
-		// settleFirst puts it past the point of stopping.
-		settleFirst bool
-		// requestTwice marks it a second time.
-		requestTwice bool
-
+		// state is how far the seeded generation goes before the cancel.
+		state string
 		owner uuid.UUID
+		// cancelTwice repeats the request, which must keep the first timestamp.
+		cancelTwice bool
 
-		expectErr error
+		expectStatus dao.GenerationStatus
+		expectErr    error
 	}{
 		{
-			name: "Success/Pending",
+			// Nothing was sent, so there is no call to stop and the generation settles at once.
+			name: "Success/NeverStarted",
 
+			state: "pending",
 			owner: testOwner,
+
+			expectStatus: dao.GenerationStatusCancelled,
+		},
+		{
+			// The start may be accepted at any moment, so the generation is only marked.
+			name: "Success/StartInFlight",
+
+			state: "starting",
+			owner: testOwner,
+
+			expectStatus: dao.GenerationStatusPending,
 		},
 		{
 			name: "Success/Running",
 
-			claimFirst: true,
-			owner:      testOwner,
+			state: "running",
+			owner: testOwner,
+
+			expectStatus: dao.GenerationStatusRunning,
 		},
 		{
-			// The timestamp is the moment the first request arrived, so a repeat does not push the
-			// worker's view of when the stop was asked for.
-			name: "Success/RepeatKeepsTheFirstTimestamp",
+			name: "Success/Repeated",
 
-			requestTwice: true,
-			owner:        testOwner,
-		},
-		{
-			// Already paid for. Reporting this rather than silently succeeding is what tells a
-			// caller its stop came too late.
-			name: "Error/AlreadySettled",
-
-			claimFirst:  true,
-			settleFirst: true,
+			state:       "running",
 			owner:       testOwner,
+			cancelTwice: true,
+
+			expectStatus: dao.GenerationStatusRunning,
+		},
+		{
+			name: "Error/Settled",
+
+			state: "settled",
+			owner: testOwner,
 
 			expectErr: dao.ErrGenerationNotCancellable,
 		},
 		{
-			// Another owner's generation is indistinguishable from one that does not exist.
 			name: "Error/OtherOwner",
 
-			owner: otherOwner,
+			state: "running",
+			owner: uuid.MustParse("00000000-0000-0000-0000-000000000002"),
 
 			expectErr: dao.ErrGenerationNotCancellable,
 		},
@@ -85,50 +95,48 @@ func TestGenerationRequestCancel(t *testing.T) {
 
 				generation := seedGeneration(ctx, t, 1)
 
-				if testCase.claimFirst {
-					generation = claimGenerations(ctx, t)[0]
+				switch testCase.state {
+				case "starting":
+					startGeneration(ctx, t, generation.ID)
+				case "running":
+					runGeneration(ctx, t, generation.ID)
+				case "settled":
+					settleGeneration(ctx, t, runGeneration(ctx, t, generation.ID))
 				}
 
-				if testCase.settleFirst {
-					_, err := dao.NewGenerationSettle().Exec(ctx, &dao.GenerationSettleRequest{
-						ClaimToken: generation.ClaimToken,
-						ID:         generation.ID, WorkerID: testWorker,
-						Status: dao.GenerationStatusSucceeded, Retention: testRetention,
-					})
+				request := &dao.GenerationRequestCancelRequest{
+					ID: generation.ID, OwnerID: testCase.owner, Error: reason, Retention: testRetention,
+				}
+
+				var first *dao.Generation
+
+				if testCase.cancelTwice {
+					var err error
+
+					first, err = daoRequestCancel.Exec(ctx, request)
 					require.NoError(t, err)
 				}
 
-				var firstRequestedAt *time.Time
-
-				if testCase.requestTwice {
-					first, err := daoRequestCancel.Exec(ctx, &dao.GenerationRequestCancelRequest{
-						ID: generation.ID, OwnerID: testCase.owner,
-					})
-					require.NoError(t, err)
-
-					firstRequestedAt = first.CancelRequestedAt
-				}
-
-				result, err := daoRequestCancel.Exec(ctx, &dao.GenerationRequestCancelRequest{
-					ID: generation.ID, OwnerID: testCase.owner,
-				})
+				cancelled, err := daoRequestCancel.Exec(ctx, request)
 				require.ErrorIs(t, err, testCase.expectErr)
 
 				if testCase.expectErr != nil {
-					require.Nil(t, result)
-
 					return
 				}
 
-				require.NotNil(t, result.CancelRequestedAt)
+				require.Equal(t, testCase.expectStatus, cancelled.Status)
+				require.NotNil(t, cancelled.CancelRequestedAt)
 
-				if firstRequestedAt != nil {
-					require.Equal(t, *firstRequestedAt, *result.CancelRequestedAt)
+				if testCase.expectStatus == dao.GenerationStatusCancelled {
+					require.Equal(t, reason, *cancelled.Error)
+					require.NotNil(t, cancelled.SettledAt)
+				} else {
+					require.Nil(t, cancelled.SettledAt)
 				}
 
-				// Marking is all this does: the worker settles, because the tokens spent before the
-				// stop still have to be recorded.
-				require.NotEqual(t, dao.GenerationStatusCancelled, result.Status)
+				if first != nil {
+					require.Equal(t, first.CancelRequestedAt, cancelled.CancelRequestedAt)
+				}
 			})
 		})
 	}

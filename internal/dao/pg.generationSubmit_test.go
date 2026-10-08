@@ -161,7 +161,7 @@ func TestGenerationSubmit(t *testing.T) {
 						require.False(t, result.Generation.CreatedAt.IsZero())
 						require.False(t, result.Generation.RunAt.IsZero())
 						require.Nil(t, result.Generation.SettledAt)
-						require.Nil(t, result.Generation.LeaseExpiresAt)
+						require.False(t, result.Generation.CheckedAt.IsZero())
 					}
 
 					if sub.expectReplayOf > 0 {

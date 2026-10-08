@@ -6,6 +6,7 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -16,21 +17,20 @@ import (
 //go:embed pg.generationRequeue.sql
 var generationRequeueQuery string
 
-// GenerationRequeueRequest is the input to [GenerationRequeue.Exec].
+// GenerationRequeueRequest identifies the failed attempt to retry.
 type GenerationRequeueRequest struct {
-	// ClaimToken must match the acquisition whose lease is still live.
-	ClaimToken     uuid.UUID
-	ID             uuid.UUID
-	WorkerID       string
-	ProviderCallID *string
+	ID      uuid.UUID
+	Attempt int16
+	// ProviderCallID is the finished operation of the failed attempt.
+	ProviderCallID string
+	// Delay postpones the next start.
+	Delay time.Duration
 }
 
-// GenerationRequeue authorizes a fresh inference attempt after a definitive retryable failure.
-// The expected provider operation makes that authorization stale-safe.
+// GenerationRequeue returns a generation whose attempt failed retryably to the queue for a fresh
+// provider call.
 //
-// It is not a public operation on its own: a worker reports an outcome, and a retryable failure with
-// attempts remaining lands here rather than in [GenerationSettle]. Folding the two together is what
-// stops a worker handing back work it already reported failed.
+// It does not write the attempt's usage row; the caller wraps both in one transaction.
 type GenerationRequeue struct{}
 
 func NewGenerationRequeue() *GenerationRequeue {
@@ -46,14 +46,14 @@ func (dao *GenerationRequeue) Exec(ctx context.Context, request *GenerationReque
 		return nil, otel.ReportError(span, fmt.Errorf("get transaction: %w", err))
 	}
 
-	entity := new(Generation)
+	entity := &Generation{}
 
 	err = tx.NewRaw(
-		generationRequeueQuery, request.ID, request.WorkerID, request.ProviderCallID, request.ClaimToken,
+		generationRequeueQuery, request.ID, request.Attempt, request.ProviderCallID, request.Delay.Seconds(),
 	).Scan(ctx, entity)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			err = errors.Join(err, ErrGenerationNotHeld)
+			err = errors.Join(err, ErrGenerationChanged)
 		}
 
 		return nil, otel.ReportError(span, fmt.Errorf("execute query: %w", err))

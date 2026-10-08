@@ -6,6 +6,7 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -25,13 +26,16 @@ var ErrGenerationNotCancellable = errors.New("generation cannot be cancelled")
 type GenerationRequestCancelRequest struct {
 	ID      uuid.UUID
 	OwnerID uuid.UUID
+	// Error and Retention settle a generation that never started.
+	Error     string
+	Retention time.Duration
 }
 
-// GenerationRequestCancel marks a generation for cancellation.
+// GenerationRequestCancel cancels a generation that never started, and marks one that did.
 type GenerationRequestCancel struct{}
 
 func NewGenerationRequestCancel() *GenerationRequestCancel {
-	return new(GenerationRequestCancel)
+	return &GenerationRequestCancel{}
 }
 
 func (dao *GenerationRequestCancel) Exec(
@@ -45,9 +49,15 @@ func (dao *GenerationRequestCancel) Exec(
 		return nil, otel.ReportError(span, fmt.Errorf("get transaction: %w", err))
 	}
 
-	entity := new(Generation)
+	entity := &Generation{}
 
-	err = tx.NewRaw(generationRequestCancelQuery, request.ID, request.OwnerID).Scan(ctx, entity)
+	err = tx.NewRaw(
+		generationRequestCancelQuery,
+		request.ID,
+		request.OwnerID,
+		request.Error,
+		request.Retention.Seconds(),
+	).Scan(ctx, entity)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			err = errors.Join(err, ErrGenerationNotCancellable)

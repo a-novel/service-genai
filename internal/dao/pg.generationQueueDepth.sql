@@ -14,4 +14,5 @@ FROM
   generations
 WHERE
   status = 'pending'
+  AND start_requested_at IS NULL
   AND run_at <= clock_timestamp();

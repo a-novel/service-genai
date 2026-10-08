@@ -1,32 +1,17 @@
--- Read authority from the locked CTE row: filtering the target table can evaluate expiry
--- before the lock wait, even when the CTE is materialized.
-WITH
-  held AS MATERIALIZED (
-    SELECT
-      generations.*
-    FROM
-      generations
-    WHERE
-      id = ?0
-    FOR UPDATE
-  )
+-- Fenced by the attempt and provider call the caller observed, so a check acting on an outdated read
+-- cannot settle an attempt it never saw.
 UPDATE generations
 SET
-  status = ?2,
-  output = ?3,
-  error = ?4,
-  claim_token = NULL,
-  lease_expires_at = NULL,
+  status = ?3,
+  output = ?4,
+  error = ?5,
   settled_at = clock_timestamp(),
-  expires_at = clock_timestamp() + make_interval(secs => ?5),
+  expires_at = clock_timestamp() + make_interval(secs => ?6),
   updated_at = clock_timestamp()
-FROM
-  held
 WHERE
-  generations.id = held.id
-  AND held.claimed_by = ?1
-  AND held.claim_token = ?6
-  AND held.status = 'running'
-  AND held.lease_expires_at > clock_timestamp()
+  id = ?0
+  AND attempt = ?1
+  AND provider_call_id IS NOT DISTINCT FROM ?2
+  AND status IN ('pending', 'running')
 RETURNING
-  generations.*;
+  *;

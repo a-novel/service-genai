@@ -3,6 +3,7 @@ package dao_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -13,19 +14,22 @@ import (
 	"github.com/a-novel/service-genai/internal/models/migrations"
 )
 
-func TestGenerationRecordProviderCall(t *testing.T) {
+func TestGenerationReleaseStart(t *testing.T) {
 	t.Parallel()
+
+	const delay = time.Minute
 
 	testCases := []struct {
 		name string
 
-		// state is how far the seeded generation goes before the record.
+		// state is how far the seeded generation goes before the release.
 		state   string
 		attempt int16
 
 		expectErr error
 	}{
 		{
+			// The call was never accepted, so the attempt comes back and the next start waits.
 			name: "Success",
 
 			state:   "starting",
@@ -40,7 +44,7 @@ func TestGenerationRecordProviderCall(t *testing.T) {
 			expectErr: dao.ErrGenerationChanged,
 		},
 		{
-			name: "Error/NeverStarted",
+			name: "Error/NotStarting",
 
 			state:   "pending",
 			attempt: 0,
@@ -48,26 +52,17 @@ func TestGenerationRecordProviderCall(t *testing.T) {
 			expectErr: dao.ErrGenerationChanged,
 		},
 		{
-			name: "Error/AlreadyRecorded",
+			// The provider accepted this attempt. Giving it back would start a second paid call.
+			name: "Error/Running",
 
 			state:   "running",
 			attempt: 1,
 
 			expectErr: dao.ErrGenerationChanged,
 		},
-		{
-			// Another check settled the attempt as unknown while this start was in flight. The
-			// refusal is how the caller learns its accepted call is an orphan.
-			name: "Error/SettledWhileStarting",
-
-			state:   "settled",
-			attempt: 1,
-
-			expectErr: dao.ErrGenerationChanged,
-		},
 	}
 
-	daoRecord := dao.NewGenerationRecordProviderCall()
+	daoReleaseStart := dao.NewGenerationReleaseStart()
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -80,15 +75,13 @@ func TestGenerationRecordProviderCall(t *testing.T) {
 
 				switch testCase.state {
 				case "starting":
-					startGeneration(ctx, t, generation.ID)
+					generation = startGeneration(ctx, t, generation.ID)
 				case "running":
-					runGeneration(ctx, t, generation.ID)
-				case "settled":
-					settleGeneration(ctx, t, startGeneration(ctx, t, generation.ID))
+					generation = runGeneration(ctx, t, generation.ID)
 				}
 
-				recorded, err := daoRecord.Exec(ctx, &dao.GenerationRecordProviderCallRequest{
-					ID: generation.ID, Attempt: testCase.attempt, ProviderCallID: "resp_new",
+				released, err := daoReleaseStart.Exec(ctx, &dao.GenerationReleaseStartRequest{
+					ID: generation.ID, Attempt: testCase.attempt, Delay: delay,
 				})
 				require.ErrorIs(t, err, testCase.expectErr)
 
@@ -96,9 +89,10 @@ func TestGenerationRecordProviderCall(t *testing.T) {
 					return
 				}
 
-				require.Equal(t, dao.GenerationStatusRunning, recorded.Status)
-				require.Equal(t, "resp_new", *recorded.ProviderCallID)
-				require.Equal(t, testCase.attempt, recorded.Attempt)
+				require.Equal(t, dao.GenerationStatusPending, released.Status)
+				require.Equal(t, int16(0), released.Attempt)
+				require.Nil(t, released.StartRequestedAt)
+				require.GreaterOrEqual(t, released.RunAt.Sub(*generation.StartRequestedAt), delay)
 			})
 		})
 	}

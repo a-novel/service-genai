@@ -14,8 +14,7 @@ import (
 )
 
 const (
-	testWorker    = "worker-1"
-	testLease     = time.Minute
+	testCallID    = "resp_1"
 	testRetention = 7 * 24 * time.Hour
 )
 
@@ -41,23 +40,51 @@ func seedGeneration(ctx context.Context, t *testing.T, maxAttempts int16) *dao.G
 	return result.Generation
 }
 
-// claimGenerations takes whatever is pending, for the default test worker.
-func claimGenerations(ctx context.Context, t *testing.T) []*dao.Generation {
+// startGeneration records start intent on a seeded generation, as a check about to send its call.
+func startGeneration(ctx context.Context, t *testing.T, id uuid.UUID) *dao.Generation {
 	t.Helper()
 
-	claimed, err := dao.NewGenerationClaim().Exec(ctx, &dao.GenerationClaimRequest{
-		WorkerID: testWorker, Limit: 10, Lease: testLease,
+	generation, err := dao.NewGenerationBeginStart().Exec(ctx, &dao.GenerationBeginStartRequest{ID: id})
+	if err != nil {
+		panic(err)
+	}
+
+	return generation
+}
+
+// runGeneration starts a seeded generation and records its provider call.
+func runGeneration(ctx context.Context, t *testing.T, id uuid.UUID) *dao.Generation {
+	t.Helper()
+
+	started := startGeneration(ctx, t, id)
+
+	generation, err := dao.NewGenerationRecordProviderCall().Exec(ctx, &dao.GenerationRecordProviderCallRequest{
+		ID: id, Attempt: started.Attempt, ProviderCallID: testCallID,
 	})
 	if err != nil {
 		panic(err)
 	}
 
-	return claimed
+	return generation
 }
 
-// expireLease pushes a claim's lease the given age into the past, standing in for a worker that
-// died that long ago.
-func expireLease(ctx context.Context, t *testing.T, id uuid.UUID, age time.Duration) {
+// setCheckedAt moves when a generation was last checked, relative to the database clock.
+func setCheckedAt(ctx context.Context, t *testing.T, id uuid.UUID, offset time.Duration) {
+	t.Helper()
+
+	execute(ctx, t, "UPDATE generations SET checked_at = clock_timestamp() + make_interval(secs => ?1) WHERE id = ?0",
+		id, offset.Seconds())
+}
+
+// setRunAt moves when a generation may next start, relative to the database clock.
+func setRunAt(ctx context.Context, t *testing.T, id uuid.UUID, offset time.Duration) {
+	t.Helper()
+
+	execute(ctx, t, "UPDATE generations SET run_at = clock_timestamp() + make_interval(secs => ?1) WHERE id = ?0",
+		id, offset.Seconds())
+}
+
+func execute(ctx context.Context, t *testing.T, query string, args ...any) {
 	t.Helper()
 
 	db, err := postgres.GetContext(ctx)
@@ -65,11 +92,29 @@ func expireLease(ctx context.Context, t *testing.T, id uuid.UUID, age time.Durat
 		panic(err)
 	}
 
-	_, err = db.NewRaw(
-		"UPDATE generations SET lease_expires_at = clock_timestamp() - make_interval(secs => ?1) WHERE id = ?0",
-		id, age.Seconds(),
-	).Exec(ctx)
+	_, err = db.NewRaw(query, args...).Exec(ctx)
 	if err != nil {
 		panic(err)
 	}
+}
+
+// settleGeneration fails a generation in whatever state it was read in.
+func settleGeneration(ctx context.Context, t *testing.T, generation *dao.Generation) *dao.Generation {
+	t.Helper()
+
+	reason := "generation failed"
+
+	settled, err := dao.NewGenerationSettle().Exec(ctx, &dao.GenerationSettleRequest{
+		ID:             generation.ID,
+		Attempt:        generation.Attempt,
+		ProviderCallID: generation.ProviderCallID,
+		Status:         dao.GenerationStatusFailed,
+		Error:          &reason,
+		Retention:      testRetention,
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	return settled
 }

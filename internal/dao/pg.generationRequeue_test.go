@@ -3,6 +3,7 @@ package dao_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -16,43 +17,52 @@ import (
 func TestGenerationRequeue(t *testing.T) {
 	t.Parallel()
 
-	providerCallID := "resp_1"
+	const delay = time.Minute
 
 	testCases := []struct {
 		name string
 
-		worker                 string
-		recordedProviderCallID *string
-		requestProviderCallID  *string
+		// state is how far the seeded generation goes before the requeue.
+		state   string
+		attempt int16
+		callID  string
 
 		expectErr error
 	}{
 		{
+			// The failed call is finished, so the next start takes a fresh attempt after the delay.
 			name: "Success",
 
-			worker: testWorker,
+			state:   "running",
+			attempt: 1,
+			callID:  testCallID,
 		},
 		{
-			name: "Success/KnownTerminalProviderOperation",
+			name: "Error/OtherAttempt",
 
-			worker:                 testWorker,
-			recordedProviderCallID: &providerCallID,
-			requestProviderCallID:  &providerCallID,
+			state:   "running",
+			attempt: 2,
+			callID:  testCallID,
+
+			expectErr: dao.ErrGenerationChanged,
 		},
 		{
-			name: "Error/KnownProviderOperationWithoutAuthorization",
+			name: "Error/OtherCall",
 
-			worker:                 testWorker,
-			recordedProviderCallID: &providerCallID,
+			state:   "running",
+			attempt: 1,
+			callID:  "resp_other",
 
-			expectErr: dao.ErrGenerationNotHeld,
+			expectErr: dao.ErrGenerationChanged,
 		},
 		{
-			name: "Error/NotHeldByThisWorker",
+			name: "Error/NotRunning",
 
-			worker: "someone-else",
+			state:   "starting",
+			attempt: 1,
+			callID:  testCallID,
 
-			expectErr: dao.ErrGenerationNotHeld,
+			expectErr: dao.ErrGenerationChanged,
 		},
 	}
 
@@ -65,38 +75,30 @@ func TestGenerationRequeue(t *testing.T) {
 			postgrestest.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
 				t.Helper()
 
-				seedGeneration(ctx, t, 3)
-				claimed := claimGenerations(ctx, t)
+				generation := seedGeneration(ctx, t, 2)
 
-				if testCase.recordedProviderCallID != nil {
-					_, err := dao.NewGenerationRecordProviderCall().Exec(ctx, &dao.GenerationRecordProviderCallRequest{
-						ClaimToken: claimed[0].ClaimToken,
-						ID:         claimed[0].ID, WorkerID: testWorker, ProviderCallID: *testCase.recordedProviderCallID,
-					})
-					require.NoError(t, err)
+				switch testCase.state {
+				case "starting":
+					generation = startGeneration(ctx, t, generation.ID)
+				case "running":
+					generation = runGeneration(ctx, t, generation.ID)
 				}
 
 				requeued, err := daoRequeue.Exec(ctx, &dao.GenerationRequeueRequest{
-					ClaimToken: claimed[0].ClaimToken,
-					ID:         claimed[0].ID, WorkerID: testCase.worker, ProviderCallID: testCase.requestProviderCallID,
+					ID: generation.ID, Attempt: testCase.attempt, ProviderCallID: testCase.callID, Delay: delay,
 				})
 				require.ErrorIs(t, err, testCase.expectErr)
 
 				if testCase.expectErr != nil {
-					require.Nil(t, requeued)
-
 					return
 				}
 
 				require.Equal(t, dao.GenerationStatusPending, requeued.Status)
-				require.Nil(t, requeued.ClaimedBy)
-				require.Nil(t, requeued.LeaseExpiresAt)
 				require.Nil(t, requeued.ProviderCallID)
-
-				reclaimed := claimGenerations(ctx, t)
-				require.Len(t, reclaimed, 1)
-				require.Equal(t, claimed[0].Attempt+1, reclaimed[0].Attempt)
-				require.Nil(t, reclaimed[0].ProviderCallID)
+				require.Nil(t, requeued.StartRequestedAt)
+				// The attempt keeps its number: its usage row is keyed by it.
+				require.Equal(t, int16(1), requeued.Attempt)
+				require.GreaterOrEqual(t, requeued.RunAt.Sub(*generation.StartRequestedAt), delay)
 			})
 		})
 	}
