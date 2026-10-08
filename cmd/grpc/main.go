@@ -72,12 +72,13 @@ func main() {
 	// =================================================================================================================
 
 	daoGet := dao.NewGenerationGet()
+	daoUsageList := dao.NewGenerationUsageList()
 
 	// =================================================================================================================
 	// SERVICES
 	// =================================================================================================================
 
-	provider := lib.NewOpenAI(providerOptions(cfg.Provider)...)
+	provider := lo.Must(lib.NewOpenAI(providerTiers(cfg.Provider), providerOptions(cfg.Provider)...))
 
 	serviceCheck := lo.Must(core.NewGenerationCheck(
 		core.GenerationCheckConfig{Retention: cfg.Retention},
@@ -95,20 +96,26 @@ func main() {
 		},
 	))
 
-	serviceSubmit := core.NewGenerationSubmit(dao.NewGenerationSubmit(), serviceCheck)
+	serviceSubmit := lo.Must(core.NewGenerationSubmit(
+		core.GenerationSubmitConfig{MaxAttempts: cfg.MaxAttempts},
+		dao.NewGenerationSubmit(),
+		daoUsageList,
+		serviceCheck,
+	))
 	serviceGet := lo.Must(core.NewGenerationGet(
 		core.GenerationGetConfig{CheckInterval: cfg.CheckInterval},
 		daoGet,
 		dao.NewGenerationElectCheck(),
+		daoUsageList,
 		serviceCheck,
 	))
 	serviceCancel := lo.Must(core.NewGenerationCancel(
 		core.GenerationCancelConfig{Retention: cfg.Retention},
 		dao.NewGenerationRequestCancel(),
+		daoUsageList,
 		serviceCheck,
 	))
 	serviceQueueDepth := core.NewQueueDepth(dao.NewGenerationQueueDepth())
-	serviceUsageQuery := core.NewUsageQuery(dao.NewGenerationUsageQuery())
 
 	sweep := lo.Must(core.NewGenerationSweep(
 		core.GenerationSweepConfig{Interval: cfg.Sweep.Interval, BatchSize: cfg.Sweep.BatchSize},
@@ -124,8 +131,6 @@ func main() {
 	handlerSubmit := handlers.NewGrpcGenerationSubmit(serviceSubmit)
 	handlerGet := handlers.NewGrpcGenerationGet(serviceGet)
 	handlerCancel := handlers.NewGrpcGenerationCancel(serviceCancel)
-	handlerWatch := handlers.NewGrpcGenerationWatch(handlerGet)
-	handlerUsageQuery := handlers.NewGrpcUsageQuery(serviceUsageQuery)
 
 	// =================================================================================================================
 	// SERVER
@@ -161,8 +166,6 @@ func main() {
 	genaiv0.RegisterGenerationSubmitServiceServer(server, handlerSubmit)
 	genaiv0.RegisterGenerationGetServiceServer(server, handlerGet)
 	genaiv0.RegisterGenerationCancelServiceServer(server, handlerCancel)
-	genaiv0.RegisterGenerationWatchServiceServer(server, handlerWatch)
-	genaiv0.RegisterUsageQueryServiceServer(server, handlerUsageQuery)
 
 	reflection.Register(server)
 
@@ -266,6 +269,22 @@ func observeLoop(ctx context.Context, name string, loop func()) (err error) {
 	}
 
 	return otel.ReportError(span, fmt.Errorf("%s: %w", name, errLoopExitedUnexpectedly))
+}
+
+// providerTiers converts the configured bindings to the adapter's. A name that is not a Tier is
+// dropped; a Tier left unbound fails the adapter's construction.
+func providerTiers(provider config.Provider) map[lib.Tier]lib.TierBinding {
+	tiers := make(map[lib.Tier]lib.TierBinding, len(provider.Tiers))
+
+	for name, binding := range provider.Tiers {
+		tiers[lib.Tier(name)] = lib.TierBinding{
+			Model:           binding.Model,
+			ReasoningEffort: binding.ReasoningEffort,
+			MaxOutputTokens: binding.MaxOutputTokens,
+		}
+	}
+
+	return tiers
 }
 
 // providerOptions builds the client options from configuration. An empty base URL leaves the

@@ -32,6 +32,9 @@ const (
 	// it reaches the provider at most once per interval.
 	CheckIntervalDefault = 2 * time.Second
 
+	// MaxAttemptsDefault lets one retryable provider failure be retried once. Each attempt is paid.
+	MaxAttemptsDefault = 2
+
 	// RetentionDefault is how long a settled generation's user content survives. Short on purpose:
 	// it covers client retrieval, and the usage rows describing it are kept regardless.
 	RetentionDefault = 7 * 24 * time.Hour
@@ -78,6 +81,7 @@ var (
 	openaiBaseURL = getEnv("OPENAI_BASE_URL")
 
 	checkInterval = getEnv("CHECK_INTERVAL")
+	maxAttempts   = getEnv("MAX_ATTEMPTS")
 
 	retention = getEnv("RETENTION")
 
@@ -140,6 +144,8 @@ var (
 
 	// CheckInterval is how long a check stays fresh.
 	CheckInterval = config.LoadEnv(checkInterval, CheckIntervalDefault, config.DurationParser)
+	// MaxAttempts caps the provider calls a generation gets when a call fails retryably.
+	MaxAttempts = int16(config.LoadEnv(maxAttempts, MaxAttemptsDefault, config.IntParser))
 
 	// Retention is how long a settled generation's user content survives before the purge.
 	Retention = config.LoadEnv(retention, RetentionDefault, config.DurationParser)

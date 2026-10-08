@@ -1,0 +1,17 @@
+{
+  "fast": {
+    "model": "gpt-5.6-luna",
+    "reasoningEffort": "low",
+    "maxOutputTokens": 32768
+  },
+  "balanced": {
+    "model": "gpt-5.6-terra",
+    "reasoningEffort": "medium",
+    "maxOutputTokens": 32768
+  },
+  "deep": {
+    "model": "gpt-5.6-sol",
+    "reasoningEffort": "high",
+    "maxOutputTokens": 32768
+  }
+}
