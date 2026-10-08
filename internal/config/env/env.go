@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/a-novel-kit/golib/config"
+	"github.com/a-novel-kit/golib/downtime"
 )
 
 // prefix is prepended to every configuration variable name that this package reads.
@@ -98,6 +99,8 @@ var (
 	sweepBatchSize = getEnv("SWEEP_BATCH_SIZE")
 
 	gcloudProjectId = getEnv("GCLOUD_PROJECT_ID")
+
+	downtimeStart = getEnv("DOWNTIME_START")
 )
 
 var (
@@ -177,4 +180,8 @@ var (
 	//
 	// See: https://docs.cloud.google.com/resource-manager/docs/creating-managing-projects
 	GcloudProjectId = gcloudProjectId
+
+	// DowntimeStart is when a planned downtime of this service starts, in RFC 3339. From then
+	// until it is removed, the service refuses work. Nil when none is planned.
+	DowntimeStart = config.LoadEnv(downtimeStart, nil, downtime.ParseStart)
 )

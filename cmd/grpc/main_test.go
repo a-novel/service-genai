@@ -306,3 +306,49 @@ func TestNewProvider(t *testing.T) {
 		require.Equal(t, lib.ProviderCallCancelled, await(t, started.ID).State)
 	})
 }
+
+func TestOutsideDowntime(t *testing.T) {
+	t.Parallel()
+
+	started := time.Now().Add(-time.Hour)
+	scheduled := time.Now().Add(time.Hour)
+
+	testCases := []struct {
+		name  string
+		start *time.Time
+
+		expectRun bool
+	}{
+		{
+			name:      "NoDowntime",
+			expectRun: true,
+		},
+		{
+			name:      "Scheduled",
+			start:     &scheduled,
+			expectRun: true,
+		},
+		{
+			name:  "Started",
+			start: &started,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			ran := false
+
+			busy, err := outsideDowntime(testCase.start, func(context.Context) (bool, error) {
+				ran = true
+
+				return true, nil
+			})(t.Context())
+
+			require.NoError(t, err)
+			require.Equal(t, testCase.expectRun, ran)
+			require.Equal(t, testCase.expectRun, busy)
+		})
+	}
+}

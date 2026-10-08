@@ -3,7 +3,7 @@ module github.com/a-novel/service-genai
 go 1.27.1
 
 require (
-	github.com/a-novel-kit/golib v0.40.0
+	github.com/a-novel-kit/golib v0.41.1
 	github.com/go-playground/validator/v10 v10.30.5
 	github.com/google/uuid v1.6.0
 	github.com/openai/openai-go/v3 v3.74.0
@@ -11,10 +11,8 @@ require (
 	github.com/stretchr/testify v1.12.1
 	github.com/uptrace/bun v1.3.0
 	go.opentelemetry.io/otel v1.47.0
-	go.opentelemetry.io/otel/sdk v1.47.0
 	google.golang.org/grpc v1.84.0
 	google.golang.org/protobuf v1.36.12
-	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -78,6 +76,7 @@ require (
 	go.opentelemetry.io/otel/exporters/stdout/stdouttrace v1.47.0 // indirect
 	go.opentelemetry.io/otel/log v1.47.0 // indirect
 	go.opentelemetry.io/otel/metric v1.47.0 // indirect
+	go.opentelemetry.io/otel/sdk v1.47.0 // indirect
 	go.opentelemetry.io/otel/sdk/log v1.47.0 // indirect
 	go.opentelemetry.io/otel/trace v1.47.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
