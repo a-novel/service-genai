@@ -507,6 +507,7 @@ func TestGenerationCheck(t *testing.T) {
 						ReasoningEffort:   &testCase.observe.ReasoningEffort,
 						InputTokens:       testCase.observe.Usage.InputTokens,
 						CachedInputTokens: testCase.observe.Usage.CachedInputTokens,
+						CacheWriteTokens:  testCase.observe.Usage.CacheWriteTokens,
 						OutputTokens:      testCase.observe.Usage.OutputTokens,
 						ReasoningTokens:   testCase.observe.Usage.ReasoningTokens,
 					}).

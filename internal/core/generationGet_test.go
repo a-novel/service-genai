@@ -67,7 +67,7 @@ func TestGenerationGet(t *testing.T) {
 				Status: core.GenerationStatusFailed,
 				Usage: []*core.GenerationUsage{{
 					Attempt: 1, Provider: "openai", Model: "a-model-snapshot", ReasoningEffort: &effort,
-					InputTokens: 1000, CachedInputTokens: 200, OutputTokens: 500,
+					InputTokens: 1000, CachedInputTokens: 200, CacheWriteTokens: 300, OutputTokens: 500,
 				}},
 				CreatedAt: createdAt, UpdatedAt: updatedAt, SettledAt: &settledAt,
 				ExpiresAt: &expiresAt,

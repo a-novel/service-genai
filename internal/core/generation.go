@@ -80,6 +80,7 @@ type GenerationUsage struct {
 	ReasoningEffort   *string
 	InputTokens       int64
 	CachedInputTokens int64
+	CacheWriteTokens  int64
 	OutputTokens      int64
 	ReasoningTokens   int64
 }
@@ -120,6 +121,7 @@ func newGeneration(generation *dao.Generation, usage []*dao.GenerationUsage) *Ge
 			ReasoningEffort:   attempt.ReasoningEffort,
 			InputTokens:       attempt.InputTokens,
 			CachedInputTokens: attempt.CachedInputTokens,
+			CacheWriteTokens:  attempt.CacheWriteTokens,
 			OutputTokens:      attempt.OutputTokens,
 			ReasoningTokens:   attempt.ReasoningTokens,
 		}

@@ -29,6 +29,7 @@ type GenerationUsage struct {
 	// Totals include their detail counts, as the provider reports them.
 	InputTokens       int64 `bun:"input_tokens"`
 	CachedInputTokens int64 `bun:"cached_input_tokens"`
+	CacheWriteTokens  int64 `bun:"cache_write_tokens"`
 	OutputTokens      int64 `bun:"output_tokens"`
 	ReasoningTokens   int64 `bun:"reasoning_tokens"`
 

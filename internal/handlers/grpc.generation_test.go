@@ -55,7 +55,8 @@ func TestNewGrpcGeneration(t *testing.T) {
 				Usage: []*core.GenerationUsage{
 					{
 						Attempt: 1, Provider: "openai", Model: "gpt-5.6-terra-2026-01-01", ReasoningEffort: &effort,
-						InputTokens: 1000, CachedInputTokens: 200, OutputTokens: 500, ReasoningTokens: 100,
+						InputTokens: 1000, CachedInputTokens: 200, CacheWriteTokens: 300, OutputTokens: 500,
+						ReasoningTokens: 100,
 					},
 					{Attempt: 2, Provider: "openai", Model: "gpt-5.6-terra-2026-01-01", InputTokens: 10},
 				},
@@ -69,7 +70,8 @@ func TestNewGrpcGeneration(t *testing.T) {
 				Usage: []*genaiv0.GenerationUsage{
 					{
 						Attempt: 1, Provider: "openai", Model: "gpt-5.6-terra-2026-01-01", ReasoningEffort: "medium",
-						InputTokens: 1000, CachedInputTokens: 200, OutputTokens: 500, ReasoningTokens: 100,
+						InputTokens: 1000, CachedInputTokens: 200, CacheWriteTokens: 300, OutputTokens: 500,
+						ReasoningTokens: 100,
 					},
 					{Attempt: 2, Provider: "openai", Model: "gpt-5.6-terra-2026-01-01", InputTokens: 10},
 				},

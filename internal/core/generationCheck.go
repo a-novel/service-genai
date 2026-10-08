@@ -526,6 +526,7 @@ func (service *GenerationCheck) recordUsage(
 		ReasoningEffort:   nonEmpty(call.ReasoningEffort),
 		InputTokens:       call.Usage.InputTokens,
 		CachedInputTokens: call.Usage.CachedInputTokens,
+		CacheWriteTokens:  call.Usage.CacheWriteTokens,
 		OutputTokens:      call.Usage.OutputTokens,
 		ReasoningTokens:   call.Usage.ReasoningTokens,
 	})
