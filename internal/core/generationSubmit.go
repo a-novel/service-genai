@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/json"
-	"encoding/json/jsontext"
 	"fmt"
 	"strings"
 
@@ -186,14 +185,13 @@ func validateSubmit(request *GenerationSubmitRequest) error {
 
 	// I-JSON (RFC 7493) refuses duplicate names, invalid UTF-8 and unpaired surrogates: canonicalizing
 	// any of them would give two different requests one key.
-	if !jsontext.Value(request.Input).IsValid() {
+	if !request.Input.IsValid() {
 		return fmt.Errorf("%w: input is not valid I-JSON (RFC 7493)", ErrInvalidRequest)
 	}
 
 	// The schema's content is the provider's to judge; its shape is not. A strict schema's root is
 	// always an object.
-	schema := jsontext.Value(request.OutputSchema)
-	if !schema.IsValid() || schema.Kind() != '{' {
+	if !request.OutputSchema.IsValid() || request.OutputSchema.Kind() != '{' {
 		return fmt.Errorf("%w: output schema is not a valid I-JSON object (RFC 7493)", ErrInvalidRequest)
 	}
 
