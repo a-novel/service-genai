@@ -21,13 +21,19 @@ message GenerationSubmitRequest {
   // submission of a priced call is a bug rather than a default worth tolerating. A value reused
   // with a different request is a conflict, not a replay.
   string idempotency_key = 3;
-  // Request is the provider payload, as JSON bytes, forwarded verbatim. The caller owns every
-  // parameter in it; this service merges in only what crash-safety requires. At most 3,688,000
-  // bytes.
-  bytes request = 4;
-  // MaxAttempts caps the runs this generation gets. Zero means one, the right floor for a priced
-  // call.
-  int32 max_attempts = 5;
+  // Tier is the level of model capability wanted. Required.
+  Tier tier = 6;
+  // Instructions are the trusted channel: the caller's own directions to the model. Required.
+  string instructions = 7;
+  // Input is the untrusted channel: user content as any JSON value. Required.
+  bytes input = 8;
+  // OutputSchema is the JSON Schema the output must conform to, within OpenAI's strict-mode subset.
+  // Required. Instructions, input and schema together are at most 3,688,000 bytes.
+  bytes output_schema = 9;
+
+  // The caller no longer composes the provider payload, and retries are this service's policy.
+  reserved 4, 5;
+  reserved "request", "max_attempts";
 }
 
 // GenerationSubmitResponse returns the recorded generation and whether this call created it.

@@ -34,13 +34,15 @@ type GenerationSubmitRequest struct {
 	// submission of a priced call is a bug rather than a default worth tolerating. A value reused
 	// with a different request is a conflict, not a replay.
 	IdempotencyKey string `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
-	// Request is the provider payload, as JSON bytes, forwarded verbatim. The caller owns every
-	// parameter in it; this service merges in only what crash-safety requires. At most 3,688,000
-	// bytes.
-	Request []byte `protobuf:"bytes,4,opt,name=request,proto3" json:"request,omitempty"`
-	// MaxAttempts caps the runs this generation gets. Zero means one, the right floor for a priced
-	// call.
-	MaxAttempts   int32 `protobuf:"varint,5,opt,name=max_attempts,json=maxAttempts,proto3" json:"max_attempts,omitempty"`
+	// Tier is the level of model capability wanted. Required.
+	Tier Tier `protobuf:"varint,6,opt,name=tier,proto3,enum=anovel.genai.v0.Tier" json:"tier,omitempty"`
+	// Instructions are the trusted channel: the caller's own directions to the model. Required.
+	Instructions string `protobuf:"bytes,7,opt,name=instructions,proto3" json:"instructions,omitempty"`
+	// Input is the untrusted channel: user content as any JSON value. Required.
+	Input []byte `protobuf:"bytes,8,opt,name=input,proto3" json:"input,omitempty"`
+	// OutputSchema is the JSON Schema the output must conform to, within OpenAI's strict-mode subset.
+	// Required. Instructions, input and schema together are at most 3,688,000 bytes.
+	OutputSchema  []byte `protobuf:"bytes,9,opt,name=output_schema,json=outputSchema,proto3" json:"output_schema,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -96,18 +98,32 @@ func (x *GenerationSubmitRequest) GetIdempotencyKey() string {
 	return ""
 }
 
-func (x *GenerationSubmitRequest) GetRequest() []byte {
+func (x *GenerationSubmitRequest) GetTier() Tier {
 	if x != nil {
-		return x.Request
+		return x.Tier
+	}
+	return Tier_TIER_UNSPECIFIED
+}
+
+func (x *GenerationSubmitRequest) GetInstructions() string {
+	if x != nil {
+		return x.Instructions
+	}
+	return ""
+}
+
+func (x *GenerationSubmitRequest) GetInput() []byte {
+	if x != nil {
+		return x.Input
 	}
 	return nil
 }
 
-func (x *GenerationSubmitRequest) GetMaxAttempts() int32 {
+func (x *GenerationSubmitRequest) GetOutputSchema() []byte {
 	if x != nil {
-		return x.MaxAttempts
+		return x.OutputSchema
 	}
-	return 0
+	return nil
 }
 
 // GenerationSubmitResponse returns the recorded generation and whether this call created it.
@@ -170,13 +186,15 @@ var File_anovel_genai_v0_generation_submit_proto protoreflect.FileDescriptor
 
 const file_anovel_genai_v0_generation_submit_proto_rawDesc = "" +
 	"\n" +
-	"'anovel/genai/v0/generation_submit.proto\x12\x0fanovel.genai.v0\x1a anovel/genai/v0/generation.proto\"\xb4\x01\n" +
+	"'anovel/genai/v0/generation_submit.proto\x12\x0fanovel.genai.v0\x1a anovel/genai/v0/generation.proto\"\xa4\x02\n" +
 	"\x17GenerationSubmitRequest\x12\x19\n" +
 	"\bowner_id\x18\x01 \x01(\tR\aownerId\x12\x18\n" +
 	"\apurpose\x18\x02 \x01(\tR\apurpose\x12'\n" +
-	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\x12\x18\n" +
-	"\arequest\x18\x04 \x01(\fR\arequest\x12!\n" +
-	"\fmax_attempts\x18\x05 \x01(\x05R\vmaxAttempts\"q\n" +
+	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\x12)\n" +
+	"\x04tier\x18\x06 \x01(\x0e2\x15.anovel.genai.v0.TierR\x04tier\x12\"\n" +
+	"\finstructions\x18\a \x01(\tR\finstructions\x12\x14\n" +
+	"\x05input\x18\b \x01(\fR\x05input\x12#\n" +
+	"\routput_schema\x18\t \x01(\fR\foutputSchemaJ\x04\b\x04\x10\x05J\x04\b\x05\x10\x06R\arequestR\fmax_attempts\"q\n" +
 	"\x18GenerationSubmitResponse\x12;\n" +
 	"\n" +
 	"generation\x18\x01 \x01(\v2\x1b.anovel.genai.v0.GenerationR\n" +
@@ -202,17 +220,19 @@ var file_anovel_genai_v0_generation_submit_proto_msgTypes = make([]protoimpl.Mes
 var file_anovel_genai_v0_generation_submit_proto_goTypes = []any{
 	(*GenerationSubmitRequest)(nil),  // 0: anovel.genai.v0.GenerationSubmitRequest
 	(*GenerationSubmitResponse)(nil), // 1: anovel.genai.v0.GenerationSubmitResponse
-	(*Generation)(nil),               // 2: anovel.genai.v0.Generation
+	(Tier)(0),                        // 2: anovel.genai.v0.Tier
+	(*Generation)(nil),               // 3: anovel.genai.v0.Generation
 }
 var file_anovel_genai_v0_generation_submit_proto_depIdxs = []int32{
-	2, // 0: anovel.genai.v0.GenerationSubmitResponse.generation:type_name -> anovel.genai.v0.Generation
-	0, // 1: anovel.genai.v0.GenerationSubmitService.GenerationSubmit:input_type -> anovel.genai.v0.GenerationSubmitRequest
-	1, // 2: anovel.genai.v0.GenerationSubmitService.GenerationSubmit:output_type -> anovel.genai.v0.GenerationSubmitResponse
-	2, // [2:3] is the sub-list for method output_type
-	1, // [1:2] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	2, // 0: anovel.genai.v0.GenerationSubmitRequest.tier:type_name -> anovel.genai.v0.Tier
+	3, // 1: anovel.genai.v0.GenerationSubmitResponse.generation:type_name -> anovel.genai.v0.Generation
+	0, // 2: anovel.genai.v0.GenerationSubmitService.GenerationSubmit:input_type -> anovel.genai.v0.GenerationSubmitRequest
+	1, // 3: anovel.genai.v0.GenerationSubmitService.GenerationSubmit:output_type -> anovel.genai.v0.GenerationSubmitResponse
+	3, // [3:4] is the sub-list for method output_type
+	2, // [2:3] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_anovel_genai_v0_generation_submit_proto_init() }
