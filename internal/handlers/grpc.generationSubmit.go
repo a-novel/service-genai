@@ -3,7 +3,6 @@ package handlers
 import (
 	"context"
 	"errors"
-	"math"
 
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
@@ -42,19 +41,14 @@ func (handler *GrpcGenerationSubmit) GenerationSubmit(
 		return nil, status.Error(codes.InvalidArgument, "invalid owner id")
 	}
 
-	// Range-checked before narrowing. int32 wraps into int16 silently, so a caller sending 65537
-	// would arrive as 1 and pass the ceiling check that was supposed to refuse it.
-	maxAttempts := request.GetMaxAttempts()
-	if maxAttempts < 0 || maxAttempts > math.MaxInt16 {
-		return nil, status.Error(codes.InvalidArgument, "invalid max attempts")
-	}
-
 	result, err := handler.service.Exec(ctx, &core.GenerationSubmitRequest{
 		OwnerID:        ownerID,
 		Purpose:        request.GetPurpose(),
 		IdempotencyKey: request.GetIdempotencyKey(),
-		Request:        request.GetRequest(),
-		MaxAttempts:    int16(maxAttempts),
+		Tier:           generationTiers[request.GetTier()],
+		Instructions:   request.GetInstructions(),
+		Input:          request.GetInput(),
+		OutputSchema:   request.GetOutputSchema(),
 	})
 
 	if errors.Is(err, core.ErrInvalidRequest) {

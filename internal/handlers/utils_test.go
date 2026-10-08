@@ -19,13 +19,11 @@ const (
 // testGeneration is a stored generation in flight, which is the state most handlers see.
 func testGeneration() *core.Generation {
 	return &core.Generation{
-		ID:          uuid.MustParse(testGenerationID),
-		OwnerID:     uuid.MustParse(testOwnerID),
-		Purpose:     "studio.generation",
-		Status:      core.GenerationStatusPending,
-		Attempt:     0,
-		MaxAttempts: 1,
-		CreatedAt:   time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
-		UpdatedAt:   time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		ID:        uuid.MustParse(testGenerationID),
+		OwnerID:   uuid.MustParse(testOwnerID),
+		Purpose:   "studio.generation",
+		Status:    core.GenerationStatusPending,
+		CreatedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		UpdatedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 	}
 }
