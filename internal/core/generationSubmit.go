@@ -1,10 +1,11 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/json"
-	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -45,8 +46,6 @@ type GenerationSubmitRequest struct {
 	// Purpose is what the caller attributes this spend to. Free-form: the vocabulary belongs to the
 	// caller, and this service only groups by it.
 	Purpose string `validate:"required,notblank,max=255"`
-	// IdempotencyKey deduplicates repeat submissions within one owner.
-	IdempotencyKey string `validate:"required,notblank,max=255"`
 	// Tier is the level of model capability wanted.
 	Tier lib.Tier `validate:"required,oneof=fast balanced deep"`
 	// Instructions are the trusted channel.
@@ -55,20 +54,23 @@ type GenerationSubmitRequest struct {
 	Input json.RawMessage `validate:"required"`
 	// OutputSchema is the JSON Schema the output conforms to: a JSON object.
 	OutputSchema json.RawMessage `validate:"required"`
+	// Variant asks for another generation of a request that already succeeded.
+	Variant uint32
 }
 
 // GenerationSubmitResult reports the stored generation and how it got there.
 type GenerationSubmitResult struct {
 	Generation *Generation
-	// Created is false on a replay, so a retrying caller attaches to work already in flight rather
-	// than paying for a second run.
+	// Created is false on a replay, so a resending caller attaches to work already paid for.
 	Created bool
 }
 
 // A GenerationSubmit records a generation and starts its provider call.
 //
-// A replay returns the recorded generation as it stands, without checking it: the caller polls
-// that generation next, and the poll checks it.
+// The generation is identified by a key derived from the request and the owner, so a caller that
+// lost track of it recovers by resending the same request. A replay returns the recorded generation
+// as it stands, without checking it: the caller polls it next, and the poll checks it. A failed or
+// cancelled generation does not count, so resending its request runs it again.
 type GenerationSubmit struct {
 	config   GenerationSubmitConfig
 	dao      GenerationSubmitDao
@@ -118,25 +120,21 @@ func (service *GenerationSubmit) Exec(
 		return nil, otel.ReportError(span, fmt.Errorf("encode request: %w", err))
 	}
 
-	// The digest is what tells a replay from a reused key.
-	fingerprint := sha256.Sum256(stored)
+	key, err := requestKey(request)
+	if err != nil {
+		return nil, otel.ReportError(span, fmt.Errorf("derive request key: %w", err))
+	}
 
 	result, err := service.dao.Exec(ctx, &dao.GenerationSubmitRequest{
 		// Minted here so the created and replayed cases can be told apart without a second
 		// round-trip. uuidv7 keeps the table's index locality under insert churn.
-		ID:                 uuid.Must(uuid.NewV7()),
-		OwnerID:            request.OwnerID,
-		Purpose:            request.Purpose,
-		IdempotencyKey:     request.IdempotencyKey,
-		RequestFingerprint: fingerprint[:],
-		Request:            stored,
-		MaxAttempts:        service.config.MaxAttempts,
+		ID:          uuid.Must(uuid.NewV7()),
+		OwnerID:     request.OwnerID,
+		Purpose:     request.Purpose,
+		RequestKey:  key,
+		Request:     stored,
+		MaxAttempts: service.config.MaxAttempts,
 	})
-
-	if errors.Is(err, dao.ErrGenerationSubmitConflict) {
-		return nil, otel.ReportError(span, fmt.Errorf("%w: %w", ErrIdempotencyConflict, err))
-	}
-
 	if err != nil {
 		return nil, otel.ReportError(span, fmt.Errorf("submit generation: %w", err))
 	}
@@ -193,4 +191,70 @@ func validateSubmit(request *GenerationSubmitRequest) error {
 	}
 
 	return nil
+}
+
+// requestKeyTag versions what the request key covers. Changing the construction changes the tag, so
+// a key of one version never matches a key of another.
+const requestKeyTag = "a-novel/genai/request-key/v1"
+
+// requestKey identifies a request among an owner's generations. The same content always yields the
+// same key, which is what lets a caller recover by resending: it holds no key of its own.
+//
+// Each field is length-prefixed, so no two different requests can concatenate to the same bytes, and
+// JSON is canonicalized, so formatting or key order cannot split one request into two. The key never
+// leaves the generation row: it fingerprints user content, and is purged with it.
+func requestKey(request *GenerationSubmitRequest) ([]byte, error) {
+	input, err := canonicalJSON(request.Input)
+	if err != nil {
+		return nil, fmt.Errorf("canonicalize input: %w", err)
+	}
+
+	schema, err := canonicalJSON(request.OutputSchema)
+	if err != nil {
+		return nil, fmt.Errorf("canonicalize output schema: %w", err)
+	}
+
+	digest := sha256.New()
+
+	for _, field := range [][]byte{
+		[]byte(requestKeyTag),
+		request.OwnerID[:],
+		[]byte(request.Purpose),
+		[]byte(request.Tier),
+		[]byte(request.Instructions),
+		input,
+		schema,
+		binary.BigEndian.AppendUint32(nil, request.Variant),
+	} {
+		digest.Write(binary.BigEndian.AppendUint64(nil, uint64(len(field))))
+		digest.Write(field)
+	}
+
+	return digest.Sum(nil), nil
+}
+
+// canonicalJSON re-encodes a JSON value with sorted object keys and no insignificant whitespace.
+// Numbers keep their literal form.
+func canonicalJSON(value json.RawMessage) ([]byte, error) {
+	decoder := json.NewDecoder(bytes.NewReader(value))
+	decoder.UseNumber()
+
+	var decoded any
+
+	err := decoder.Decode(&decoded)
+	if err != nil {
+		return nil, fmt.Errorf("decode: %w", err)
+	}
+
+	var buffer bytes.Buffer
+
+	encoder := json.NewEncoder(&buffer)
+	encoder.SetEscapeHTML(false)
+
+	err = encoder.Encode(decoded)
+	if err != nil {
+		return nil, fmt.Errorf("encode: %w", err)
+	}
+
+	return bytes.TrimSuffix(buffer.Bytes(), []byte("\n")), nil
 }

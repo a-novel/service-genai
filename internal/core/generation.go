@@ -136,6 +136,4 @@ var (
 	// ErrGenerationNotCancellable is returned when a generation cannot be stopped, because it does
 	// not exist for this owner or has already settled.
 	ErrGenerationNotCancellable = errors.New("generation cannot be cancelled")
-	// ErrIdempotencyConflict is returned when an idempotency key is reused with a different request.
-	ErrIdempotencyConflict = errors.New("idempotency key already used with a different request")
 )
