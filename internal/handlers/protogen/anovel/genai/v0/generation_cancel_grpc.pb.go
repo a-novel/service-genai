@@ -30,7 +30,9 @@ const (
 //
 // A generation that never started is cancelled at once. One whose provider call is known is stopped
 // and settled within the call, recording whatever it consumed before the stop: a cancelled call is
-// not a free one. One whose start is in flight is marked, and the next check stops it.
+// not a free one. One whose start is in flight is marked, and the next check stops it. One already
+// settled is returned as it stands, so a retried cancel, or one that lost a race with completion,
+// still succeeds: read its status to know which happened.
 type GenerationCancelServiceClient interface {
 	GenerationCancel(ctx context.Context, in *GenerationCancelRequest, opts ...grpc.CallOption) (*GenerationCancelResponse, error)
 }
@@ -61,7 +63,9 @@ func (c *generationCancelServiceClient) GenerationCancel(ctx context.Context, in
 //
 // A generation that never started is cancelled at once. One whose provider call is known is stopped
 // and settled within the call, recording whatever it consumed before the stop: a cancelled call is
-// not a free one. One whose start is in flight is marked, and the next check stops it.
+// not a free one. One whose start is in flight is marked, and the next check stops it. One already
+// settled is returned as it stands, so a retried cancel, or one that lost a race with completion,
+// still succeeds: read its status to know which happened.
 type GenerationCancelServiceServer interface {
 	GenerationCancel(context.Context, *GenerationCancelRequest) (*GenerationCancelResponse, error)
 	mustEmbedUnimplementedGenerationCancelServiceServer()

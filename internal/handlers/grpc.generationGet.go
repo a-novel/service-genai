@@ -55,6 +55,10 @@ func (handler *GrpcGenerationGet) GenerationGet(
 		return nil, status.Error(codes.NotFound, "generation not found")
 	}
 
+	if errors.Is(err, core.ErrInvalidRequest) {
+		return nil, status.Error(codes.InvalidArgument, "invalid request")
+	}
+
 	if err != nil {
 		_ = otel.ReportError(span, err)
 

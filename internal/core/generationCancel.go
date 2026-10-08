@@ -20,6 +20,10 @@ type (
 	GenerationCancelDao interface {
 		Exec(ctx context.Context, request *dao.GenerationRequestCancelRequest) (*dao.Generation, error)
 	}
+	// GenerationCancelGetDao reads a generation that could not be stopped.
+	GenerationCancelGetDao interface {
+		Exec(ctx context.Context, request *dao.GenerationGetRequest) (*dao.Generation, error)
+	}
 	// GenerationCancelUsageListDao reads what the generation consumed.
 	GenerationCancelUsageListDao interface {
 		Exec(ctx context.Context, request *dao.GenerationUsageListRequest) ([]*dao.GenerationUsage, error)
@@ -46,10 +50,12 @@ type GenerationCancelRequest struct {
 //
 // One that never started is settled at once. One whose provider call is known is checked right
 // away, which cancels the call and settles it with whatever it consumed: a cancelled call is not a
-// free one. One whose start is in flight is only marked, and the next check stops it.
+// free one. One whose start is in flight is only marked, and the next check stops it. One already
+// settled is returned as it stands, so a cancel that lost a race or is retried still succeeds.
 type GenerationCancel struct {
 	config   GenerationCancelConfig
 	dao      GenerationCancelDao
+	getDao   GenerationCancelGetDao
 	usageDao GenerationCancelUsageListDao
 	check    GenerationCancelServiceCheck
 }
@@ -57,6 +63,7 @@ type GenerationCancel struct {
 func NewGenerationCancel(
 	config GenerationCancelConfig,
 	cancelDao GenerationCancelDao,
+	getDao GenerationCancelGetDao,
 	usageDao GenerationCancelUsageListDao,
 	check GenerationCancelServiceCheck,
 ) (*GenerationCancel, error) {
@@ -65,7 +72,7 @@ func NewGenerationCancel(
 		return nil, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 	}
 
-	return &GenerationCancel{config: config, dao: cancelDao, usageDao: usageDao, check: check}, nil
+	return &GenerationCancel{config: config, dao: cancelDao, getDao: getDao, usageDao: usageDao, check: check}, nil
 }
 
 func (service *GenerationCancel) Exec(
@@ -92,7 +99,12 @@ func (service *GenerationCancel) Exec(
 	})
 
 	if errors.Is(err, dao.ErrGenerationNotCancellable) {
-		return nil, otel.ReportError(span, fmt.Errorf("%w: %w", ErrGenerationNotCancellable, err))
+		// Settled already, or not this owner's. The read is owner-scoped, so it tells the two apart
+		// without revealing anybody else's generation.
+		generation, err = service.getDao.Exec(ctx, &dao.GenerationGetRequest{ID: request.ID, OwnerID: request.OwnerID})
+		if errors.Is(err, dao.ErrGenerationGetNotFound) {
+			return nil, otel.ReportError(span, fmt.Errorf("%w: %w", ErrGenerationNotFound, err))
+		}
 	}
 
 	if err != nil {

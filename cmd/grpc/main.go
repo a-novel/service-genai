@@ -114,6 +114,7 @@ func main() {
 	serviceCancel := lo.Must(core.NewGenerationCancel(
 		core.GenerationCancelConfig{Retention: cfg.Retention},
 		dao.NewGenerationRequestCancel(),
+		daoGet,
 		daoUsageList,
 		serviceCheck,
 	))

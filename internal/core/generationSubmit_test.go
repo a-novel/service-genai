@@ -94,6 +94,17 @@ func TestGenerationSubmit(t *testing.T) {
 			expectCreated: true,
 		},
 		{
+			// Stored and sent as written: an escaped & would reach the model as \u0026.
+			name: "Success/HTMLCharacters",
+
+			request: submitRequest(func(request *core.GenerationSubmitRequest) {
+				request.Input = json.RawMessage(`{"text": "Tom & Jerry <3>"}`)
+			}),
+			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration(), Created: true}},
+
+			expectCreated: true,
+		},
+		{
 			name: "Success/RequestAtCeiling",
 
 			request: submitRequest(inputOfSize(core.RequestSizeCeiling)),
@@ -152,6 +163,42 @@ func TestGenerationSubmit(t *testing.T) {
 			request: submitRequest(func(request *core.GenerationSubmitRequest) {
 				request.OutputSchema = json.RawMessage(`["type", "object"]`)
 			}),
+
+			expectErr: core.ErrInvalidRequest,
+		},
+		{
+			name: "Error/SchemaNull",
+
+			request: submitRequest(func(request *core.GenerationSubmitRequest) {
+				request.OutputSchema = json.RawMessage(`null`)
+			}),
+
+			expectErr: core.ErrInvalidRequest,
+		},
+		{
+			// Canonicalizing would keep one of the values, so two different requests would share a key.
+			name: "Error/InputDuplicateNames",
+
+			request: submitRequest(func(request *core.GenerationSubmitRequest) {
+				request.Input = json.RawMessage(`{"scene": "a door", "scene": "a window"}`)
+			}),
+
+			expectErr: core.ErrInvalidRequest,
+		},
+		{
+			name: "Error/InputUnpairedSurrogate",
+
+			request: submitRequest(func(request *core.GenerationSubmitRequest) {
+				request.Input = json.RawMessage(`{"scene": "\ud800"}`)
+			}),
+
+			expectErr: core.ErrInvalidRequest,
+		},
+		{
+			// PostgreSQL text cannot hold it.
+			name: "Error/PurposeWithNUL",
+
+			request: submitRequest(func(request *core.GenerationSubmitRequest) { request.Purpose = "studio\x00generation" }),
 
 			expectErr: core.ErrInvalidRequest,
 		},

@@ -6,7 +6,9 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/json"
+	"encoding/json/jsontext"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/attribute"
@@ -43,8 +45,8 @@ type GenerationSubmitConfig struct {
 type GenerationSubmitRequest struct {
 	// OwnerID is the user the generation acts for, supplied by a caller that already verified it.
 	OwnerID uuid.UUID `validate:"required"`
-	// Purpose is what the caller attributes this spend to. Free-form: the vocabulary belongs to the
-	// caller, and this service only groups by it.
+	// Purpose is what the caller attributes this spend to, up to 255 characters. Free-form: the
+	// vocabulary belongs to the caller, and this service only groups by it.
 	Purpose string `validate:"required,notblank,max=255"`
 	// Tier is the level of model capability wanted.
 	Tier lib.Tier `validate:"required,oneof=fast balanced deep"`
@@ -110,7 +112,7 @@ func (service *GenerationSubmit) Exec(
 		return nil, otel.ReportError(span, err)
 	}
 
-	stored, err := json.Marshal(&generationRequest{
+	stored, err := encodeJSON(&generationRequest{
 		Tier:         request.Tier,
 		Instructions: request.Instructions,
 		Input:        request.Input,
@@ -177,17 +179,22 @@ func validateSubmit(request *GenerationSubmitRequest) error {
 		)
 	}
 
-	if !json.Valid(request.Input) {
-		return fmt.Errorf("%w: input is not JSON", ErrInvalidRequest)
+	// A NUL byte cannot be stored in a PostgreSQL text column.
+	if strings.ContainsRune(request.Purpose, 0) {
+		return fmt.Errorf("%w: purpose contains a NUL character", ErrInvalidRequest)
+	}
+
+	// I-JSON (RFC 7493) refuses duplicate names, invalid UTF-8 and unpaired surrogates: canonicalizing
+	// any of them would give two different requests one key.
+	if !jsontext.Value(request.Input).IsValid() {
+		return fmt.Errorf("%w: input is not valid I-JSON (RFC 7493)", ErrInvalidRequest)
 	}
 
 	// The schema's content is the provider's to judge; its shape is not. A strict schema's root is
 	// always an object.
-	var schema map[string]json.RawMessage
-
-	err = json.Unmarshal(request.OutputSchema, &schema)
-	if err != nil {
-		return fmt.Errorf("%w: output schema is not a JSON object", ErrInvalidRequest)
+	schema := jsontext.Value(request.OutputSchema)
+	if !schema.IsValid() || schema.Kind() != '{' {
+		return fmt.Errorf("%w: output schema is not a valid I-JSON object (RFC 7493)", ErrInvalidRequest)
 	}
 
 	return nil
@@ -246,12 +253,18 @@ func canonicalJSON(value json.RawMessage) ([]byte, error) {
 		return nil, fmt.Errorf("decode: %w", err)
 	}
 
+	return encodeJSON(decoded)
+}
+
+// encodeJSON encodes without escaping <, > and &. json.Marshal would escape them, inside a caller's
+// raw input too, and the model would then read \u0026 where the user wrote &.
+func encodeJSON(value any) ([]byte, error) {
 	var buffer bytes.Buffer
 
 	encoder := json.NewEncoder(&buffer)
 	encoder.SetEscapeHTML(false)
 
-	err = encoder.Encode(decoded)
+	err := encoder.Encode(value)
 	if err != nil {
 		return nil, fmt.Errorf("encode: %w", err)
 	}

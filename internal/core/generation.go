@@ -135,7 +135,4 @@ var (
 	// ErrGenerationNotFound is returned when the owner has no such generation. A generation owned by
 	// somebody else reports this too, so an identifier cannot be probed for existence.
 	ErrGenerationNotFound = errors.New("generation not found")
-	// ErrGenerationNotCancellable is returned when a generation cannot be stopped, because it does
-	// not exist for this owner or has already settled.
-	ErrGenerationNotCancellable = errors.New("generation cannot be cancelled")
 )
