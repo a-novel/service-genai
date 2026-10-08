@@ -68,9 +68,9 @@ type Client interface {
 	// Callers should set a deadline on ctx.
 	Status(ctx context.Context, req *StatusRequest, opts ...grpc.CallOption) (*StatusResponse, error)
 
-	// GenerationSubmit records a generation and starts it. The idempotency key is required: a replay
-	// attaches to the work already in flight rather than paying for a second run, and the response
-	// reports which happened.
+	// GenerationSubmit records a generation and starts it. Resending the same request is a replay: it
+	// returns the pending, running or succeeded generation rather than paying again, and the response
+	// reports which happened. A request whose generation failed or was cancelled runs again.
 	GenerationSubmit(
 		ctx context.Context, req *GenerationSubmitRequest, opts ...grpc.CallOption,
 	) (*GenerationSubmitResponse, error)
