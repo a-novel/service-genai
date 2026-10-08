@@ -26,7 +26,7 @@ Three things shape the contract:
 
 **Idempotency is mandatory.** Every submission carries a key, and a replay attaches to the work already in flight rather than starting a second, separately billed one. In a service whose only workload is a priced call, an unkeyed submission is a bug the API refuses rather than a default it tolerates.
 
-**A crash re-attaches instead of re-paying.** The provider's own identifier for an in-flight operation is recorded the moment the call starts. A restarted process resumes that operation; it does not begin a new one.
+**A crash re-attaches instead of re-paying.** The provider's own identifier for an in-flight operation is recorded the moment the call starts, and every later check reads it back. No process holds a generation, so a restart or a deploy loses nothing: the next poll or sweep picks up the operation already paid for.
 
 **Cost is recorded, not inferred.** The provider, the model and the token breakdown are not enough to reconstruct a bill, because prices change. Each attempt writes a ledger row carrying the unit prices in force at the time and the resulting amount, so what a call cost stays true no matter what the price becomes later. Each row also carries the **purpose** it was spent on, because the platform does not monetize every AI feature the same way.
 
@@ -34,20 +34,20 @@ The surface is **gRPC only**. Callers are other services on the internal network
 
 ## Deploying
 
-The service runs as published OCI images plus a PostgreSQL database. All state lives in Postgres, so the server scales to as many replicas as you need; replicas share the queue through fenced claims.
+The service runs as published OCI images plus a PostgreSQL database. All state lives in Postgres, so the server scales to as many replicas as you need; replicas coordinate through conditional writes on each generation row.
 
 > **OpenTofu modules are the planned canonical deployment path.** Until they land, deploy the images with any container orchestrator — the composition below is the reference for which images to run, how they wire together, and the environment they expect.
 
 | Image                           | Role                                                                        |
 | ------------------------------- | --------------------------------------------------------------------------- |
-| `service-genai/grpc`            | The generation API, its worker and its reaper. Internal network only.       |
+| `service-genai/grpc`            | The generation API and its sweep. Internal network only.                    |
 | `service-genai/jobs/migrations` | One-shot schema migration job; runs to completion before the server starts. |
 | `service-genai/database`        | PostgreSQL with `pg_cron` and pgBackRest — or bring your own Postgres.      |
 | `service-genai/standalone-grpc` | Server plus migrations in one image. Local development only.                |
 
 Pin every image to the same release tag — see the [latest release](https://github.com/a-novel/service-genai/releases/latest). A production deployment runs `database`, then the migrations job to completion, then any number of `grpc` replicas. Provide `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DATABASE` and `OPENAI_API_KEY` through the orchestrator; store the password and the API key as secrets.
 
-The worker runs inside the `grpc` process and keeps calling the provider between requests. Give each replica CPU outside of requests (on Cloud Run, CPU always allocated with at least one instance) and outbound access to the provider's API.
+Callers poll for results, and each poll checks its generation with the provider. The sweep inside the `grpc` process checks the generations nobody polled, so a result is captured before the provider discards it. Give each replica CPU outside of requests (on Cloud Run, CPU always allocated with at least one instance) and outbound access to the provider's API.
 
 ```yaml
 services:
@@ -123,7 +123,7 @@ Every variable is read from the process environment. Names can be globally prefi
 | `OPENAI_API_KEY`       | Provider credential. **Required for generations; inject it as a secret.** No caller holds one.                                | `grpc`, `standalone-grpc` |
 
 <details>
-<summary>Optional configuration (provider, worker, retention, gRPC, connection pool, OpenTelemetry)</summary>
+<summary>Optional configuration (provider, checks, retention, gRPC, connection pool, OpenTelemetry)</summary>
 
 Provider (images `grpc`, `standalone-grpc`):
 
@@ -131,27 +131,22 @@ Provider (images `grpc`, `standalone-grpc`):
 | ----------------- | ------------------------------------------------------------------------------------------- | ----------- |
 | `OPENAI_BASE_URL` | Provider endpoint. Points the service at an OpenAI-compatible provider or a local stand-in. | SDK default |
 
-Worker and reaper (images `grpc`, `standalone-grpc`). [Generation claims](./docs/operations/generation-claims.md) explains how they interact.
+Checks and sweep (images `grpc`, `standalone-grpc`). [Generation checks](./docs/operations/generation-checks.md) explains how they move a generation forward.
 
-| Name                   | Description                                                                   | Default  |
-| ---------------------- | ----------------------------------------------------------------------------- | -------- |
-| `WORKER_ID`            | Identifies this replica on the claims it holds.                               | hostname |
-| `WORKER_INTERVAL`      | How often the worker looks for work when the queue is empty.                  | `5s`     |
-| `WORKER_LEASE`         | How long a claim holds before the reaper may recover it.                      | `5m`     |
-| `WORKER_BATCH_SIZE`    | Generations processed per pass.                                               | `10`     |
-| `WORKER_POLL_INTERVAL` | Wait between polls of a running provider operation.                           | `2s`     |
-| `REAPER_INTERVAL`      | How often the reaper sweeps for lapsed leases.                                | `30s`    |
-| `REAPER_GRACE`         | Head start a late settle gets over recovery.                                  | `30s`    |
-| `REAPER_BATCH_SIZE`    | Generations recovered per sweep.                                              | `100`    |
-| `RETENTION`            | How long a settled generation's content survives before the purge deletes it. | `168h`   |
+| Name               | Description                                                                                                            | Default |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------- | ------- |
+| `CHECK_INTERVAL`   | How long a check stays fresh. However often callers poll, a generation reaches the provider at most once per interval. | `2s`    |
+| `SWEEP_INTERVAL`   | How often the sweep runs, and how stale a generation must be for it. At most `5m`.                                     | `1m`    |
+| `SWEEP_BATCH_SIZE` | Generations one sweep pass checks.                                                                                     | `50`    |
+| `RETENTION`        | How long a settled generation's content survives before the purge deletes it.                                          | `168h`  |
 
 gRPC server:
 
-| Name                    | Description                                              | Default |
-| ----------------------- | -------------------------------------------------------- | ------- |
-| `GRPC_PORT`             | Port the server listens on.                              | `8080`  |
-| `GRPC_PING`             | Refresh interval for the server's internal health check. | `5s`    |
-| `GRPC_TIMEOUT_SHUTDOWN` | Graceful shutdown budget.                                | `30s`   |
+| Name                    | Description                                                                                                               | Default |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------- | ------- |
+| `GRPC_PORT`             | Port the server listens on.                                                                                               | `8080`  |
+| `GRPC_PING`             | Refresh interval for the server's internal health check.                                                                  | `5s`    |
+| `GRPC_TIMEOUT_SHUTDOWN` | Graceful shutdown budget. Keep it under the orchestrator's kill delay: Cloud Run sends SIGKILL ten seconds after SIGTERM. | `8s`    |
 
 Database connection pool (server images). The limits are **per process**, so the database's `max_connections` has to cover every replica plus the migration job; the stock `postgres` default is 100.
 
