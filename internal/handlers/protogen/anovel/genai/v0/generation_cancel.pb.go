@@ -76,8 +76,8 @@ func (x *GenerationCancelRequest) GetOwnerId() string {
 	return ""
 }
 
-// GenerationCancelResponse returns the generation with the request recorded. Its status is
-// unchanged: the worker settles it once the provider operation has actually stopped.
+// GenerationCancelResponse returns the generation as the cancellation left it: cancelled, or still
+// running when the provider had not stopped the call yet.
 type GenerationCancelResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Generation    *Generation            `protobuf:"bytes,1,opt,name=generation,proto3" json:"generation,omitempty"`

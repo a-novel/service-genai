@@ -45,16 +45,16 @@ message Generation {
 enum GenerationStatus {
   // GENERATION_STATUS_UNSPECIFIED means the status was not set. Never a value the service stores.
   GENERATION_STATUS_UNSPECIFIED = 0;
-  // GENERATION_STATUS_PENDING means the generation is waiting to be picked up.
+  // GENERATION_STATUS_PENDING means no provider call has been accepted for the current attempt yet.
   GENERATION_STATUS_PENDING = 1;
-  // GENERATION_STATUS_RUNNING means a worker holds a lease and is executing it.
+  // GENERATION_STATUS_RUNNING means the provider accepted the call and it has not settled yet.
   GENERATION_STATUS_RUNNING = 2;
   // GENERATION_STATUS_SUCCEEDED means the provider returned a usable output.
   GENERATION_STATUS_SUCCEEDED = 3;
   // GENERATION_STATUS_FAILED means the generation failed with no attempt left to retry.
   GENERATION_STATUS_FAILED = 4;
-  // GENERATION_STATUS_ABANDONED means the lease expired with no attempt remaining — the worker
-  // running it died mid-run.
+  // GENERATION_STATUS_ABANDONED is no longer produced: no process holds a generation, so none is
+  // left behind when one dies.
   GENERATION_STATUS_ABANDONED = 5;
   // GENERATION_STATUS_CANCELLED means the generation was stopped on the owner's request.
   GENERATION_STATUS_CANCELLED = 6;

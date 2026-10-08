@@ -15,7 +15,6 @@ var generationStatuses = map[core.GenerationStatus]genaiv0.GenerationStatus{
 	core.GenerationStatusRunning:   genaiv0.GenerationStatus_GENERATION_STATUS_RUNNING,
 	core.GenerationStatusSucceeded: genaiv0.GenerationStatus_GENERATION_STATUS_SUCCEEDED,
 	core.GenerationStatusFailed:    genaiv0.GenerationStatus_GENERATION_STATUS_FAILED,
-	core.GenerationStatusAbandoned: genaiv0.GenerationStatus_GENERATION_STATUS_ABANDONED,
 	core.GenerationStatusCancelled: genaiv0.GenerationStatus_GENERATION_STATUS_CANCELLED,
 }
 

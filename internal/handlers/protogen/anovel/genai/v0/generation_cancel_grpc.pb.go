@@ -28,9 +28,9 @@ const (
 //
 // GenerationCancelService stops a generation so an abandoned one stops costing.
 //
-// It records the request and returns. The worker holding the generation observes it, stops the
-// provider operation, and settles — recording whatever was consumed before the stop, because a
-// cancelled call is not a free one.
+// A generation that never started is cancelled at once. One whose provider call is known is stopped
+// and settled within the call, recording whatever it consumed before the stop: a cancelled call is
+// not a free one. One whose start is in flight is marked, and the next check stops it.
 type GenerationCancelServiceClient interface {
 	GenerationCancel(ctx context.Context, in *GenerationCancelRequest, opts ...grpc.CallOption) (*GenerationCancelResponse, error)
 }
@@ -59,9 +59,9 @@ func (c *generationCancelServiceClient) GenerationCancel(ctx context.Context, in
 //
 // GenerationCancelService stops a generation so an abandoned one stops costing.
 //
-// It records the request and returns. The worker holding the generation observes it, stops the
-// provider operation, and settles — recording whatever was consumed before the stop, because a
-// cancelled call is not a free one.
+// A generation that never started is cancelled at once. One whose provider call is known is stopped
+// and settled within the call, recording whatever it consumed before the stop: a cancelled call is
+// not a free one. One whose start is in flight is marked, and the next check stops it.
 type GenerationCancelServiceServer interface {
 	GenerationCancel(context.Context, *GenerationCancelRequest) (*GenerationCancelResponse, error)
 	mustEmbedUnimplementedGenerationCancelServiceServer()

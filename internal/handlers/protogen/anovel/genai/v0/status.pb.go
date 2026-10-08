@@ -130,9 +130,9 @@ func (x *DependencyHealth) GetStatus() DependencyStatus {
 // separates them.
 type QueueDepth struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// pending is the number of generations due to run that no worker has claimed yet.
+	// pending is the number of generations due to start whose provider call has not been sent.
 	Pending int64 `protobuf:"varint,1,opt,name=pending,proto3" json:"pending,omitempty"`
-	// oldest_pending_age_seconds is how long the oldest due-and-unclaimed generation has waited.
+	// oldest_pending_age_seconds is how long the oldest of them has waited.
 	// Zero when nothing is pending.
 	OldestPendingAgeSeconds float64 `protobuf:"fixed64,2,opt,name=oldest_pending_age_seconds,json=oldestPendingAgeSeconds,proto3" json:"oldest_pending_age_seconds,omitempty"`
 	unknownFields           protoimpl.UnknownFields
