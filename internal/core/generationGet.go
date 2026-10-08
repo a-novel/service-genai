@@ -60,5 +60,5 @@ func (service *GenerationGet) Exec(ctx context.Context, request *GenerationGetRe
 		return nil, otel.ReportError(span, fmt.Errorf("get generation: %w", err))
 	}
 
-	return otel.ReportSuccess(span, newGeneration(generation)), nil
+	return newGeneration(generation), nil
 }

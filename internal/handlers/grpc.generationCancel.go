@@ -38,15 +38,11 @@ func (handler *GrpcGenerationCancel) GenerationCancel(
 
 	generationID, err := uuid.Parse(request.GetId())
 	if err != nil {
-		_ = otel.ReportError(span, err)
-
 		return nil, status.Error(codes.InvalidArgument, "invalid generation id")
 	}
 
 	ownerID, err := uuid.Parse(request.GetOwnerId())
 	if err != nil {
-		_ = otel.ReportError(span, err)
-
 		return nil, status.Error(codes.InvalidArgument, "invalid owner id")
 	}
 
@@ -61,8 +57,6 @@ func (handler *GrpcGenerationCancel) GenerationCancel(
 	}
 
 	if errors.Is(err, core.ErrInvalidRequest) {
-		_ = otel.ReportError(span, err)
-
 		return nil, status.Error(codes.InvalidArgument, "invalid request")
 	}
 
@@ -72,7 +66,7 @@ func (handler *GrpcGenerationCancel) GenerationCancel(
 		return nil, status.Error(codes.Internal, "internal error")
 	}
 
-	return otel.ReportSuccess(span, &genaiv0.GenerationCancelResponse{
+	return &genaiv0.GenerationCancelResponse{
 		Generation: NewGrpcGeneration(generation),
-	}), nil
+	}, nil
 }

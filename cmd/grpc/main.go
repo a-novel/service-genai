@@ -284,8 +284,6 @@ func observeLoop(ctx context.Context, name string, loop func()) (err error) {
 	loop()
 
 	if ctx.Err() != nil {
-		otel.ReportSuccessNoContent(span)
-
 		return nil
 	}
 

@@ -39,8 +39,6 @@ func (handler *GrpcGenerationSubmit) GenerationSubmit(
 
 	ownerID, err := uuid.Parse(request.GetOwnerId())
 	if err != nil {
-		_ = otel.ReportError(span, err)
-
 		return nil, status.Error(codes.InvalidArgument, "invalid owner id")
 	}
 
@@ -60,8 +58,6 @@ func (handler *GrpcGenerationSubmit) GenerationSubmit(
 	})
 
 	if errors.Is(err, core.ErrInvalidRequest) {
-		_ = otel.ReportError(span, err)
-
 		return nil, status.Error(codes.InvalidArgument, "invalid submission")
 	}
 
@@ -77,8 +73,8 @@ func (handler *GrpcGenerationSubmit) GenerationSubmit(
 		return nil, status.Error(codes.Internal, "internal error")
 	}
 
-	return otel.ReportSuccess(span, &genaiv0.GenerationSubmitResponse{
+	return &genaiv0.GenerationSubmitResponse{
 		Generation: NewGrpcGeneration(result.Generation),
 		Created:    result.Created,
-	}), nil
+	}, nil
 }

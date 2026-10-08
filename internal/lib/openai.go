@@ -46,11 +46,6 @@ func (provider *OpenAI) Start(ctx context.Context, request *ProviderStartRequest
 	ctx, span := otel.Tracer().Start(ctx, "lib.OpenAI.Start")
 	defer span.End()
 
-	span.SetAttributes(
-		attribute.String("provider.generation_id", request.GenerationID),
-		attribute.Int("provider.attempt", int(request.Attempt)),
-	)
-
 	body, err := mergeProviderFields(request)
 	if err != nil {
 		return nil, otel.ReportError(span, err)
@@ -63,7 +58,7 @@ func (provider *OpenAI) Start(ctx context.Context, request *ProviderStartRequest
 		return nil, otel.ReportError(span, classifyOpenAIStartError(err))
 	}
 
-	return otel.ReportSuccess(span, providerCallOf(response)), nil
+	return providerCallOf(response), nil
 }
 
 // Get reads an operation, and is also the re-attach path.
@@ -78,7 +73,7 @@ func (provider *OpenAI) Get(ctx context.Context, id string) (*ProviderCall, erro
 		return nil, otel.ReportError(span, classifyOpenAIError(err))
 	}
 
-	return otel.ReportSuccess(span, providerCallOf(response)), nil
+	return providerCallOf(response), nil
 }
 
 // Cancel stops an operation so an abandoned generation stops costing.
@@ -93,7 +88,7 @@ func (provider *OpenAI) Cancel(ctx context.Context, id string) (*ProviderCall, e
 		return nil, otel.ReportError(span, classifyOpenAIError(err))
 	}
 
-	return otel.ReportSuccess(span, providerCallOf(response)), nil
+	return providerCallOf(response), nil
 }
 
 // mergeProviderFields adds the three fields this service owns, overwriting whatever the caller set.

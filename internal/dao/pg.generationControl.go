@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/a-novel-kit/golib/otel"
 	"github.com/a-novel-kit/golib/postgres"
@@ -41,12 +40,6 @@ func (dao *GenerationControl) Exec(
 	ctx, span := otel.Tracer().Start(ctx, "dao.GenerationControl")
 	defer span.End()
 
-	span.SetAttributes(
-		attribute.String("generation.id", request.ID.String()),
-		attribute.String("generation.worker_id", request.WorkerID),
-		attribute.Float64("claim.lease_seconds", request.Lease.Seconds()),
-	)
-
 	tx, err := postgres.GetContext(ctx)
 	if err != nil {
 		return nil, otel.ReportError(span, fmt.Errorf("get transaction: %w", err))
@@ -69,5 +62,5 @@ func (dao *GenerationControl) Exec(
 		return nil, otel.ReportError(span, fmt.Errorf("execute query: %w", err))
 	}
 
-	return otel.ReportSuccess(span, entity), nil
+	return entity, nil
 }

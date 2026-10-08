@@ -37,12 +37,6 @@ func (dao *GenerationClaim) Exec(ctx context.Context, request *GenerationClaimRe
 	ctx, span := otel.Tracer().Start(ctx, "dao.GenerationClaim")
 	defer span.End()
 
-	span.SetAttributes(
-		attribute.String("claim.worker_id", request.WorkerID),
-		attribute.Int("claim.limit", request.Limit),
-		attribute.Float64("claim.lease_seconds", request.Lease.Seconds()),
-	)
-
 	tx, err := postgres.GetContext(ctx)
 	if err != nil {
 		return nil, otel.ReportError(span, fmt.Errorf("get transaction: %w", err))
@@ -59,5 +53,5 @@ func (dao *GenerationClaim) Exec(ctx context.Context, request *GenerationClaimRe
 
 	span.SetAttributes(attribute.Int("claim.claimed", len(entities)))
 
-	return otel.ReportSuccess(span, entities), nil
+	return entities, nil
 }

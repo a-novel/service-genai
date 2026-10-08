@@ -8,7 +8,6 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
-	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/a-novel-kit/golib/otel"
 	"github.com/a-novel-kit/golib/postgres"
@@ -42,11 +41,6 @@ func (dao *GenerationRequeue) Exec(ctx context.Context, request *GenerationReque
 	ctx, span := otel.Tracer().Start(ctx, "dao.GenerationRequeue")
 	defer span.End()
 
-	span.SetAttributes(
-		attribute.String("generation.id", request.ID.String()),
-		attribute.String("generation.worker_id", request.WorkerID),
-	)
-
 	tx, err := postgres.GetContext(ctx)
 	if err != nil {
 		return nil, otel.ReportError(span, fmt.Errorf("get transaction: %w", err))
@@ -65,5 +59,5 @@ func (dao *GenerationRequeue) Exec(ctx context.Context, request *GenerationReque
 		return nil, otel.ReportError(span, fmt.Errorf("execute query: %w", err))
 	}
 
-	return otel.ReportSuccess(span, entity), nil
+	return entity, nil
 }

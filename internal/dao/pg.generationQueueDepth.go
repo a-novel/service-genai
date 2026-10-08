@@ -47,5 +47,5 @@ func (dao *GenerationQueueDepthDao) Exec(ctx context.Context) (*GenerationQueueD
 
 	span.SetAttributes(attribute.Int64("queue.pending", entity.Pending))
 
-	return otel.ReportSuccess(span, entity), nil
+	return entity, nil
 }
