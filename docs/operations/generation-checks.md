@@ -29,7 +29,7 @@ The one loss left is a hard kill (SIGKILL, out of memory, host loss) in the seco
 
 ## Switching provider
 
-A switch is one revision that sets `PROVIDER_NAME`, `PROVIDER_BASE_URL`, `PROVIDER_API_KEY` and `PROVIDER_TIERS` for the new provider and raises `PROVIDER_EPOCH`. Rotating the key within one account changes `PROVIDER_API_KEY` alone and keeps the epoch, so nothing restarts.
+A switch is one revision that sets `PROVIDER_NAME`, `PROVIDER_BASE_URL`, `PROVIDER_API_KEY` and `PROVIDER_TIERS` for the new provider and raises `PROVIDER_EPOCH`. The new provider must meet the [provider requirements](../providers.md); run the conformance check against it first. Rotating the key within one account changes `PROVIDER_API_KEY` alone and keeps the epoch, so nothing restarts.
 
 Generations keep their id and request key across a switch. One started under a lower epoch restarts on the new provider at its next check, and its usage is recorded under the new name. The attempt number still increments, so each attempt keeps its own usage row.
 
