@@ -3,7 +3,7 @@ module github.com/a-novel/service-genai
 go 1.27.1
 
 require (
-	github.com/a-novel-kit/golib v0.41.1-0.20261008190019-9625bb0c9c1e
+	github.com/a-novel-kit/golib v0.41.1
 	github.com/go-playground/validator/v10 v10.30.5
 	github.com/google/uuid v1.6.0
 	github.com/openai/openai-go/v3 v3.74.0
@@ -13,7 +13,6 @@ require (
 	go.opentelemetry.io/otel v1.47.0
 	google.golang.org/grpc v1.84.0
 	google.golang.org/protobuf v1.36.12
-	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
