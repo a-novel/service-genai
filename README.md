@@ -1,6 +1,6 @@
 # GenAI service
 
-Every AI generation on the platform runs here: the call to the provider, the record that survives a crash without paying twice, and the ledger of what it cost and who it was for.
+Every AI generation on the platform runs here: the call to the provider, the record that survives a crash without paying twice, and what each call consumed.
 
 [![X (formerly Twitter) Follow](https://img.shields.io/twitter/follow/agorastoryverse)](https://twitter.com/agorastoryverse)
 [![Discord](https://img.shields.io/discord/1315240114691248138?logo=discord)](https://discord.gg/rp4Qr8cA)
@@ -18,17 +18,21 @@ Every AI generation on the platform runs here: the call to the provider, the rec
 
 ## What it does
 
-A generation takes minutes, costs real money, and must never be paid for twice. A caller submits _what it wants generated_; this service picks the model, calls the provider, survives its own restart without re-billing, records exactly what was consumed and what it cost, and hands back the result.
+A generation takes minutes, costs real money, and must never be paid for twice. A caller states what it wants: a Tier, its instructions, the user's input and an output schema. This service picks the model for that Tier, calls the provider, survives its own restarts without re-billing, and hands back a document conforming to the schema, with what each provider call consumed.
 
-Callers keep their domain and lose their worker. Prompt assembly stays with them — the text and the output schema arrive already built — but nothing about talking to a provider, recovering a crashed call, counting tokens or pricing them is written twice.
+Callers keep their domain. Prompt assembly stays with them, so instructions, input and schema arrive already built, but nothing about talking to a provider, recovering a crashed call or counting tokens is written twice.
 
-Three things shape the contract:
+Five things shape the contract:
+
+**Callers never name a model.** They pick a Tier (`FAST`, `BALANCED`, `DEEP`), and the provider configuration binds each Tier to a model and a reasoning effort. A model or provider change edits no caller.
 
 **Idempotency is mandatory.** Every submission carries a key, and a replay attaches to the work already in flight rather than starting a second, separately billed one. In a service whose only workload is a priced call, an unkeyed submission is a bug the API refuses rather than a default it tolerates.
 
 **A crash re-attaches instead of re-paying.** The provider's own identifier for an in-flight operation is recorded the moment the call starts, and every later check reads it back. No process holds a generation, so a restart or a deploy loses nothing: the next poll or sweep picks up the operation already paid for.
 
-**Cost is recorded, not inferred.** The provider, the model and the token breakdown are not enough to reconstruct a bill, because prices change. Each attempt writes a ledger row carrying the unit prices in force at the time and the resulting amount, so what a call cost stays true no matter what the price becomes later. Each row also carries the **purpose** it was spent on, because the platform does not monetize every AI feature the same way.
+**A failure says why.** A failed generation carries the kind of failure that ended it (refused, incomplete, invalid request, or failed) and the cause in this service's own words. The caller decides what to do; raw provider text stays in server logs.
+
+**Usage is reported, not kept.** Each generation lists what every provider call consumed, failed ones included, with the model and effort that actually ran. Callers keep the long-term record; this service purges usage with the generation it describes.
 
 The surface is **gRPC only**. Callers are other services on the internal network, so there is no browser client and no REST API to keep in step.
 
@@ -138,6 +142,7 @@ Checks and sweep (images `grpc`, `standalone-grpc`). [Generation checks](./docs/
 | `CHECK_INTERVAL`   | How long a check stays fresh. However often callers poll, a generation reaches the provider at most once per interval. | `2s`    |
 | `SWEEP_INTERVAL`   | How often the sweep runs, and how stale a generation must be for it. At most `5m`.                                     | `1m`    |
 | `SWEEP_BATCH_SIZE` | Generations one sweep pass checks.                                                                                     | `50`    |
+| `MAX_ATTEMPTS`     | Provider calls a generation gets when a call fails retryably. Each one is paid.                                        | `2`     |
 | `RETENTION`        | How long a settled generation's content survives before the purge deletes it.                                          | `168h`  |
 
 gRPC server:
