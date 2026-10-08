@@ -30,20 +30,20 @@ func TestRunProcess(t *testing.T) {
 		expectedError string
 	}{
 		{
-			name: "WorkerPanic",
+			name: "LoopPanic",
 			failure: func(ctx context.Context) error {
-				return observeLoop(ctx, "generation-worker", func() {
+				return observeLoop(ctx, "generation-sweep", func() {
 					panic(privatePanicPayload)
 				})
 			},
-			expectedError: "generation-worker: background loop panicked",
+			expectedError: "generation-sweep: background loop panicked",
 		},
 		{
-			name: "UnexpectedReaperReturn",
+			name: "UnexpectedLoopReturn",
 			failure: func(ctx context.Context) error {
-				return observeLoop(ctx, "generation-reaper", func() {})
+				return observeLoop(ctx, "generation-sweep", func() {})
 			},
-			expectedError: "generation-reaper: background loop exited unexpectedly",
+			expectedError: "generation-sweep: background loop exited unexpectedly",
 		},
 	}
 
@@ -146,7 +146,7 @@ func TestRunLoopContinuesAfterUnitFailure(t *testing.T) {
 	err := runLoop(
 		ctx,
 		discardLog{},
-		"generation-worker",
+		"generation-sweep",
 		time.Nanosecond,
 		0,
 		func(context.Context) (bool, error) {

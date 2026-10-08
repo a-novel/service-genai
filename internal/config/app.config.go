@@ -27,27 +27,11 @@ type Grpc struct {
 	Shutdown time.Duration `json:"shutdown" yaml:"shutdown"`
 }
 
-// Worker holds the generation worker's settings.
-type Worker struct {
-	// ID identifies this replica on the claims it holds.
-	ID string `json:"id" yaml:"id"`
-	// Interval is how often the worker looks for work when the queue is empty.
+// Sweep holds the settings of the loop that checks generations nobody polled.
+type Sweep struct {
+	// Interval is how often the sweep runs, and how stale a generation must be for it.
 	Interval time.Duration `json:"interval" yaml:"interval"`
-	// Lease is how long a claim holds before the reaper may recover it.
-	Lease time.Duration `json:"lease" yaml:"lease"`
-	// BatchSize caps the jobs processed per pass; each is claimed when the worker is ready.
-	BatchSize int `json:"batchSize" yaml:"batchSize"`
-	// PollInterval is how long the provider is given between polls of a running operation.
-	PollInterval time.Duration `json:"pollInterval" yaml:"pollInterval"`
-}
-
-// Reaper holds the settings of the loop that recovers generations a dead worker stranded.
-type Reaper struct {
-	// Interval is how often the reaper sweeps.
-	Interval time.Duration `json:"interval" yaml:"interval"`
-	// Grace delays recovery after expiry without extending worker authority.
-	Grace time.Duration `json:"grace" yaml:"grace"`
-	// BatchSize caps one sweep.
+	// BatchSize caps the generations one pass checks.
 	BatchSize int `json:"batchSize" yaml:"batchSize"`
 }
 
@@ -65,15 +49,17 @@ type App struct {
 	App  Main `json:"app"  yaml:"app"`
 	Grpc Grpc `json:"grpc" yaml:"grpc"`
 
-	Worker   Worker   `json:"worker"   yaml:"worker"`
-	Reaper   Reaper   `json:"reaper"   yaml:"reaper"`
+	Sweep    Sweep    `json:"sweep"    yaml:"sweep"`
 	Provider Provider `json:"provider" yaml:"provider"`
+	// CheckInterval is how long a check stays fresh: a polled generation reaches the provider at most
+	// once per interval.
+	CheckInterval time.Duration `json:"checkInterval" yaml:"checkInterval"`
 	// Retention is how long a settled generation's user content survives before the purge.
 	Retention time.Duration `json:"retention" yaml:"retention"`
 
 	Otel   otel.Config       `json:"otel"   yaml:"otel"`
 	Logger logging.RPCConfig `json:"logger" yaml:"logger"`
-	// Log is what the background loops write to. The gRPC Logger above is an interceptor chain and
+	// Log is what checks and the sweep write to. The gRPC Logger above is an interceptor chain and
 	// has no plain logging surface, which is what worker.Poll takes.
 	Log      logging.Log     `json:"log"      yaml:"log"`
 	Postgres postgres.Config `json:"postgres" yaml:"postgres"`
