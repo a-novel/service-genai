@@ -20,7 +20,6 @@ import (
 
 	"github.com/openai/openai-go/v3/option"
 	"github.com/samber/lo"
-	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel/attribute"
 	"google.golang.org/grpc"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -149,7 +148,6 @@ func main() {
 	}
 
 	server := grpc.NewServer(
-		grpc.StatsHandler(otelgrpc.NewServerHandler()),
 		cfg.Otel.RpcInterceptor(),
 		grpc.ChainUnaryInterceptor(
 			grpcf.BaseContextUnaryInterceptor(ctxInterceptor),

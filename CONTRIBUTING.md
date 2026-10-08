@@ -4,11 +4,7 @@ This file covers only what is specific to **service-genai**. For service-level c
 
 ---
 
-## Where the service is
-
-The scaffold is in place; the generation API is being built. [a-novel/.github#245](https://github.com/a-novel/.github/issues/245) holds the design and the task order — read it before adding anything here, because the boundary it draws is the point of the service.
-
-The `item` resource is inherited placeholder wiring, not a feature. It exercises every layer and the whole test rail end to end, which is why it survives the scaffold; it is replaced wholesale by the real schema, not extended.
+## The boundary
 
 **The one rule that must not erode: this service never learns a caller's domain.** It receives finished text and an output schema, and returns structured output and a cost. A concept like a story, a step or an engine appearing anywhere in this repository means the boundary has moved and the service is on its way to being the thing it replaced.
 
@@ -39,7 +35,9 @@ The `database` image schedules a `pg_cron` job that deletes settled generations 
 
 It is scheduled in the image's init SQL rather than in a migration: `postgres.RunDBTest` clones a database with no `cron` schema, so a migration calling `cron.schedule` would fail every data-access test.
 
-**A bring-your-own-Postgres deployment must schedule it itself** — the statement is in [`builds/database.sql`](./builds/database.sql).
+Its jobs run as background workers inside PostgreSQL. Under SCRAM authentication, a job that opens its own connection fails without a password.
+
+**A bring-your-own-Postgres deployment must schedule it itself** — the statement is in [`builds/database.sql`](./builds/database.sql). Preload `pg_cron`, point `cron.database_name` at the service's database, and set `cron.use_background_workers = on`, as the image does.
 
 ---
 
@@ -74,7 +72,7 @@ err := service.transactor.WithinTx(ctx, func(ctx context.Context) error {
 service := core.NewSomeService(daoSomething, postgres.NewTransactor(nil))
 ```
 
-Nothing in this service uses one yet, because no operation writes twice — the `item` resource is single-write throughout. The convention is here rather than demonstrated because wrapping a single write in a transaction is noise, and a scaffold that shows it teaches every service copied from it to do the same.
+The worker uses one where a settle or requeue writes the usage row and the generation together. A single write needs no transaction.
 
 **Pass the callback's `ctx` down, not the outer one.** Data-access objects resolve their database handle from the context, and the transaction is installed on the context the callback receives. An inner call given the outer context runs on the connection pool and commits on its own, while the surrounding block still reports success. That is not hypothetical: it is what a sibling service did in four operations for months, with a green build the whole time.
 

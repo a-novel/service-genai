@@ -20,9 +20,10 @@ const (
 	OtelFlushTimeout = 2 * time.Second
 )
 
-// LoggerProd ships production logs to Google Cloud Logging.
+// LoggerProd ships production logs to Google Cloud Logging, linked to their trace.
 var LoggerProd = loggingpresets.GRPCGcloud{
-	Component: env.GcloudProjectId,
+	Component: env.AppName,
+	ProjectId: env.GcloudProjectId,
 }
 
 // LoggerDev pretty-prints logs to the console for local development.

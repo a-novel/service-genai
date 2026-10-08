@@ -16,8 +16,6 @@ Every AI generation on the platform runs here: the call to the provider, the rec
 
 ![Coverage graph](https://codecov.io/gh/a-novel/service-genai/graphs/sunburst.svg)
 
-> **Under construction.** This repository currently holds the service scaffold. The generation API, the provider adapter and the cost ledger are being built — see [a-novel/.github#245](https://github.com/a-novel/.github/issues/245) for the plan and the task order.
-
 ## What it does
 
 A generation takes minutes, costs real money, and must never be paid for twice. A caller submits _what it wants generated_; this service picks the model, calls the provider, survives its own restart without re-billing, records exactly what was consumed and what it cost, and hands back the result.
@@ -36,18 +34,20 @@ The surface is **gRPC only**. Callers are other services on the internal network
 
 ## Deploying
 
-The service runs as published OCI images plus a PostgreSQL database. The server is stateless, so it scales to as many replicas as you need; all state lives in Postgres.
+The service runs as published OCI images plus a PostgreSQL database. All state lives in Postgres, so the server scales to as many replicas as you need; replicas share the queue through fenced claims.
 
 > **OpenTofu modules are the planned canonical deployment path.** Until they land, deploy the images with any container orchestrator — the composition below is the reference for which images to run, how they wire together, and the environment they expect.
 
 | Image                           | Role                                                                        |
 | ------------------------------- | --------------------------------------------------------------------------- |
-| `service-genai/grpc`            | The generation API. Internal network only.                                  |
-| `service-genai/migrations`      | One-shot schema migration job; runs to completion before the server starts. |
-| `service-genai/database`        | Pre-tuned PostgreSQL image with `pg_cron` — or bring your own Postgres.     |
+| `service-genai/grpc`            | The generation API, its worker and its reaper. Internal network only.       |
+| `service-genai/jobs/migrations` | One-shot schema migration job; runs to completion before the server starts. |
+| `service-genai/database`        | PostgreSQL with `pg_cron` and pgBackRest — or bring your own Postgres.      |
 | `service-genai/standalone-grpc` | Server plus migrations in one image. Local development only.                |
 
-Pin every image to the same release tag — see the [latest release](https://github.com/a-novel/service-genai/releases/latest).
+Pin every image to the same release tag — see the [latest release](https://github.com/a-novel/service-genai/releases/latest). A production deployment runs `database`, then the migrations job to completion, then any number of `grpc` replicas. Provide `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DATABASE` and `OPENAI_API_KEY` through the orchestrator; store the password and the API key as secrets.
+
+The worker runs inside the `grpc` process and keeps calling the provider between requests. Give each replica CPU outside of requests (on Cloud Run, CPU always allocated with at least one instance) and outbound access to the provider's API.
 
 ```yaml
 services:
@@ -55,20 +55,25 @@ services:
     image: ghcr.io/a-novel/service-genai/database:v0.4.0
     networks: [api]
     environment:
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_USER: postgres
-      POSTGRES_DB: postgres
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+      POSTGRES_USER: "${POSTGRES_USER}"
+      POSTGRES_DB: "${POSTGRES_DATABASE}"
       POSTGRES_HOST_AUTH_METHOD: scram-sha-256
       POSTGRES_INITDB_ARGS: --auth=scram-sha-256
     volumes:
       - genai-postgres-data:/var/lib/postgresql/
 
   migrations-genai:
-    image: ghcr.io/a-novel/service-genai/migrations:v0.4.0
+    image: ghcr.io/a-novel/service-genai/jobs/migrations:v0.4.0
     depends_on:
       postgres-genai: { condition: service_healthy }
     environment:
-      POSTGRES_DSN: "postgres://postgres:postgres@postgres-genai:5432/postgres?sslmode=disable"
+      POSTGRES_HOST: postgres-genai
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: "${POSTGRES_USER}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+      POSTGRES_DATABASE: "${POSTGRES_DATABASE}"
+      POSTGRES_TLS_ENABLED: "false"
     networks: [api]
 
   service-genai:
@@ -78,7 +83,13 @@ services:
       postgres-genai: { condition: service_healthy }
       migrations-genai: { condition: service_completed_successfully }
     environment:
-      POSTGRES_DSN: "postgres://postgres:postgres@postgres-genai:5432/postgres?sslmode=disable"
+      POSTGRES_HOST: postgres-genai
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: "${POSTGRES_USER}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+      POSTGRES_DATABASE: "${POSTGRES_DATABASE}"
+      POSTGRES_TLS_ENABLED: "false"
+      OPENAI_API_KEY: "${OPENAI_API_KEY}"
     networks: [api]
 
 networks:
@@ -88,16 +99,51 @@ volumes:
   genai-postgres-data:
 ```
 
+### Database image
+
+The database image packages PostgreSQL, `pg_cron` and pgBackRest on Wolfi. Its [package manifest](./builds/database.apko.yaml) is assembled with apko during the container build; Docker and Podman users need no additional host tools. PostgreSQL keeps its standard `POSTGRES_*` initialization variables and its volume at `/var/lib/postgresql`. On first start it schedules the retention purge in the `POSTGRES_DB` database (see [CONTRIBUTING](./CONTRIBUTING.md#retention-purge)). Backup scheduling and repository credentials remain the operator's responsibility.
+
+Start the image on a fresh volume. A data directory written by the earlier Debian-based image is not portable: the libc, collation and extension environment changed. To keep its data, take a logical dump and restore it into the new database.
+
+Wolfi's package repository rolls forward. Retain published service images for recovery rather than relying on an old package manifest remaining rebuildable indefinitely.
+
 ### Configuration
 
-Every variable is read from the process environment. Names can be globally prefixed with `SERVICE_GENAI_ENV_PREFIX`, which avoids collisions when another project embeds this service.
+Every variable is read from the process environment. Names can be globally prefixed with `SERVICE_GENAI_ENV_PREFIX`, which avoids collisions when another project embeds this service. Set `POSTGRES_HOST` to use the discrete connection fields; without it, the service reads `POSTGRES_DSN`.
 
-| Name           | Description                                 | Images |
-| -------------- | ------------------------------------------- | ------ |
-| `POSTGRES_DSN` | PostgreSQL connection string. **Required.** | all    |
+| Name                   | Description                                                                                                                   | Images                    |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
+| `POSTGRES_HOST`        | PostgreSQL hostname or IP address. Selects the discrete connection fields. **Required for deployments.**                      | all                       |
+| `POSTGRES_PORT`        | PostgreSQL port. Defaults to `5432`.                                                                                          | all                       |
+| `POSTGRES_USER`        | PostgreSQL login role. **Required when `POSTGRES_HOST` is set.**                                                              | all                       |
+| `POSTGRES_PASSWORD`    | PostgreSQL login password. **Required when `POSTGRES_HOST` is set; inject it as a secret.**                                   | all                       |
+| `POSTGRES_DATABASE`    | PostgreSQL database name. **Required when `POSTGRES_HOST` is set.**                                                           | all                       |
+| `POSTGRES_TLS_ENABLED` | Encrypt the PostgreSQL connection. Defaults to `true`; disable only when another trusted boundary protects the database link. | all                       |
+| `POSTGRES_DSN`         | Connection URL, read only when `POSTGRES_HOST` is empty. Local development uses it.                                           | all                       |
+| `OPENAI_API_KEY`       | Provider credential. **Required for generations; inject it as a secret.** No caller holds one.                                | `grpc`, `standalone-grpc` |
 
 <details>
-<summary>Optional configuration (gRPC, connection pool, OpenTelemetry)</summary>
+<summary>Optional configuration (provider, worker, retention, gRPC, connection pool, OpenTelemetry)</summary>
+
+Provider (images `grpc`, `standalone-grpc`):
+
+| Name              | Description                                                                                 | Default     |
+| ----------------- | ------------------------------------------------------------------------------------------- | ----------- |
+| `OPENAI_BASE_URL` | Provider endpoint. Points the service at an OpenAI-compatible provider or a local stand-in. | SDK default |
+
+Worker and reaper (images `grpc`, `standalone-grpc`). [Generation claims](./docs/operations/generation-claims.md) explains how they interact.
+
+| Name                   | Description                                                                   | Default  |
+| ---------------------- | ----------------------------------------------------------------------------- | -------- |
+| `WORKER_ID`            | Identifies this replica on the claims it holds.                               | hostname |
+| `WORKER_INTERVAL`      | How often the worker looks for work when the queue is empty.                  | `5s`     |
+| `WORKER_LEASE`         | How long a claim holds before the reaper may recover it.                      | `5m`     |
+| `WORKER_BATCH_SIZE`    | Generations processed per pass.                                               | `10`     |
+| `WORKER_POLL_INTERVAL` | Wait between polls of a running provider operation.                           | `2s`     |
+| `REAPER_INTERVAL`      | How often the reaper sweeps for lapsed leases.                                | `30s`    |
+| `REAPER_GRACE`         | Head start a late settle gets over recovery.                                  | `30s`    |
+| `REAPER_BATCH_SIZE`    | Generations recovered per sweep.                                              | `100`    |
+| `RETENTION`            | How long a settled generation's content survives before the purge deletes it. | `168h`   |
 
 gRPC server:
 
@@ -116,11 +162,11 @@ Database connection pool (server images). The limits are **per process**, so the
 
 Logs and tracing — OpenTelemetry supports a stdout and a Google Cloud exporter (all server images):
 
-| Name                | Description                                                           | Default         |
-| ------------------- | --------------------------------------------------------------------- | --------------- |
-| `OTEL`              | Enable OTel tracing; the variables below pick the exporter.           | `false`         |
-| `GCLOUD_PROJECT_ID` | Google Cloud project ID. When set, switches the OTel exporter to GCP. |                 |
-| `APP_NAME`          | Application name attached to traces and logs.                         | `service-genai` |
+| Name                | Description                                                                    | Default         |
+| ------------------- | ------------------------------------------------------------------------------ | --------------- |
+| `OTEL`              | Enable OTel tracing; the variables below pick the exporter.                    | `false`         |
+| `GCLOUD_PROJECT_ID` | Google Cloud project ID. When set, switches logs and the OTel exporter to GCP. |                 |
+| `APP_NAME`          | Application name attached to traces and logs.                                  | `service-genai` |
 
 </details>
 
