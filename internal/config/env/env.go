@@ -35,9 +35,9 @@ const (
 	// MaxAttemptsDefault lets one retryable provider failure be retried once. Each attempt is paid.
 	MaxAttemptsDefault = 2
 
-	// RetentionDefault is how long a settled generation's user content survives. Short on purpose:
-	// it covers client retrieval, and the usage rows describing it are kept regardless.
-	RetentionDefault = 7 * 24 * time.Hour
+	// RetentionDefault is how long a settled generation survives: long enough for a caller to come back
+	// after a lost connection, short enough that a request's content and its key are not kept.
+	RetentionDefault = 6 * time.Hour
 
 	// SweepIntervalDefault and SweepBatchSizeDefault configure the sweep that checks generations
 	// nobody polled, well inside the ten minutes a finished provider result stays retrievable.

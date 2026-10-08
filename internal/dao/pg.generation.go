@@ -38,8 +38,8 @@ type Generation struct {
 	OwnerID uuid.UUID `bun:"owner_id,type:uuid"`
 	Purpose string    `bun:"purpose"`
 
-	IdempotencyKey     string `bun:"idempotency_key"`
-	RequestFingerprint []byte `bun:"request_fingerprint"`
+	// RequestKey identifies the request among live and succeeded generations.
+	RequestKey []byte `bun:"request_key"`
 	// Request is the caller's provider-neutral request, stored as sent.
 	Request json.RawMessage `bun:"request,type:json"`
 	Output  json.RawMessage `bun:"output,type:json,nullzero"`

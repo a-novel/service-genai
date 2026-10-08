@@ -25,14 +25,13 @@ func TestGenerationGet(t *testing.T) {
 
 	fixture := func(id, ownerID uuid.UUID) *dao.Generation {
 		return &dao.Generation{
-			ID:                 id,
-			OwnerID:            ownerID,
-			Purpose:            "studio.generation",
-			IdempotencyKey:     "key-" + id.String(),
-			RequestFingerprint: []byte{0x01},
-			Request:            json.RawMessage(`{"instructions": "write"}`),
-			Status:             dao.GenerationStatusPending,
-			MaxAttempts:        1,
+			ID:          id,
+			OwnerID:     ownerID,
+			Purpose:     "studio.generation",
+			RequestKey:  []byte("key-" + id.String()),
+			Request:     json.RawMessage(`{"instructions": "write"}`),
+			Status:      dao.GenerationStatusPending,
+			MaxAttempts: 1,
 		}
 	}
 

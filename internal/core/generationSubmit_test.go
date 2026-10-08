@@ -1,7 +1,9 @@
 package core_test
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -18,13 +20,12 @@ import (
 // submitRequest is a valid submission; a case adjusts it.
 func submitRequest(adjust func(request *core.GenerationSubmitRequest)) *core.GenerationSubmitRequest {
 	request := &core.GenerationSubmitRequest{
-		OwnerID:        testOwner,
-		Purpose:        "studio.generation",
-		IdempotencyKey: "key",
-		Tier:           lib.TierBalanced,
-		Instructions:   "Continue.",
-		Input:          json.RawMessage(`{"scene": "a door"}`),
-		OutputSchema:   json.RawMessage(`{"type": "object"}`),
+		OwnerID:      testOwner,
+		Purpose:      "studio.generation",
+		Tier:         lib.TierBalanced,
+		Instructions: "Continue.",
+		Input:        json.RawMessage(`{"scene": "a door"}`),
+		OutputSchema: json.RawMessage(`{"type": "object", "properties": {}}`),
 	}
 
 	if adjust != nil {
@@ -115,13 +116,6 @@ func TestGenerationSubmit(t *testing.T) {
 			expectErr: core.ErrInvalidRequest,
 		},
 		{
-			name: "Error/BlankIdempotencyKey",
-
-			request: submitRequest(func(request *core.GenerationSubmitRequest) { request.IdempotencyKey = "   " }),
-
-			expectErr: core.ErrInvalidRequest,
-		},
-		{
 			name: "Error/NoTier",
 
 			request: submitRequest(func(request *core.GenerationSubmitRequest) { request.Tier = "" }),
@@ -189,12 +183,12 @@ func TestGenerationSubmit(t *testing.T) {
 			expectErr: errFoo,
 		},
 		{
-			name: "Error/IdempotencyConflict",
+			name: "Error/Internal",
 
 			request: submitRequest(nil),
-			daoMock: &daoMock{err: dao.ErrGenerationSubmitConflict},
+			daoMock: &daoMock{err: errFoo},
 
-			expectErr: core.ErrIdempotencyConflict,
+			expectErr: errFoo,
 		},
 	}
 
@@ -224,7 +218,7 @@ func TestGenerationSubmit(t *testing.T) {
 							string(stored.Input) == compact(testCase.request.Input) &&
 							string(stored.OutputSchema) == compact(testCase.request.OutputSchema) &&
 							request.MaxAttempts == maxAttempts &&
-							len(request.RequestFingerprint) == 32 &&
+							len(request.RequestKey) == 32 &&
 							request.ID != uuid.Nil
 					})).
 					Return(testCase.daoMock.resp, testCase.daoMock.err)
@@ -262,4 +256,97 @@ func TestGenerationSubmit(t *testing.T) {
 			check.AssertExpectations(t)
 		})
 	}
+
+	// The key is the request's identity: equal requests share it, and every field the caller sends
+	// changes it. A field left out would let two different requests return one generation.
+	keyCases := []struct {
+		name string
+
+		adjust func(request *core.GenerationSubmitRequest)
+
+		expectSame bool
+	}{
+		{name: "Same", expectSame: true},
+		{
+			// A resend rebuilt from the caller's state may reorder keys or reformat; it is still the
+			// same request.
+			name: "ReformattedJSON",
+
+			adjust: func(request *core.GenerationSubmitRequest) {
+				request.Input = json.RawMessage(`{ "scene" : "a door" }`)
+				request.OutputSchema = json.RawMessage(`{"properties":{},"type":"object"}`)
+			},
+
+			expectSame: true,
+		},
+		{name: "Owner", adjust: func(request *core.GenerationSubmitRequest) { request.OwnerID = uuid.New() }},
+		{name: "Purpose", adjust: func(request *core.GenerationSubmitRequest) { request.Purpose = "studio.analysis" }},
+		{name: "Tier", adjust: func(request *core.GenerationSubmitRequest) { request.Tier = lib.TierDeep }},
+		{name: "Instructions", adjust: func(request *core.GenerationSubmitRequest) { request.Instructions = "Stop." }},
+		{name: "Input", adjust: func(request *core.GenerationSubmitRequest) {
+			request.Input = json.RawMessage(`{"scene": "a window"}`)
+		}},
+		{name: "OutputSchema", adjust: func(request *core.GenerationSubmitRequest) {
+			request.OutputSchema = json.RawMessage(`{"type": "object", "properties": {"text": {"type": "string"}}}`)
+		}},
+		{name: "Variant", adjust: func(request *core.GenerationSubmitRequest) { request.Variant = 1 }},
+		{
+			// Moving bytes from one field to the next must not produce the same key.
+			name: "FieldBoundary",
+
+			adjust: func(request *core.GenerationSubmitRequest) {
+				request.Purpose = "studio.generationContinue"
+				request.Instructions = "."
+			},
+		},
+	}
+
+	baseKey := submittedKey(t, submitRequest(nil))
+
+	for _, keyCase := range keyCases {
+		t.Run("RequestKey/"+keyCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			key := submittedKey(t, submitRequest(keyCase.adjust))
+
+			if keyCase.expectSame {
+				require.Equal(t, baseKey, key)
+			} else {
+				require.NotEqual(t, baseKey, key)
+			}
+		})
+	}
+}
+
+// submittedKey returns the request key a submission hands to the data access.
+func submittedKey(t *testing.T, request *core.GenerationSubmitRequest) []byte {
+	t.Helper()
+
+	var key []byte
+
+	submitDao := coremocks.NewMockGenerationSubmitDao(t)
+	submitDao.EXPECT().
+		Exec(mock.Anything, mock.Anything).
+		RunAndReturn(func(_ context.Context, submitted *dao.GenerationSubmitRequest) (*dao.GenerationSubmitResult, error) {
+			key = submitted.RequestKey
+
+			return nil, errFoo
+		})
+
+	service, err := core.NewGenerationSubmit(
+		core.GenerationSubmitConfig{MaxAttempts: 1},
+		submitDao,
+		coremocks.NewMockGenerationSubmitUsageListDao(t),
+		coremocks.NewMockGenerationSubmitServiceCheck(t),
+	)
+	if err != nil {
+		panic(err)
+	}
+
+	_, err = service.Exec(t.Context(), request)
+	if !errors.Is(err, errFoo) {
+		panic(err)
+	}
+
+	return key
 }

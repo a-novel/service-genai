@@ -31,10 +31,10 @@ func newClient(t *testing.T) servicegenai.Client {
 	return client
 }
 
-// submitRequest is a valid submission under the given key.
-func submitRequest(owner, key string) *servicegenai.GenerationSubmitRequest {
+// submitRequest is a valid submission for the owner.
+func submitRequest(owner string) *servicegenai.GenerationSubmitRequest {
 	return &servicegenai.GenerationSubmitRequest{
-		OwnerId: owner, Purpose: "studio.generation", IdempotencyKey: key,
+		OwnerId: owner, Purpose: "studio.generation",
 		Tier: servicegenai.TierBalanced, Instructions: "Continue the scene.",
 		Input:        []byte(`{"scene": "a door"}`),
 		OutputSchema: []byte(`{"type": "object", "properties": {}, "required": [], "additionalProperties": false}`),
@@ -45,7 +45,7 @@ func submitRequest(owner, key string) *servicegenai.GenerationSubmitRequest {
 func submit(t *testing.T, client servicegenai.Client, owner string) *servicegenai.Generation {
 	t.Helper()
 
-	response, err := client.GenerationSubmit(t.Context(), submitRequest(owner, uuid.Must(uuid.NewV7()).String()))
+	response, err := client.GenerationSubmit(t.Context(), submitRequest(owner))
 	if err != nil {
 		panic(err)
 	}
@@ -67,34 +67,45 @@ func TestClient(t *testing.T) {
 	require.NotNil(t, response.GetQueue())
 }
 
-// The submit contract against a running service: a fresh key creates, the same key replays onto the
-// same generation, and a different request under that key is refused.
+// The submit contract against a running service: a resend of the same request replays it, any other
+// request creates, and a cancelled generation is rerun rather than served.
 func TestClientGenerationSubmit(t *testing.T) {
 	t.Parallel()
 
 	client := newClient(t)
 
 	owner := uuid.Must(uuid.NewV7()).String()
-	key := uuid.Must(uuid.NewV7()).String()
 
-	created, err := client.GenerationSubmit(t.Context(), submitRequest(owner, key))
+	created, err := client.GenerationSubmit(t.Context(), submitRequest(owner))
 	require.NoError(t, err)
 	require.True(t, created.GetCreated())
 
-	// A retry attaches to the work already in flight rather than paying for a second run.
-	replayed, err := client.GenerationSubmit(t.Context(), submitRequest(owner, key))
+	// A caller that lost the answer resends the request: it holds no key, and pays nothing more.
+	replayed, err := client.GenerationSubmit(t.Context(), submitRequest(owner))
 	require.NoError(t, err)
 	require.False(t, replayed.GetCreated())
 	require.Equal(t, created.GetGeneration().GetId(), replayed.GetGeneration().GetId())
 
-	// The same key with different content is a caller bug, not a replay.
-	different := submitRequest(owner, key)
-	different.Instructions = "Something else."
-	_, err = client.GenerationSubmit(t.Context(), different)
-	require.Equal(t, codes.AlreadyExists, status.Code(err))
+	// Another variant of the same request is another generation.
+	regenerate := submitRequest(owner)
+	regenerate.Variant = 1
+	variant, err := client.GenerationSubmit(t.Context(), regenerate)
+	require.NoError(t, err)
+	require.True(t, variant.GetCreated())
+
+	// A cancelled generation is not served again: resending its request runs it from scratch.
+	_, err = client.GenerationCancel(t.Context(), &servicegenai.GenerationCancelRequest{
+		Id: created.GetGeneration().GetId(), OwnerId: owner,
+	})
+	require.NoError(t, err)
+
+	rerun, err := client.GenerationSubmit(t.Context(), submitRequest(owner))
+	require.NoError(t, err)
+	require.True(t, rerun.GetCreated())
+	require.NotEqual(t, created.GetGeneration().GetId(), rerun.GetGeneration().GetId())
 
 	// A request without a Tier names no model to run.
-	untiered := submitRequest(owner, uuid.Must(uuid.NewV7()).String())
+	untiered := submitRequest(owner)
 	untiered.Tier = servicegenai.Tier(0)
 	_, err = client.GenerationSubmit(t.Context(), untiered)
 	require.Equal(t, codes.InvalidArgument, status.Code(err))

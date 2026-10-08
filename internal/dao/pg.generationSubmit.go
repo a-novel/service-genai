@@ -1,11 +1,9 @@
 package dao
 
 import (
-	"bytes"
 	"context"
 	_ "embed"
 	"encoding/json"
-	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -18,13 +16,6 @@ import (
 //go:embed pg.generationSubmit.sql
 var generationSubmitQuery string
 
-// ErrGenerationSubmitConflict is returned by [GenerationSubmit.Exec] when the idempotency key is
-// already held by a generation submitted with a different request.
-//
-// A replay attaches to work already in flight; a key reused with different content is a caller bug,
-// and returning the earlier generation would answer a question nobody asked.
-var ErrGenerationSubmitConflict = errors.New("idempotency key already used with a different request")
-
 // GenerationSubmitRequest is the input to [GenerationSubmit.Exec].
 type GenerationSubmitRequest struct {
 	// ID the generation takes if this submission creates it. Minted by the caller, so created and
@@ -34,12 +25,11 @@ type GenerationSubmitRequest struct {
 	OwnerID uuid.UUID
 	// Purpose is what the caller attributes this spend to. Its vocabulary belongs to the caller.
 	Purpose string
-	// IdempotencyKey deduplicates repeat submissions within one owner and purpose.
-	IdempotencyKey string
-	// RequestFingerprint tells a replay from a reused key.
-	RequestFingerprint []byte
-	Request            json.RawMessage
-	MaxAttempts        int16
+	// RequestKey identifies the request: another submission with the same key is a replay while its
+	// generation is pending, running or succeeded.
+	RequestKey  []byte
+	Request     json.RawMessage
+	MaxAttempts int16
 }
 
 // GenerationSubmitResult reports the stored generation and how it got there.
@@ -51,11 +41,11 @@ type GenerationSubmitResult struct {
 	Created bool
 }
 
-// GenerationSubmit records a generation, deduplicating on the idempotency key.
+// GenerationSubmit records a generation, deduplicating on the request key.
 type GenerationSubmit struct{}
 
 func NewGenerationSubmit() *GenerationSubmit {
-	return new(GenerationSubmit)
+	return &GenerationSubmit{}
 }
 
 func (dao *GenerationSubmit) Exec(
@@ -81,8 +71,7 @@ func (dao *GenerationSubmit) Exec(
 		request.ID,
 		request.OwnerID,
 		request.Purpose,
-		request.IdempotencyKey,
-		request.RequestFingerprint,
+		request.RequestKey,
 		request.Request,
 		request.MaxAttempts,
 	).Scan(ctx, entity)
@@ -93,10 +82,6 @@ func (dao *GenerationSubmit) Exec(
 	// Comparing identifiers is what distinguishes the cases: bun discards unknown columns, so a
 	// RETURNING expression such as (xmax = 0) is dropped before it can be read.
 	created := entity.ID == request.ID
-
-	if !created && !bytes.Equal(entity.RequestFingerprint, request.RequestFingerprint) {
-		return nil, otel.ReportError(span, ErrGenerationSubmitConflict)
-	}
 
 	span.SetAttributes(attribute.Bool("generation.created", created))
 

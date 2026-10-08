@@ -26,7 +26,7 @@ Five things shape the contract:
 
 **Callers never name a model.** They pick a Tier (`FAST`, `BALANCED`, `DEEP`), and the provider configuration binds each Tier to a model and a reasoning effort. A model or provider change edits no caller.
 
-**Idempotency is mandatory.** Every submission carries a key, and a replay attaches to the work already in flight rather than starting a second, separately billed one. In a service whose only workload is a priced call, an unkeyed submission is a bug the API refuses rather than a default it tolerates.
+**A resend is a replay.** The service derives each generation's key from the request and its owner, so a caller that lost its connection or crashed sends the same request again and gets the same generation back, running or finished. It keeps no key of its own. A failed or cancelled generation is not served again: resending its request runs it from scratch. To ask for another result of a request that succeeded, send it with the next `variant`.
 
 **A crash re-attaches instead of re-paying.** The provider's own identifier for an in-flight operation is recorded the moment the call starts, and every later check reads it back. No process holds a generation, so a restart or a deploy loses nothing: the next poll or sweep picks up the operation already paid for.
 
@@ -143,7 +143,7 @@ Checks and sweep (images `grpc`, `standalone-grpc`). [Generation checks](./docs/
 | `SWEEP_INTERVAL`   | How often the sweep runs, and how stale a generation must be for it. At most `5m`.                                     | `1m`    |
 | `SWEEP_BATCH_SIZE` | Generations one sweep pass checks.                                                                                     | `50`    |
 | `MAX_ATTEMPTS`     | Provider calls a generation gets when a call fails retryably. Each one is paid.                                        | `2`     |
-| `RETENTION`        | How long a settled generation's content survives before the purge deletes it.                                          | `168h`  |
+| `RETENTION`        | How long a settled generation, its usage and its request key survive before the purge deletes them.                    | `6h`    |
 
 gRPC server:
 
