@@ -30,10 +30,6 @@ type GenerationSubmitRequest struct {
 	// Purpose labels what the spend is attributed to. Required, and otherwise opaque: the vocabulary
 	// belongs to the caller.
 	Purpose string `protobuf:"bytes,2,opt,name=purpose,proto3" json:"purpose,omitempty"`
-	// IdempotencyKey deduplicates repeat submissions within one owner. Required — an unkeyed
-	// submission of a priced call is a bug rather than a default worth tolerating. A value reused
-	// with a different request is a conflict, not a replay.
-	IdempotencyKey string `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
 	// Tier is the level of model capability wanted. Required.
 	Tier Tier `protobuf:"varint,6,opt,name=tier,proto3,enum=anovel.genai.v0.Tier" json:"tier,omitempty"`
 	// Instructions are the trusted channel: the caller's own directions to the model. Required.
@@ -42,7 +38,11 @@ type GenerationSubmitRequest struct {
 	Input []byte `protobuf:"bytes,8,opt,name=input,proto3" json:"input,omitempty"`
 	// OutputSchema is the JSON Schema the output must conform to, within OpenAI's strict-mode subset.
 	// Required. Instructions, input and schema together are at most 3,688,000 bytes.
-	OutputSchema  []byte `protobuf:"bytes,9,opt,name=output_schema,json=outputSchema,proto3" json:"output_schema,omitempty"`
+	OutputSchema []byte `protobuf:"bytes,9,opt,name=output_schema,json=outputSchema,proto3" json:"output_schema,omitempty"`
+	// Variant asks for another generation of a request that already succeeded, such as a regenerate.
+	// Zero by default. A caller recovering from a crash counts variants from zero again, and each one
+	// already run returns its stored result.
+	Variant       uint32 `protobuf:"varint,10,opt,name=variant,proto3" json:"variant,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -91,13 +91,6 @@ func (x *GenerationSubmitRequest) GetPurpose() string {
 	return ""
 }
 
-func (x *GenerationSubmitRequest) GetIdempotencyKey() string {
-	if x != nil {
-		return x.IdempotencyKey
-	}
-	return ""
-}
-
 func (x *GenerationSubmitRequest) GetTier() Tier {
 	if x != nil {
 		return x.Tier
@@ -126,13 +119,20 @@ func (x *GenerationSubmitRequest) GetOutputSchema() []byte {
 	return nil
 }
 
+func (x *GenerationSubmitRequest) GetVariant() uint32 {
+	if x != nil {
+		return x.Variant
+	}
+	return 0
+}
+
 // GenerationSubmitResponse returns the recorded generation and whether this call created it.
 type GenerationSubmitResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Generation is the recorded generation — the newly created one, or the existing one on a replay.
 	Generation *Generation `protobuf:"bytes,1,opt,name=generation,proto3" json:"generation,omitempty"`
-	// Created is false when an existing generation was returned under the same idempotency key, so a
-	// caller retrying a request attaches to work already in flight instead of paying for a second one.
+	// Created is false when a pending, running or succeeded generation of the same request was returned, so a
+	// caller resending after a lost connection attaches to work already paid for.
 	Created       bool `protobuf:"varint,2,opt,name=created,proto3" json:"created,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -186,15 +186,16 @@ var File_anovel_genai_v0_generation_submit_proto protoreflect.FileDescriptor
 
 const file_anovel_genai_v0_generation_submit_proto_rawDesc = "" +
 	"\n" +
-	"'anovel/genai/v0/generation_submit.proto\x12\x0fanovel.genai.v0\x1a anovel/genai/v0/generation.proto\"\xa4\x02\n" +
+	"'anovel/genai/v0/generation_submit.proto\x12\x0fanovel.genai.v0\x1a anovel/genai/v0/generation.proto\"\xac\x02\n" +
 	"\x17GenerationSubmitRequest\x12\x19\n" +
 	"\bowner_id\x18\x01 \x01(\tR\aownerId\x12\x18\n" +
-	"\apurpose\x18\x02 \x01(\tR\apurpose\x12'\n" +
-	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\x12)\n" +
+	"\apurpose\x18\x02 \x01(\tR\apurpose\x12)\n" +
 	"\x04tier\x18\x06 \x01(\x0e2\x15.anovel.genai.v0.TierR\x04tier\x12\"\n" +
 	"\finstructions\x18\a \x01(\tR\finstructions\x12\x14\n" +
 	"\x05input\x18\b \x01(\fR\x05input\x12#\n" +
-	"\routput_schema\x18\t \x01(\fR\foutputSchemaJ\x04\b\x04\x10\x05J\x04\b\x05\x10\x06R\arequestR\fmax_attempts\"q\n" +
+	"\routput_schema\x18\t \x01(\fR\foutputSchema\x12\x18\n" +
+	"\avariant\x18\n" +
+	" \x01(\rR\avariantJ\x04\b\x03\x10\x04J\x04\b\x04\x10\x05J\x04\b\x05\x10\x06R\x0fidempotency_keyR\arequestR\fmax_attempts\"q\n" +
 	"\x18GenerationSubmitResponse\x12;\n" +
 	"\n" +
 	"generation\x18\x01 \x01(\v2\x1b.anovel.genai.v0.GenerationR\n" +

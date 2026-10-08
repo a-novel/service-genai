@@ -4,7 +4,9 @@ package anovel.genai.v0;
 
 import "anovel/genai/v0/generation.proto";
 
-// GenerationSubmitService records a generation for execution, deduplicating on the idempotency key.
+// GenerationSubmitService records a generation and starts it. Resending the same request is a
+// replay: it returns the generation already running or succeeded rather than paying again. A request
+// whose generation failed or was cancelled runs again from scratch.
 service GenerationSubmitService {
   rpc GenerationSubmit(GenerationSubmitRequest) returns (GenerationSubmitResponse);
 }
@@ -17,10 +19,6 @@ message GenerationSubmitRequest {
   // Purpose labels what the spend is attributed to. Required, and otherwise opaque: the vocabulary
   // belongs to the caller.
   string purpose = 2;
-  // IdempotencyKey deduplicates repeat submissions within one owner. Required — an unkeyed
-  // submission of a priced call is a bug rather than a default worth tolerating. A value reused
-  // with a different request is a conflict, not a replay.
-  string idempotency_key = 3;
   // Tier is the level of model capability wanted. Required.
   Tier tier = 6;
   // Instructions are the trusted channel: the caller's own directions to the model. Required.
@@ -31,16 +29,22 @@ message GenerationSubmitRequest {
   // Required. Instructions, input and schema together are at most 3,688,000 bytes.
   bytes output_schema = 9;
 
-  // The caller no longer composes the provider payload, and retries are this service's policy.
-  reserved 4, 5;
-  reserved "request", "max_attempts";
+  // Variant asks for another generation of a request that already succeeded, such as a regenerate.
+  // Zero by default. A caller recovering from a crash counts variants from zero again, and each one
+  // already run returns its stored result.
+  uint32 variant = 10;
+
+  // A request is identified by its own content and owner: the caller keeps no key to recover it.
+  // It no longer composes the provider payload, and retries are this service's policy.
+  reserved 3, 4, 5;
+  reserved "idempotency_key", "request", "max_attempts";
 }
 
 // GenerationSubmitResponse returns the recorded generation and whether this call created it.
 message GenerationSubmitResponse {
   // Generation is the recorded generation — the newly created one, or the existing one on a replay.
   Generation generation = 1;
-  // Created is false when an existing generation was returned under the same idempotency key, so a
-  // caller retrying a request attaches to work already in flight instead of paying for a second one.
+  // Created is false when a pending, running or succeeded generation of the same request was returned, so a
+  // caller resending after a lost connection attaches to work already paid for.
   bool created = 2;
 }
