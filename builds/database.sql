@@ -2,8 +2,8 @@ CREATE EXTENSION IF NOT EXISTS pg_cron;
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- Deletes settled generations once their window has passed. The usage rows describing them carry no
--- user content and are never purged, so nothing about what was consumed is lost.
+-- Deletes settled generations once their window has passed, and with them their usage rows: callers
+-- keep the long-term usage record.
 --
 -- Scheduled here rather than in a migration: RunDBTest clones a database with no cron schema, so a
 -- migration calling cron.schedule would fail every data-access test. The cost is that a

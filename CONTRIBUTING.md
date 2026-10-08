@@ -31,7 +31,7 @@ There is no REST surface: callers are other services on the internal network, so
 
 ## Retention purge
 
-The `database` image schedules a `pg_cron` job that deletes settled generations once `expires_at` has passed. Their usage rows carry no user content and are never purged.
+The `database` image schedules a `pg_cron` job that deletes settled generations once `expires_at` has passed. Their usage rows go with them: callers keep the long-term usage record.
 
 It is scheduled in the image's init SQL rather than in a migration: `postgres.RunDBTest` clones a database with no `cron` schema, so a migration calling `cron.schedule` would fail every data-access test.
 
@@ -49,7 +49,7 @@ Neither is worth thirty days of user content sitting with the provider. Output t
 
 Every request goes out with `store: false`. This service composes the request, so no caller can ask otherwise, and it is the platform's only path to a provider. A caller that chains anyway gets `Item not found` back.
 
-Re-attach does not depend on it: a finished background response stays retrievable for a while, which `store` does not govern. OpenAI documents about ten minutes; on 2026-10-08 it measured over an hour. The sweep reaches every unpolled generation within a minute, and a check re-attaches as soon as a poll or the sweep reaches it. **Revisit this** if a re-attach starts failing with a not-found on an operation that should still be running — that window has moved. A 404 settles the generation as failed, so being wrong costs one result, not a second paid call.
+Re-attach does not depend on it: a finished background response stays retrievable for a while, which `store` does not govern. OpenAI documents about ten minutes; on 2026-10-08 a response was still readable three hours after it finished. The sweep reaches every unpolled generation within a minute, and a check re-attaches as soon as a poll or the sweep reaches it. **Revisit this** if a re-attach starts failing with a not-found on an operation that should still be running — that window has moved. A 404 settles the generation as failed, so being wrong costs one result, not a second paid call.
 
 ---
 
