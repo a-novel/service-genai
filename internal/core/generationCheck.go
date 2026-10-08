@@ -334,6 +334,9 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 func (service *GenerationCheck) requeue(
 	ctx context.Context, generation *dao.Generation, call *lib.ProviderCall,
 ) (*dao.Generation, error) {
+	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(requeue)")
+	defer span.End()
+
 	service.logFailure(ctx, generation, call.Reason)
 
 	var requeued *dao.Generation
@@ -354,7 +357,7 @@ func (service *GenerationCheck) requeue(
 		return service.recordUsage(ctx, generation, call)
 	})
 	if err != nil {
-		return nil, err
+		return nil, otel.ReportError(span, err)
 	}
 
 	return requeued, nil
@@ -368,7 +371,12 @@ func (service *GenerationCheck) requeue(
 func (service *GenerationCheck) settle(
 	ctx context.Context, generation *dao.Generation, call *lib.ProviderCall,
 ) (*dao.Generation, error) {
+	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(settle)")
+	defer span.End()
+
 	status, reason := settleOutcomeOf(call)
+
+	span.SetAttributes(attribute.String("generation.status", string(status)))
 
 	if status == dao.GenerationStatusFailed {
 		service.logFailure(ctx, generation, call.Reason)
@@ -395,7 +403,7 @@ func (service *GenerationCheck) settle(
 		return service.recordUsage(ctx, generation, call)
 	})
 	if err != nil {
-		return nil, err
+		return nil, otel.ReportError(span, err)
 	}
 
 	return settled, nil
@@ -406,6 +414,9 @@ func (service *GenerationCheck) settle(
 func (service *GenerationCheck) settleFailure(
 	ctx context.Context, generation *dao.Generation, reason string,
 ) (*dao.Generation, error) {
+	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(settleFailure)")
+	defer span.End()
+
 	settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), persistenceTimeout)
 	defer cancel()
 
@@ -418,7 +429,7 @@ func (service *GenerationCheck) settleFailure(
 		Retention:      service.config.Retention,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("settle failed generation: %w", err)
+		return nil, otel.ReportError(span, fmt.Errorf("settle failed generation: %w", err))
 	}
 
 	return settled, nil
@@ -427,6 +438,9 @@ func (service *GenerationCheck) settleFailure(
 func (service *GenerationCheck) recordUsage(
 	ctx context.Context, generation *dao.Generation, call *lib.ProviderCall,
 ) error {
+	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(recordUsage)")
+	defer span.End()
+
 	// Absent when the operation never reached the model: there is nothing to account for.
 	if call.Usage == nil {
 		return nil
@@ -448,7 +462,7 @@ func (service *GenerationCheck) recordUsage(
 	// A replay of the same provider result finds the row already there. That is the idempotent
 	// outcome, not a failure.
 	if err != nil && !errors.Is(err, dao.ErrGenerationUsageExists) {
-		return fmt.Errorf("record usage: %w", err)
+		return otel.ReportError(span, fmt.Errorf("record usage: %w", err))
 	}
 
 	return nil
@@ -457,6 +471,9 @@ func (service *GenerationCheck) recordUsage(
 // stopOrphan cancels an accepted call whose generation settled first. Best effort: a failure is
 // logged, and the call runs to completion unread.
 func (service *GenerationCheck) stopOrphan(ctx context.Context, generation *dao.Generation, callID string) {
+	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(stopOrphan)")
+	defer span.End()
+
 	cancelCtx, cancel := context.WithTimeout(ctx, persistenceTimeout)
 	defer cancel()
 
@@ -470,6 +487,9 @@ func (service *GenerationCheck) stopOrphan(ctx context.Context, generation *dao.
 }
 
 func (service *GenerationCheck) logFailure(ctx context.Context, generation *dao.Generation, reason string) {
+	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(logFailure)")
+	defer span.End()
+
 	if reason == "" {
 		reason = "provider returned no failure reason"
 	}
