@@ -5,6 +5,7 @@ SET
   status = ?3,
   output = ?4,
   error = ?5,
+  failure = ?7,
   settled_at = clock_timestamp(),
   expires_at = clock_timestamp() + make_interval(secs => ?6),
   updated_at = clock_timestamp()

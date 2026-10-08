@@ -30,7 +30,9 @@ type GenerationSettleRequest struct {
 	Status GenerationStatus
 	// Output is the provider's structured output on success.
 	Output json.RawMessage
-	// Error is the serialised failure otherwise.
+	// Failure is the kind of failure, set exactly when Status is failed.
+	Failure *string
+	// Error names the cause of a failure or cancellation.
 	Error *string
 	// Retention is how long the settled row survives before the purge takes it.
 	Retention time.Duration
@@ -66,6 +68,7 @@ func (dao *GenerationSettle) Exec(ctx context.Context, request *GenerationSettle
 		request.Output,
 		request.Error,
 		request.Retention.Seconds(),
+		request.Failure,
 	).Scan(ctx, entity)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

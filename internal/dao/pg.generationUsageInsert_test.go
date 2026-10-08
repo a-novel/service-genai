@@ -17,6 +17,8 @@ import (
 func TestGenerationUsageInsert(t *testing.T) {
 	t.Parallel()
 
+	effort := "medium"
+
 	testCases := []struct {
 		name string
 
@@ -33,7 +35,7 @@ func TestGenerationUsageInsert(t *testing.T) {
 			name: "Success",
 
 			usage: &dao.GenerationUsageInsertRequest{
-				Provider: "openai", Model: "a-model-snapshot",
+				Provider: "openai", Model: "a-model-snapshot", ReasoningEffort: &effort,
 				InputTokens: 1000, CachedInputTokens: 200,
 				OutputTokens: 500, ReasoningTokens: 100,
 			},
@@ -44,9 +46,8 @@ func TestGenerationUsageInsert(t *testing.T) {
 			usage: &dao.GenerationUsageInsertRequest{Provider: "openai", Model: "a-model-snapshot"},
 		},
 		{
-			// The row outlives its generation, which is what lets the consumption record be kept
-			// while user content is purged. There is deliberately no foreign key.
-			name: "Success/SurvivesThePurgeOfItsGeneration",
+			// Callers keep long-term usage, so this record goes with the generation it describes.
+			name: "Success/PurgedWithItsGeneration",
 
 			purgeParent: true,
 			usage: &dao.GenerationUsageInsertRequest{
@@ -98,6 +99,7 @@ func TestGenerationUsageInsert(t *testing.T) {
 				}
 
 				require.Equal(t, testCase.usage.Model, usage.Model)
+				require.Equal(t, testCase.usage.ReasoningEffort, usage.ReasoningEffort)
 				require.Equal(t, testCase.usage.InputTokens, usage.InputTokens)
 
 				if !testCase.purgeParent {
@@ -116,7 +118,7 @@ func TestGenerationUsageInsert(t *testing.T) {
 					"SELECT count(*) FROM generation_usage WHERE generation_id = ?0", generation.ID,
 				).Scan(ctx, &remaining)
 				require.NoError(t, err)
-				require.Equal(t, 1, remaining)
+				require.Zero(t, remaining)
 			})
 		})
 	}

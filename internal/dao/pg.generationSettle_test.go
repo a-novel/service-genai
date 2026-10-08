@@ -17,7 +17,8 @@ import (
 func TestGenerationSettle(t *testing.T) {
 	t.Parallel()
 
-	failure := "generation failed"
+	failure := "the provider call failed"
+	kindFailed := "failed"
 	callID := testCallID
 	otherCallID := "resp_other"
 
@@ -34,9 +35,12 @@ func TestGenerationSettle(t *testing.T) {
 		callID  *string
 		status  dao.GenerationStatus
 		output  json.RawMessage
+		failure *string
 		error   *string
 
 		expectErr error
+		// expectRefused is a write the schema itself refuses.
+		expectRefused bool
 	}{
 		{
 			name: "Success/Succeeded",
@@ -54,7 +58,19 @@ func TestGenerationSettle(t *testing.T) {
 			state:   "starting",
 			attempt: 1,
 			status:  dao.GenerationStatusFailed,
+			failure: &kindFailed,
 			error:   &failure,
+		},
+		{
+			// A failed generation always says what kind of failure ended it.
+			name: "Error/FailedWithoutKind",
+
+			state:   "starting",
+			attempt: 1,
+			status:  dao.GenerationStatusFailed,
+			error:   &failure,
+
+			expectRefused: true,
 		},
 		{
 			name: "Success/CancelledBeforeStart",
@@ -91,6 +107,7 @@ func TestGenerationSettle(t *testing.T) {
 			recordAfterRead: true,
 			attempt:         1,
 			status:          dao.GenerationStatusFailed,
+			failure:         &kindFailed,
 			error:           &failure,
 
 			expectErr: dao.ErrGenerationChanged,
@@ -140,9 +157,17 @@ func TestGenerationSettle(t *testing.T) {
 					ProviderCallID: testCase.callID,
 					Status:         testCase.status,
 					Output:         testCase.output,
+					Failure:        testCase.failure,
 					Error:          testCase.error,
 					Retention:      testRetention,
 				})
+				if testCase.expectRefused {
+					require.Error(t, err)
+					require.NotErrorIs(t, err, dao.ErrGenerationChanged)
+
+					return
+				}
+
 				require.ErrorIs(t, err, testCase.expectErr)
 
 				if testCase.expectErr != nil {
@@ -150,6 +175,7 @@ func TestGenerationSettle(t *testing.T) {
 				}
 
 				require.Equal(t, testCase.status, settled.Status)
+				require.Equal(t, testCase.failure, settled.Failure)
 				require.Equal(t, testCase.error, settled.Error)
 				require.NotNil(t, settled.SettledAt)
 				require.NotNil(t, settled.ExpiresAt)

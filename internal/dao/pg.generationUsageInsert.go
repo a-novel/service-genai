@@ -27,9 +27,10 @@ type GenerationUsageInsertRequest struct {
 	Attempt      int16
 	OwnerID      uuid.UUID
 	Purpose      string
-	// Provider and Model as the provider reported them, not as the request asked.
-	Provider string
-	Model    string
+	// Provider, Model and ReasoningEffort as the provider reported them, not as the request asked.
+	Provider        string
+	Model           string
+	ReasoningEffort *string
 
 	InputTokens       int64
 	CachedInputTokens int64
@@ -78,6 +79,7 @@ func (dao *GenerationUsageInsert) Exec(
 		request.CachedInputTokens,
 		request.OutputTokens,
 		request.ReasoningTokens,
+		request.ReasoningEffort,
 	).Scan(ctx, entity)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
