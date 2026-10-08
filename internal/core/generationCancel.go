@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/attribute"
@@ -13,9 +14,22 @@ import (
 	"github.com/a-novel/service-genai/internal/dao"
 )
 
-// GenerationCancelDao is the data-access dependency of [GenerationCancel].
-type GenerationCancelDao interface {
-	Exec(ctx context.Context, request *dao.GenerationRequestCancelRequest) (*dao.Generation, error)
+// Dependencies of [GenerationCancel].
+type (
+	// GenerationCancelDao cancels or marks the generation.
+	GenerationCancelDao interface {
+		Exec(ctx context.Context, request *dao.GenerationRequestCancelRequest) (*dao.Generation, error)
+	}
+	// GenerationCancelServiceCheck stops a running provider call.
+	GenerationCancelServiceCheck interface {
+		Exec(ctx context.Context, request *GenerationCheckRequest) (*dao.Generation, error)
+	}
+)
+
+// GenerationCancelConfig is what a [GenerationCancel] needs to run.
+type GenerationCancelConfig struct {
+	// Retention is how long a settled generation's user content survives before the purge.
+	Retention time.Duration `validate:"required"`
 }
 
 // GenerationCancelRequest holds the parameters for a [GenerationCancel.Exec] call.
@@ -24,17 +38,26 @@ type GenerationCancelRequest struct {
 	OwnerID uuid.UUID `validate:"required"`
 }
 
-// A GenerationCancel asks for a generation to be stopped.
+// A GenerationCancel stops a generation.
 //
-// It marks the request and returns; it does not stop anything itself. The worker holding the
-// generation observes the mark at its next poll, cancels the provider operation, and settles —
-// recording whatever was consumed before the stop, because a cancelled call is not a free one.
+// One that never started is settled at once. One whose provider call is known is checked right
+// away, which cancels the call and settles it with whatever it consumed: a cancelled call is not a
+// free one. One whose start is in flight is only marked, and the next check stops it.
 type GenerationCancel struct {
-	dao GenerationCancelDao
+	config GenerationCancelConfig
+	dao    GenerationCancelDao
+	check  GenerationCancelServiceCheck
 }
 
-func NewGenerationCancel(cancelDao GenerationCancelDao) *GenerationCancel {
-	return &GenerationCancel{dao: cancelDao}
+func NewGenerationCancel(
+	config GenerationCancelConfig, cancelDao GenerationCancelDao, check GenerationCancelServiceCheck,
+) (*GenerationCancel, error) {
+	err := validate.Struct(config)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
+	}
+
+	return &GenerationCancel{config: config, dao: cancelDao, check: check}, nil
 }
 
 func (service *GenerationCancel) Exec(
@@ -54,7 +77,10 @@ func (service *GenerationCancel) Exec(
 	}
 
 	generation, err := service.dao.Exec(ctx, &dao.GenerationRequestCancelRequest{
-		ID: request.ID, OwnerID: request.OwnerID,
+		ID:        request.ID,
+		OwnerID:   request.OwnerID,
+		Error:     generationCancelledReason,
+		Retention: service.config.Retention,
 	})
 
 	if errors.Is(err, dao.ErrGenerationNotCancellable) {
@@ -63,6 +89,13 @@ func (service *GenerationCancel) Exec(
 
 	if err != nil {
 		return nil, otel.ReportError(span, fmt.Errorf("cancel generation: %w", err))
+	}
+
+	if generation.ProviderCallID != nil && generation.SettledAt == nil {
+		generation, err = service.check.Exec(ctx, &GenerationCheckRequest{Generation: generation})
+		if err != nil {
+			return nil, otel.ReportError(span, fmt.Errorf("stop provider call: %w", err))
+		}
 	}
 
 	return newGeneration(generation), nil

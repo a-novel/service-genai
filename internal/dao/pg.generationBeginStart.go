@@ -16,25 +16,22 @@ import (
 //go:embed pg.generationBeginStart.sql
 var generationBeginStartQuery string
 
-// GenerationBeginStartRequest identifies the live claim to control.
+// GenerationBeginStartRequest identifies the generation to start.
 type GenerationBeginStartRequest struct {
-	// ClaimToken must match the acquisition whose lease is still live.
-	ClaimToken uuid.UUID
-	ID         uuid.UUID
-	WorkerID   string
+	ID uuid.UUID
 }
 
-// GenerationBeginStart records Start intent unless cancellation has already committed.
+// GenerationBeginStart takes the next attempt and records that its provider call may be sent.
+//
+// It refuses with [ErrGenerationChanged] unless the generation is pending, due, not cancelled and
+// not already starting, so one check at most sends each attempt.
 type GenerationBeginStart struct{}
 
 func NewGenerationBeginStart() *GenerationBeginStart {
 	return &GenerationBeginStart{}
 }
 
-func (dao *GenerationBeginStart) Exec(
-	ctx context.Context,
-	request *GenerationBeginStartRequest,
-) (*Generation, error) {
+func (dao *GenerationBeginStart) Exec(ctx context.Context, request *GenerationBeginStartRequest) (*Generation, error) {
 	ctx, span := otel.Tracer().Start(ctx, "dao.GenerationBeginStart")
 	defer span.End()
 
@@ -45,15 +42,10 @@ func (dao *GenerationBeginStart) Exec(
 
 	entity := &Generation{}
 
-	err = tx.NewRaw(
-		generationBeginStartQuery,
-		request.ID,
-		request.WorkerID,
-		request.ClaimToken,
-	).Scan(ctx, entity)
+	err = tx.NewRaw(generationBeginStartQuery, request.ID).Scan(ctx, entity)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			err = errors.Join(err, ErrGenerationNotHeld)
+			err = errors.Join(err, ErrGenerationChanged)
 		}
 
 		return nil, otel.ReportError(span, fmt.Errorf("execute query: %w", err))

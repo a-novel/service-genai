@@ -27,16 +27,16 @@ type GenerationStatus int32
 const (
 	// GENERATION_STATUS_UNSPECIFIED means the status was not set. Never a value the service stores.
 	GenerationStatus_GENERATION_STATUS_UNSPECIFIED GenerationStatus = 0
-	// GENERATION_STATUS_PENDING means the generation is waiting to be picked up.
+	// GENERATION_STATUS_PENDING means no provider call has been accepted for the current attempt yet.
 	GenerationStatus_GENERATION_STATUS_PENDING GenerationStatus = 1
-	// GENERATION_STATUS_RUNNING means a worker holds a lease and is executing it.
+	// GENERATION_STATUS_RUNNING means the provider accepted the call and it has not settled yet.
 	GenerationStatus_GENERATION_STATUS_RUNNING GenerationStatus = 2
 	// GENERATION_STATUS_SUCCEEDED means the provider returned a usable output.
 	GenerationStatus_GENERATION_STATUS_SUCCEEDED GenerationStatus = 3
 	// GENERATION_STATUS_FAILED means the generation failed with no attempt left to retry.
 	GenerationStatus_GENERATION_STATUS_FAILED GenerationStatus = 4
-	// GENERATION_STATUS_ABANDONED means the lease expired with no attempt remaining — the worker
-	// running it died mid-run.
+	// GENERATION_STATUS_ABANDONED is no longer produced: no process holds a generation, so none is
+	// left behind when one dies.
 	GenerationStatus_GENERATION_STATUS_ABANDONED GenerationStatus = 5
 	// GENERATION_STATUS_CANCELLED means the generation was stopped on the owner's request.
 	GenerationStatus_GENERATION_STATUS_CANCELLED GenerationStatus = 6

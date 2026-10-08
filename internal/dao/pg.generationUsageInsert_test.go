@@ -75,11 +75,11 @@ func TestGenerationUsageInsert(t *testing.T) {
 				t.Helper()
 
 				generation := seedGeneration(ctx, t, 1)
-				claimed := claimGenerations(ctx, t)
+				running := runGeneration(ctx, t, generation.ID)
 
 				request := *testCase.usage
-				request.GenerationID = claimed[0].ID
-				request.Attempt = claimed[0].Attempt
+				request.GenerationID = running.ID
+				request.Attempt = running.Attempt
 				request.OwnerID = generation.OwnerID
 				request.Purpose = generation.Purpose
 

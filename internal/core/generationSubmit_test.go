@@ -39,6 +39,8 @@ func TestGenerationSubmit(t *testing.T) {
 		request *core.GenerationSubmitRequest
 
 		daoMock *daoMock
+		// checkErr is what starting a created generation returns. A replay is never started here.
+		checkErr error
 
 		// expectMaxAttempts is what the data access must be asked for, after the default is applied.
 		expectMaxAttempts int16
@@ -177,6 +179,22 @@ func TestGenerationSubmit(t *testing.T) {
 			expectErr: core.ErrInvalidRequest,
 		},
 		{
+			// The generation is recorded, so a resend finds it; the caller learns the start failed.
+			name: "Error/Start",
+
+			request: &core.GenerationSubmitRequest{
+				OwnerID: owner, Purpose: "studio.generation", IdempotencyKey: "key",
+				Request: json.RawMessage(`{"model": "a-model"}`),
+			},
+			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{
+				Generation: &dao.Generation{}, Created: true,
+			}},
+			checkErr: errFoo,
+
+			expectMaxAttempts: 1,
+			expectErr:         errFoo,
+		},
+		{
 			name: "Error/IdempotencyConflict",
 
 			request: &core.GenerationSubmitRequest{
@@ -195,6 +213,7 @@ func TestGenerationSubmit(t *testing.T) {
 			t.Parallel()
 
 			submitDao := coremocks.NewMockGenerationSubmitDao(t)
+			check := coremocks.NewMockGenerationSubmitServiceCheck(t)
 
 			if testCase.daoMock != nil {
 				submitDao.EXPECT().
@@ -206,9 +225,15 @@ func TestGenerationSubmit(t *testing.T) {
 							request.ID != uuid.Nil
 					})).
 					Return(testCase.daoMock.resp, testCase.daoMock.err)
+
+				if testCase.daoMock.resp != nil && testCase.daoMock.resp.Created {
+					check.EXPECT().
+						Exec(mock.Anything, &core.GenerationCheckRequest{Generation: testCase.daoMock.resp.Generation}).
+						Return(testCase.daoMock.resp.Generation, testCase.checkErr)
+				}
 			}
 
-			result, err := core.NewGenerationSubmit(submitDao).Exec(t.Context(), testCase.request)
+			result, err := core.NewGenerationSubmit(submitDao, check).Exec(t.Context(), testCase.request)
 			require.ErrorIs(t, err, testCase.expectErr)
 
 			if testCase.expectErr != nil {
@@ -219,6 +244,7 @@ func TestGenerationSubmit(t *testing.T) {
 			}
 
 			submitDao.AssertExpectations(t)
+			check.AssertExpectations(t)
 		})
 	}
 }

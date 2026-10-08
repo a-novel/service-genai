@@ -19,41 +19,51 @@ func TestGenerationRecordProviderCall(t *testing.T) {
 	testCases := []struct {
 		name string
 
-		// recordFirst is an identifier written before the one under test.
-		recordFirst string
-		// worker recording the call. A worker that does not hold the claim must be refused.
-		worker string
+		// state is how far the seeded generation goes before the record.
+		state   string
+		attempt int16
 
-		providerCallID string
-
-		expect    string
 		expectErr error
 	}{
 		{
 			name: "Success",
 
-			worker:         testWorker,
-			providerCallID: "resp_1",
-
-			expect: "resp_1",
+			state:   "starting",
+			attempt: 1,
 		},
 		{
-			// An operation already made durable cannot be replaced by a different ID.
-			name: "Error/RefusesAReplacementIdentifier",
+			name: "Error/OtherAttempt",
 
-			recordFirst:    "resp_1",
-			worker:         testWorker,
-			providerCallID: "resp_2",
+			state:   "starting",
+			attempt: 2,
 
-			expectErr: dao.ErrGenerationNotHeld,
+			expectErr: dao.ErrGenerationChanged,
 		},
 		{
-			name: "Error/NotHeldByThisWorker",
+			name: "Error/NeverStarted",
 
-			worker:         "someone-else",
-			providerCallID: "resp_1",
+			state:   "pending",
+			attempt: 0,
 
-			expectErr: dao.ErrGenerationNotHeld,
+			expectErr: dao.ErrGenerationChanged,
+		},
+		{
+			name: "Error/AlreadyRecorded",
+
+			state:   "running",
+			attempt: 1,
+
+			expectErr: dao.ErrGenerationChanged,
+		},
+		{
+			// Another check settled the attempt as unknown while this start was in flight. The
+			// refusal is how the caller learns its accepted call is an orphan.
+			name: "Error/SettledWhileStarting",
+
+			state:   "settled",
+			attempt: 1,
+
+			expectErr: dao.ErrGenerationChanged,
 		},
 	}
 
@@ -66,30 +76,29 @@ func TestGenerationRecordProviderCall(t *testing.T) {
 			postgrestest.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
 				t.Helper()
 
-				seedGeneration(ctx, t, 1)
-				claimed := claimGenerations(ctx, t)
+				generation := seedGeneration(ctx, t, 1)
 
-				if testCase.recordFirst != "" {
-					_, err := daoRecord.Exec(ctx, &dao.GenerationRecordProviderCallRequest{
-						ClaimToken: claimed[0].ClaimToken,
-						ID:         claimed[0].ID, WorkerID: testWorker, ProviderCallID: testCase.recordFirst,
-					})
-					require.NoError(t, err)
+				switch testCase.state {
+				case "starting":
+					startGeneration(ctx, t, generation.ID)
+				case "running":
+					runGeneration(ctx, t, generation.ID)
+				case "settled":
+					settleGeneration(ctx, t, startGeneration(ctx, t, generation.ID))
 				}
 
-				result, err := daoRecord.Exec(ctx, &dao.GenerationRecordProviderCallRequest{
-					ClaimToken: claimed[0].ClaimToken,
-					ID:         claimed[0].ID, WorkerID: testCase.worker, ProviderCallID: testCase.providerCallID,
+				recorded, err := daoRecord.Exec(ctx, &dao.GenerationRecordProviderCallRequest{
+					ID: generation.ID, Attempt: testCase.attempt, ProviderCallID: "resp_new",
 				})
 				require.ErrorIs(t, err, testCase.expectErr)
 
 				if testCase.expectErr != nil {
-					require.Nil(t, result)
-
 					return
 				}
 
-				require.Equal(t, testCase.expect, *result.ProviderCallID)
+				require.Equal(t, dao.GenerationStatusRunning, recorded.Status)
+				require.Equal(t, "resp_new", *recorded.ProviderCallID)
+				require.Equal(t, testCase.attempt, recorded.Attempt)
 			})
 		})
 	}

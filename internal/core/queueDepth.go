@@ -17,7 +17,7 @@ type QueueDepthDao interface {
 
 // QueueDepthResult is the backlog, as the health report states it.
 type QueueDepthResult struct {
-	// Pending is how many generations are due and unclaimed.
+	// Pending is how many generations are due to start and not started.
 	Pending int64
 	// OldestPendingAge is how long the oldest of them has waited. A count alone cannot tell a queue
 	// absorbing a burst from a stalled one; this is what separates them.

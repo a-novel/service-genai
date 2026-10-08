@@ -126,8 +126,7 @@ func TestClientGenerationGet(t *testing.T) {
 	require.Equal(t, codes.NotFound, status.Code(err))
 }
 
-// Cancelling records the request and leaves the status alone: the worker settles it once the
-// provider operation has actually stopped, so what was spent before the stop is still recorded.
+// A generation whose start never reached the provider is cancelled at once: there is no call to stop.
 func TestClientGenerationCancel(t *testing.T) {
 	t.Parallel()
 
@@ -140,7 +139,7 @@ func TestClientGenerationCancel(t *testing.T) {
 		Id: generation.GetId(), OwnerId: owner,
 	})
 	require.NoError(t, err)
-	require.NotEqual(t, servicegenai.GenerationStatusCancelled, cancelled.GetGeneration().GetStatus())
+	require.Equal(t, servicegenai.GenerationStatusCancelled, cancelled.GetGeneration().GetStatus())
 
 	// Another owner cannot stop it, and is told the same thing as if it did not exist.
 	_, err = client.GenerationCancel(t.Context(), &servicegenai.GenerationCancelRequest{

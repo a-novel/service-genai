@@ -13,17 +13,14 @@ import (
 type GenerationStatus string
 
 const (
-	// GenerationStatusPending means the generation is waiting to be picked up.
+	// GenerationStatusPending means no provider call has been accepted for the current attempt yet.
 	GenerationStatusPending GenerationStatus = "pending"
-	// GenerationStatusRunning means a worker holds a lease on the generation and is executing it.
+	// GenerationStatusRunning means the provider accepted the call and it has not settled yet.
 	GenerationStatusRunning GenerationStatus = "running"
 	// GenerationStatusSucceeded means the provider returned a usable output.
 	GenerationStatusSucceeded GenerationStatus = "succeeded"
 	// GenerationStatusFailed means the generation failed with no attempt left to retry.
 	GenerationStatusFailed GenerationStatus = "failed"
-	// GenerationStatusAbandoned means the lease expired with no attempt remaining — the worker
-	// executing it died mid-run.
-	GenerationStatusAbandoned GenerationStatus = "abandoned"
 	// GenerationStatusCancelled means the generation was settled on the owner's request rather than
 	// by running to completion.
 	GenerationStatusCancelled GenerationStatus = "cancelled"
@@ -53,16 +50,14 @@ type Generation struct {
 	Attempt     int16            `bun:"attempt"`
 	MaxAttempts int16            `bun:"max_attempts"`
 
-	// ClaimToken identifies one acquisition, including a re-attachment to the same inference attempt.
-	ClaimToken uuid.UUID `bun:"claim_token,type:uuid,nullzero"`
+	// RunAt is the earliest time the next start may be sent.
+	RunAt time.Time `bun:"run_at"`
 	// StartRequestedAt records that paid work may exist even before its provider ID is durable.
-	StartRequestedAt *time.Time `bun:"start_requested_at,nullzero"`
-
-	RunAt             time.Time  `bun:"run_at"`
-	LeaseExpiresAt    *time.Time `bun:"lease_expires_at,nullzero"`
-	ClaimedBy         *string    `bun:"claimed_by,nullzero"`
-	CancelRequestedAt *time.Time `bun:"cancel_requested_at,nullzero"`
+	StartRequestedAt  *time.Time `bun:"start_requested_at,nullzero"`
 	ProviderCallID    *string    `bun:"provider_call_id,nullzero"`
+	CancelRequestedAt *time.Time `bun:"cancel_requested_at,nullzero"`
+	// CheckedAt is when a check last looked at the generation, by the database clock.
+	CheckedAt time.Time `bun:"checked_at"`
 
 	CreatedAt time.Time  `bun:"created_at"`
 	UpdatedAt time.Time  `bun:"updated_at"`

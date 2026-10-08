@@ -40,9 +40,9 @@ message DependencyHealth {
 // cannot tell a queue absorbing a burst from a stalled one, and the oldest-pending age is what
 // separates them.
 message QueueDepth {
-  // pending is the number of generations due to run that no worker has claimed yet.
+  // pending is the number of generations due to start whose provider call has not been sent.
   int64 pending = 1;
-  // oldest_pending_age_seconds is how long the oldest due-and-unclaimed generation has waited.
+  // oldest_pending_age_seconds is how long the oldest of them has waited.
   // Zero when nothing is pending.
   double oldest_pending_age_seconds = 2;
 }

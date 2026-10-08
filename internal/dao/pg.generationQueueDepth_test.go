@@ -20,8 +20,8 @@ func TestGenerationQueueDepth(t *testing.T) {
 		name string
 
 		pending int
-		// claimed takes work out of the backlog before the read.
-		claimed bool
+		// started takes work out of the backlog before the read.
+		started bool
 
 		expectPending int
 		expectWaiting bool
@@ -38,12 +38,12 @@ func TestGenerationQueueDepth(t *testing.T) {
 			expectWaiting: true,
 		},
 		{
-			// Claimed work is in flight, not backlog. Counting it would hide a stalled queue behind
+			// Started work is in flight, not backlog. Counting it would hide a stalled queue behind
 			// a busy one.
-			name: "Success/ClaimedWorkIsNotBacklog",
+			name: "Success/StartedWorkIsNotBacklog",
 
 			pending: 2,
-			claimed: true,
+			started: true,
 		},
 	}
 
@@ -57,11 +57,11 @@ func TestGenerationQueueDepth(t *testing.T) {
 				t.Helper()
 
 				for range testCase.pending {
-					seedGeneration(ctx, t, 1)
-				}
+					generation := seedGeneration(ctx, t, 1)
 
-				if testCase.claimed {
-					claimGenerations(ctx, t)
+					if testCase.started {
+						startGeneration(ctx, t, generation.ID)
+					}
 				}
 
 				depth, err := daoQueueDepth.Exec(ctx)

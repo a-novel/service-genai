@@ -49,7 +49,7 @@ Neither is worth thirty days of user content sitting with the provider. Output t
 
 Every request goes out with `store: false`, overwriting whatever the caller sent, since this service is the platform's only path to a provider. A caller that chains anyway gets `Item not found` back.
 
-Re-attach does not depend on it: a background response stays on the provider's disk for about ten minutes so it can be polled, which `store` does not govern, and a restarted worker re-attaches within seconds. **Revisit this** if a re-attach starts failing with a not-found on an operation that should still be running — that window has moved. A 404 settles the generation as failed, so being wrong costs one result, not a second paid call.
+Re-attach does not depend on it: a background response stays on the provider's disk for about ten minutes so it can be polled, which `store` does not govern, and a check re-attaches as soon as a poll or the sweep reaches it. **Revisit this** if a re-attach starts failing with a not-found on an operation that should still be running — that window has moved. A 404 settles the generation as failed, so being wrong costs one result, not a second paid call.
 
 ---
 
@@ -72,7 +72,7 @@ err := service.transactor.WithinTx(ctx, func(ctx context.Context) error {
 service := core.NewSomeService(daoSomething, postgres.NewTransactor(nil))
 ```
 
-The worker uses one where a settle or requeue writes the usage row and the generation together. A single write needs no transaction.
+A check uses one where a settle or requeue writes the usage row and the generation together. A single write needs no transaction.
 
 **Pass the callback's `ctx` down, not the outer one.** Data-access objects resolve their database handle from the context, and the transaction is installed on the context the callback receives. An inner call given the outer context runs on the connection pool and commits on its own, while the surrounding block still reports success. That is not hypothetical: it is what a sibling service did in four operations for months, with a green build the whole time.
 

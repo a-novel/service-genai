@@ -71,18 +71,7 @@ func main() {
 	// DAO
 	// =================================================================================================================
 
-	daoClaim := dao.NewGenerationClaim()
-	daoRecordProviderCall := dao.NewGenerationRecordProviderCall()
-	daoSettle := dao.NewGenerationSettle()
-	daoObserveLater := dao.NewGenerationObserveLater()
-	daoRequeue := dao.NewGenerationRequeue()
-	daoUsageInsert := dao.NewGenerationUsageInsert()
-	daoReap := dao.NewGenerationReap()
-	daoSubmit := dao.NewGenerationSubmit()
 	daoGet := dao.NewGenerationGet()
-	daoRequestCancel := dao.NewGenerationRequestCancel()
-	daoQueueDepth := dao.NewGenerationQueueDepth()
-	daoUsageQuery := dao.NewGenerationUsageQuery()
 
 	// =================================================================================================================
 	// SERVICES
@@ -90,42 +79,41 @@ func main() {
 
 	provider := lib.NewOpenAI(providerOptions(cfg.Provider)...)
 
-	generationWorker := lo.Must(core.NewWorker(
-		core.WorkerConfig{
-			ID:           cfg.Worker.ID,
-			Lease:        cfg.Worker.Lease,
-			BatchSize:    cfg.Worker.BatchSize,
-			PollInterval: cfg.Worker.PollInterval,
-			Retention:    cfg.Retention,
-		},
+	serviceCheck := lo.Must(core.NewGenerationCheck(
+		core.GenerationCheckConfig{Retention: cfg.Retention},
 		cfg.Log,
 		provider,
 		postgres.NewTransactor(nil),
-		core.WorkerDaos{
-			Claim:        daoClaim,
-			Control:      dao.NewGenerationControl(),
+		core.GenerationCheckDaos{
 			BeginStart:   dao.NewGenerationBeginStart(),
-			Record:       daoRecordProviderCall,
-			Settle:       daoSettle,
-			ObserveLater: daoObserveLater,
-			Requeue:      daoRequeue,
-			Usage:        daoUsageInsert,
+			ReleaseStart: dao.NewGenerationReleaseStart(),
+			Record:       dao.NewGenerationRecordProviderCall(),
+			Settle:       dao.NewGenerationSettle(),
+			Requeue:      dao.NewGenerationRequeue(),
+			Usage:        dao.NewGenerationUsageInsert(),
+			Get:          daoGet,
 		},
 	))
 
-	serviceSubmit := core.NewGenerationSubmit(daoSubmit)
-	serviceGet := core.NewGenerationGet(daoGet)
-	serviceCancel := core.NewGenerationCancel(daoRequestCancel)
-	serviceQueueDepth := core.NewQueueDepth(daoQueueDepth)
-	serviceUsageQuery := core.NewUsageQuery(daoUsageQuery)
+	serviceSubmit := core.NewGenerationSubmit(dao.NewGenerationSubmit(), serviceCheck)
+	serviceGet := lo.Must(core.NewGenerationGet(
+		core.GenerationGetConfig{CheckInterval: cfg.CheckInterval},
+		daoGet,
+		dao.NewGenerationElectCheck(),
+		serviceCheck,
+	))
+	serviceCancel := lo.Must(core.NewGenerationCancel(
+		core.GenerationCancelConfig{Retention: cfg.Retention},
+		dao.NewGenerationRequestCancel(),
+		serviceCheck,
+	))
+	serviceQueueDepth := core.NewQueueDepth(dao.NewGenerationQueueDepth())
+	serviceUsageQuery := core.NewUsageQuery(dao.NewGenerationUsageQuery())
 
-	reaper := lo.Must(core.NewReaper(
-		core.ReaperConfig{
-			Grace:     cfg.Reaper.Grace,
-			BatchSize: cfg.Reaper.BatchSize,
-			Retention: cfg.Retention,
-		},
-		daoReap,
+	sweep := lo.Must(core.NewGenerationSweep(
+		core.GenerationSweepConfig{Interval: cfg.Sweep.Interval, BatchSize: cfg.Sweep.BatchSize},
+		dao.NewGenerationSweep(),
+		serviceCheck,
 	))
 
 	// =================================================================================================================
@@ -182,12 +170,9 @@ func main() {
 	// RUN
 	// =================================================================================================================
 
-	// The worker and the reaper run in this process. Neither needs a network hop, and an always-on
-	// container is already paid for.
-	//
-	// They take the boot context, not a request one: a request context dies at the server's own
-	// timeout, and a generation outlives that by design. The stagger keeps two loops sharing an
-	// interval from waking together.
+	// The sweep runs in this process and takes the boot context: a request context dies at the
+	// server's own timeout. It only catches generations nobody polled, so one loop per replica is
+	// enough.
 	log.Println("Starting gRPC server on :" + strconv.Itoa(cfg.Grpc.Port))
 
 	serveErr := runProcess(
@@ -197,14 +182,7 @@ func main() {
 			return grpcf.Serve(ctx, server, fmt.Sprintf("0.0.0.0:%d", cfg.Grpc.Port), cfg.Grpc.Shutdown)
 		},
 		func(ctx context.Context) error {
-			return runLoop(
-				ctx, cfg.Log, "generation-worker", cfg.Worker.Interval, 0, generationWorker.RunOnce,
-			)
-		},
-		func(ctx context.Context) error {
-			return runLoop(
-				ctx, cfg.Log, "generation-reaper", cfg.Reaper.Interval, time.Second, reaper.RunOnce,
-			)
+			return runLoop(ctx, cfg.Log, "generation-sweep", cfg.Sweep.Interval, 0, sweep.RunOnce)
 		},
 	)
 	if serveErr != nil {

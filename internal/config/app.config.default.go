@@ -29,7 +29,7 @@ var LoggerProd = loggingpresets.GRPCGcloud{
 // LoggerDev pretty-prints logs to the console for local development.
 var LoggerDev = loggingpresets.GRPCLocal{}
 
-// LogDev and LogProd are what the background loops write to.
+// LogDev and LogProd are what checks and the sweep write to.
 var (
 	LogDev = &loggingpresets.LogLocal{Out: os.Stdout}
 
@@ -49,18 +49,11 @@ var AppPresetDefault = App{
 		Shutdown: env.GrpcTimeoutShutdown,
 	},
 
-	Worker: Worker{
-		ID:           env.WorkerID,
-		Interval:     env.WorkerInterval,
-		Lease:        env.WorkerLease,
-		BatchSize:    env.WorkerBatchSize,
-		PollInterval: env.WorkerPollInterval,
+	Sweep: Sweep{
+		Interval:  env.SweepInterval,
+		BatchSize: env.SweepBatchSize,
 	},
-	Reaper: Reaper{
-		Interval:  env.ReaperInterval,
-		Grace:     env.ReaperGrace,
-		BatchSize: env.ReaperBatchSize,
-	},
+	CheckInterval: env.CheckInterval,
 	Provider: Provider{
 		APIKey:  env.OpenAIAPIKey,
 		BaseURL: env.OpenAIBaseURL,

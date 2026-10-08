@@ -16,18 +16,18 @@ import (
 //go:embed pg.generationRecordProviderCall.sql
 var generationRecordProviderCallQuery string
 
-// GenerationRecordProviderCallRequest is the input to [GenerationRecordProviderCall.Exec].
+// GenerationRecordProviderCallRequest attaches a provider operation to the attempt that started it.
 type GenerationRecordProviderCallRequest struct {
-	// ClaimToken must match the acquisition whose lease is still live.
-	ClaimToken uuid.UUID
-	ID         uuid.UUID
-	WorkerID   string
-	// ProviderCallID is the provider's own identifier for the operation just started. Recording it
-	// is what makes the generation resumable.
+	ID      uuid.UUID
+	Attempt int16
+	// ProviderCallID is the provider's identifier for the accepted operation.
 	ProviderCallID string
 }
 
-// GenerationRecordProviderCall attaches a provider operation to a running generation.
+// GenerationRecordProviderCall records the provider operation an attempt started.
+//
+// [ErrGenerationChanged] means the generation settled while the start was in flight: the
+// accepted operation belongs to nothing and the caller stops it.
 type GenerationRecordProviderCall struct{}
 
 func NewGenerationRecordProviderCall() *GenerationRecordProviderCall {
@@ -45,14 +45,14 @@ func (dao *GenerationRecordProviderCall) Exec(
 		return nil, otel.ReportError(span, fmt.Errorf("get transaction: %w", err))
 	}
 
-	entity := new(Generation)
+	entity := &Generation{}
 
 	err = tx.NewRaw(
-		generationRecordProviderCallQuery, request.ID, request.WorkerID, request.ProviderCallID, request.ClaimToken,
+		generationRecordProviderCallQuery, request.ID, request.Attempt, request.ProviderCallID,
 	).Scan(ctx, entity)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			err = errors.Join(err, ErrGenerationNotHeld)
+			err = errors.Join(err, ErrGenerationChanged)
 		}
 
 		return nil, otel.ReportError(span, fmt.Errorf("execute query: %w", err))

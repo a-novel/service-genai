@@ -490,7 +490,8 @@ func TestOpenAIStartTimeoutIsAmbiguous(t *testing.T) {
 	require.Equal(t, int32(1), requests.Load())
 }
 
-// A dial failure gives no proof that the provider rejected the operation.
+// A failed dial proves nothing reached the provider, so the start is safe to retry rather than
+// settled as an unknown outcome.
 func TestOpenAITransportFailure(t *testing.T) {
 	t.Parallel()
 
@@ -506,7 +507,7 @@ func TestOpenAITransportFailure(t *testing.T) {
 		GenerationID: "01999999-0000-7000-8000-000000000001",
 		Attempt:      1,
 	})
-	require.ErrorIs(t, err, lib.ErrProviderStartAmbiguous)
+	require.ErrorIs(t, err, lib.ErrProviderRetryable)
 }
 
 // A request that is not a JSON object cannot have the two owned fields merged into it, and that is
