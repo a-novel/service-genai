@@ -127,7 +127,8 @@ jobs:
           image_name: ${{ github.repository }}/grpc
           version: ${{ needs.release.outputs.version }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          run_args: -e POSTGRES_DSN="${POSTGRES_DSN}"
+          # The server refuses to start without a provider key. The smoke run never calls the provider.
+          run_args: -e POSTGRES_DSN="${POSTGRES_DSN}" -e PROVIDER_API_KEY=smoke-test
 
   build-standalone-grpc:
     needs: [release, build-database]
@@ -152,7 +153,8 @@ jobs:
           image_name: ${{ github.repository }}/standalone-grpc
           version: ${{ needs.release.outputs.version }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          run_args: -e POSTGRES_DSN="${POSTGRES_DSN}"
+          # The server refuses to start without a provider key. The smoke run never calls the provider.
+          run_args: -e POSTGRES_DSN="${POSTGRES_DSN}" -e PROVIDER_API_KEY=smoke-test
 
   archive:
     needs:
