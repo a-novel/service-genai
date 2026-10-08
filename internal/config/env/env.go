@@ -162,7 +162,7 @@ var (
 	// CheckInterval is how long a check stays fresh.
 	CheckInterval = config.LoadEnv(checkInterval, CheckIntervalDefault, config.DurationParser)
 	// MaxAttempts caps the provider calls a generation gets when a call fails retryably.
-	MaxAttempts = int16(config.LoadEnv(maxAttempts, MaxAttemptsDefault, config.IntParser))
+	MaxAttempts = config.LoadEnv(maxAttempts, MaxAttemptsDefault, config.Int16Parser)
 
 	// Retention is how long a settled generation's user content survives before the purge.
 	Retention = config.LoadEnv(retention, RetentionDefault, config.DurationParser)
