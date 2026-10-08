@@ -24,6 +24,9 @@ type (
 	GenerationGetResponse    = genaiv0.GenerationGetResponse
 	GenerationCancelRequest  = genaiv0.GenerationCancelRequest
 	GenerationCancelResponse = genaiv0.GenerationCancelResponse
+	TierListRequest          = genaiv0.TierListRequest
+	TierListResponse         = genaiv0.TierListResponse
+	TierCeilings             = genaiv0.TierCeilings
 
 	Generation        = genaiv0.Generation
 	GenerationStatus  = genaiv0.GenerationStatus
@@ -84,6 +87,11 @@ type Client interface {
 		ctx context.Context, req *GenerationCancelRequest, opts ...grpc.CallOption,
 	) (*GenerationCancelResponse, error)
 
+	// TierList reports every Tier's input and output token ceilings, from the fastest to the most
+	// capable, so a caller sizes its input and its schema before submitting. The input ceiling is
+	// advertised, not enforced: an input past it fails the generation as INVALID_REQUEST.
+	TierList(ctx context.Context, req *TierListRequest, opts ...grpc.CallOption) (*TierListResponse, error)
+
 	// Close releases the underlying gRPC connection. Call it once the client is
 	// no longer needed.
 	Close()
@@ -95,6 +103,7 @@ type client struct {
 	genaiv0.GenerationSubmitServiceClient
 	genaiv0.GenerationGetServiceClient
 	genaiv0.GenerationCancelServiceClient
+	genaiv0.TierListServiceClient
 
 	conn *grpc.ClientConn
 }
@@ -118,6 +127,7 @@ func NewClient(addr string, opts ...grpc.DialOption) (Client, error) {
 		GenerationSubmitServiceClient: genaiv0.NewGenerationSubmitServiceClient(conn),
 		GenerationGetServiceClient:    genaiv0.NewGenerationGetServiceClient(conn),
 		GenerationCancelServiceClient: genaiv0.NewGenerationCancelServiceClient(conn),
+		TierListServiceClient:         genaiv0.NewTierListServiceClient(conn),
 		conn:                          conn,
 	}, nil
 }

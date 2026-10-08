@@ -154,3 +154,24 @@ func TestClientGenerationCancel(t *testing.T) {
 	})
 	require.Equal(t, codes.NotFound, status.Code(err))
 }
+
+// Every Tier is listed in order, each with ceilings a caller can size its request against.
+func TestClientTierList(t *testing.T) {
+	t.Parallel()
+
+	client := newClient(t)
+
+	response, err := client.TierList(t.Context(), &servicegenai.TierListRequest{})
+	require.NoError(t, err)
+
+	tiers := make([]servicegenai.Tier, 0, len(response.GetTiers()))
+
+	for _, ceilings := range response.GetTiers() {
+		tiers = append(tiers, ceilings.GetTier())
+
+		require.Positive(t, ceilings.GetMaxInputTokens())
+		require.Positive(t, ceilings.GetMaxOutputTokens())
+	}
+
+	require.Equal(t, []servicegenai.Tier{servicegenai.TierFast, servicegenai.TierBalanced, servicegenai.TierDeep}, tiers)
+}

@@ -122,6 +122,7 @@ func main() {
 		serviceCheck,
 	))
 	serviceQueueDepth := core.NewQueueDepth(dao.NewGenerationQueueDepth())
+	serviceTierList := core.NewTierList(tiers)
 
 	sweep := lo.Must(core.NewGenerationSweep(
 		core.GenerationSweepConfig{
@@ -139,6 +140,7 @@ func main() {
 	handlerSubmit := handlers.NewGrpcGenerationSubmit(serviceSubmit)
 	handlerGet := handlers.NewGrpcGenerationGet(serviceGet)
 	handlerCancel := handlers.NewGrpcGenerationCancel(serviceCancel)
+	handlerTierList := handlers.NewGrpcTierList(serviceTierList)
 
 	// =================================================================================================================
 	// SERVER
@@ -174,6 +176,7 @@ func main() {
 	genaiv0.RegisterGenerationSubmitServiceServer(server, handlerSubmit)
 	genaiv0.RegisterGenerationGetServiceServer(server, handlerGet)
 	genaiv0.RegisterGenerationCancelServiceServer(server, handlerCancel)
+	genaiv0.RegisterTierListServiceServer(server, handlerTierList)
 
 	reflection.Register(server)
 

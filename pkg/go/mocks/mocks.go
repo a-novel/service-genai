@@ -414,6 +414,89 @@ func (_c *MockClient_Status_Call) RunAndReturn(run func(ctx context.Context, req
 	return _c
 }
 
+// TierList provides a mock function for the type MockClient
+func (_mock *MockClient) TierList(ctx context.Context, req *servicegenai.TierListRequest, opts ...grpc.CallOption) (*servicegenai.TierListResponse, error) {
+	var tmpRet mock.Arguments
+	if len(opts) > 0 {
+		tmpRet = _mock.Called(ctx, req, opts)
+	} else {
+		tmpRet = _mock.Called(ctx, req)
+	}
+	ret := tmpRet
+
+	if len(ret) == 0 {
+		panic("no return value specified for TierList")
+	}
+
+	var r0 *servicegenai.TierListResponse
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *servicegenai.TierListRequest, ...grpc.CallOption) (*servicegenai.TierListResponse, error)); ok {
+		return returnFunc(ctx, req, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *servicegenai.TierListRequest, ...grpc.CallOption) *servicegenai.TierListResponse); ok {
+		r0 = returnFunc(ctx, req, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*servicegenai.TierListResponse)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *servicegenai.TierListRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, req, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockClient_TierList_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'TierList'
+type MockClient_TierList_Call struct {
+	*mock.Call
+}
+
+// TierList is a helper method to define mock.On call
+//   - ctx context.Context
+//   - req *servicegenai.TierListRequest
+//   - opts ...grpc.CallOption
+func (_e *MockClient_Expecter) TierList(ctx any, req any, opts ...any) *MockClient_TierList_Call {
+	return &MockClient_TierList_Call{Call: _e.mock.On("TierList",
+		append([]any{ctx, req}, opts...)...)}
+}
+
+func (_c *MockClient_TierList_Call) Run(run func(ctx context.Context, req *servicegenai.TierListRequest, opts ...grpc.CallOption)) *MockClient_TierList_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *servicegenai.TierListRequest
+		if args[1] != nil {
+			arg1 = args[1].(*servicegenai.TierListRequest)
+		}
+		var arg2 []grpc.CallOption
+		var variadicArgs []grpc.CallOption
+		if len(args) > 2 {
+			variadicArgs = args[2].([]grpc.CallOption)
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockClient_TierList_Call) Return(tierListResponse *servicegenai.TierListResponse, err error) *MockClient_TierList_Call {
+	_c.Call.Return(tierListResponse, err)
+	return _c
+}
+
+func (_c *MockClient_TierList_Call) RunAndReturn(run func(ctx context.Context, req *servicegenai.TierListRequest, opts ...grpc.CallOption) (*servicegenai.TierListResponse, error)) *MockClient_TierList_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // UnaryEcho provides a mock function for the type MockClient
 func (_mock *MockClient) UnaryEcho(ctx context.Context, req *golibproto.UnaryEchoRequest, opts ...grpc.CallOption) (*golibproto.UnaryEchoResponse, error) {
 	var tmpRet mock.Arguments

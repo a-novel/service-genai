@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package anovel.genai.v0;
+
+import "anovel/genai/v0/generation.proto";
+
+// TierListService tells callers how large a request each Tier takes, so a caller can fit its input
+// and its output schema before submitting. It never names the model behind a Tier.
+service TierListService {
+  rpc TierList(TierListRequest) returns (TierListResponse);
+}
+
+// TierListRequest takes no parameters.
+message TierListRequest {}
+
+// TierCeilings is how many tokens one Tier accepts.
+message TierCeilings {
+  Tier tier = 1;
+  // MaxInputTokens is the most input the Tier's model accepts alongside its output budget. Advertised,
+  // not enforced: a request over it fails as an invalid request, at no cost.
+  int64 max_input_tokens = 2;
+  // MaxOutputTokens caps the output, reasoning included.
+  int64 max_output_tokens = 3;
+}
+
+// TierListResponse lists every Tier, in capability order.
+message TierListResponse {
+  repeated TierCeilings tiers = 1;
+}
