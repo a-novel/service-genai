@@ -63,11 +63,19 @@ const (
 	// PostgresMaxIdleConnsDefault matches the open limit so a burst does not close
 	// connections it is about to reopen.
 	PostgresMaxIdleConnsDefault = 20
+	PostgresPortDefault         = 5432
+	PostgresTLSEnabledDefault   = true
 )
 
 // Raw values for environment variables.
 var (
 	postgresDsn          = getEnv("POSTGRES_DSN")
+	postgresHost         = getEnv("POSTGRES_HOST")
+	postgresPort         = getEnv("POSTGRES_PORT")
+	postgresUser         = getEnv("POSTGRES_USER")
+	postgresPassword     = getEnv("POSTGRES_PASSWORD")
+	postgresDatabase     = getEnv("POSTGRES_DATABASE")
+	postgresTLSEnabled   = getEnv("POSTGRES_TLS_ENABLED")
 	postgresMaxOpenConns = getEnv("POSTGRES_MAX_OPEN_CONNS")
 	postgresMaxIdleConns = getEnv("POSTGRES_MAX_IDLE_CONNS")
 
@@ -98,10 +106,24 @@ var (
 )
 
 var (
-	// PostgresDsn is the URL used to connect to the PostgreSQL database instance.
+	// PostgresDsn is the connection URL, read only when PostgresHost is empty.
 	// Typically formatted as:
 	//	postgres://<user>:<password>@<host>:<port>/<database>
 	PostgresDsn = postgresDsn
+	// PostgresHost is the PostgreSQL server hostname or IP address. Setting it selects the
+	// discrete connection fields below, so a deployment injects the password as a secret
+	// without assembling a URL.
+	PostgresHost = postgresHost
+	// PostgresPort is the PostgreSQL server port.
+	PostgresPort = config.LoadEnv(postgresPort, PostgresPortDefault, config.IntParser)
+	// PostgresUser is the PostgreSQL login role.
+	PostgresUser = postgresUser
+	// PostgresPassword is the PostgreSQL login credential.
+	PostgresPassword = postgresPassword
+	// PostgresDatabase is the PostgreSQL database name.
+	PostgresDatabase = postgresDatabase
+	// PostgresTLSEnabled controls transport encryption for the PostgreSQL connection.
+	PostgresTLSEnabled = config.LoadEnv(postgresTLSEnabled, PostgresTLSEnabledDefault, config.BoolParser)
 
 	// PostgresMaxOpenConns is the maximum number of open connections to the database.
 	PostgresMaxOpenConns = config.LoadEnv(postgresMaxOpenConns, PostgresMaxOpenConnsDefault, config.IntParser)
