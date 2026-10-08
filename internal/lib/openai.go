@@ -68,9 +68,9 @@ func NewOpenAI(config OpenAIConfig, opts ...option.RequestOption) (*OpenAI, erro
 	return &OpenAI{client: openai.NewClient(opts...), tiers: config.Tiers}, nil
 }
 
-// openAIRequest is the Responses API request this service sends. It is posted as raw JSON rather
-// than through the SDK's typed parameters, which take the schema as a map and would reorder its
-// properties; the output follows the schema's order, so the caller's order must survive.
+// openAIRequest is the Responses API request this service sends. It is posted as raw JSON so the
+// schema reaches the provider as the caller wrote it; the SDK's typed parameters take it as a map.
+// Background mode still reorders a schema's properties, so the output's key order is the provider's.
 //
 //nolint:tagliatelle // OpenAI owns these snake_case fields.
 type openAIRequest struct {
@@ -302,6 +302,8 @@ func classifyOpenAIStartError(err error) error {
 		return fmt.Errorf("%w: %w", ErrProviderStartAmbiguous, err)
 	}
 
+	err = withProviderMessage(err, apiErr)
+
 	switch status := apiErr.StatusCode; {
 	case status == http.StatusTooManyRequests:
 		return fmt.Errorf("%w: %w", ErrProviderRetryable, err)
@@ -340,6 +342,8 @@ func classifyOpenAIError(err error) error {
 		return fmt.Errorf("%w: %w", ErrProviderRetryable, err)
 	}
 
+	err = withProviderMessage(err, apiErr)
+
 	switch status := apiErr.StatusCode; {
 	case status == http.StatusTooManyRequests,
 		status == http.StatusRequestTimeout,
@@ -348,4 +352,14 @@ func classifyOpenAIError(err error) error {
 	}
 
 	return fmt.Errorf("provider rejected the request: %w", err)
+}
+
+// withProviderMessage adds the provider's explanation, which the SDK leaves out of its error text.
+// It reaches server logs only; a caller reads this service's own wording.
+func withProviderMessage(err error, apiErr *openai.Error) error {
+	if apiErr.Message == "" {
+		return err
+	}
+
+	return fmt.Errorf("%w: %s", err, apiErr.Message)
 }

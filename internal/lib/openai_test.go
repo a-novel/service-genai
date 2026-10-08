@@ -292,6 +292,16 @@ func TestOpenAI(t *testing.T) {
 				require.Equal(t, *testCase.expectRejection, rejection.Failure)
 				require.NotErrorIs(t, err, lib.ErrProviderRetryable)
 
+				// The provider's own explanation reaches server logs; the caller reads only the Failure.
+				var body struct {
+					Error struct {
+						Message string `json:"message"`
+					} `json:"error"`
+				}
+
+				require.NoError(t, json.Unmarshal([]byte(testCase.script.body), &body))
+				require.ErrorContains(t, err, body.Error.Message)
+
 				return
 			}
 
@@ -381,7 +391,7 @@ func TestOpenAIRequest(t *testing.T) {
 			require.Len(t, sent["safety_identifier"], 64)
 			require.NotContains(t, sent["safety_identifier"], "00000000-0000-0000-0000-000000000001")
 
-			// The schema reaches the provider as sent: its property order steers the output.
+			// The schema reaches the provider as the caller wrote it.
 			require.Contains(t, string(script.lastBody),
 				`"schema":{"type":"object","properties":{"z":{"type":"string"},"a":{"type":"string"}}}`)
 			require.Contains(t, string(script.lastBody), `"strict":true`)

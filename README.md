@@ -129,7 +129,7 @@ Every variable is read from the process environment. Names can be globally prefi
 <details>
 <summary>Optional configuration (provider, checks, retention, gRPC, connection pool, OpenTelemetry)</summary>
 
-Provider (images `grpc`, `standalone-grpc`). The defaults run on OpenAI; [switching provider](./docs/operations/generation-checks.md#switching-provider) sets every one of them, the key included, and raises the epoch.
+Provider (images `grpc`, `standalone-grpc`). The defaults run on OpenAI; [switching provider](./docs/operations/generation-checks.md#switching-provider) sets every one of them, the key included, and raises the epoch. The endpoint must meet the [provider requirements](./docs/providers.md), which a conformance check verifies before the switch.
 
 | Name                | Description                                                                                                                                                                                                                                                              | Default                                                |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------ |
