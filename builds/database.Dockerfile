@@ -13,12 +13,14 @@ ENV POSTGRES_INITDB_ARGS=--auth=scram-sha-256
 # Install pg_cron.
 # ======================================================================================================================
 # pg_cron runs the retention purge (see builds/database.sql). It cannot load without
-# shared_preload_libraries, and it is set on the conf sample so the init-time server that runs
-# database.sql has it too, not just the running server.
+# shared_preload_libraries, and its jobs run as background workers because a job's own connection
+# would need a password under SCRAM authentication. Both are set on the conf sample so the
+# init-time server that runs database.sql has them too, not just the running server.
 RUN apt-get update \
   && apt-get install -y --no-install-recommends postgresql-18-cron=1.6.7-3.pgdg13+1 \
   && rm -rf /var/lib/apt/lists/* \
-  && echo "shared_preload_libraries='pg_cron'" >> /usr/share/postgresql/postgresql.conf.sample
+  && printf "shared_preload_libraries = 'pg_cron'\ncron.use_background_workers = on\n" \
+    >> /usr/share/postgresql/postgresql.conf.sample
 
 # ======================================================================================================================
 # Prepare extension scripts.
