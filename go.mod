@@ -3,7 +3,7 @@ module github.com/a-novel/service-genai
 go 1.27.1
 
 require (
-	github.com/a-novel-kit/golib v0.39.1-0.20261008132935-fe8e836d7dea
+	github.com/a-novel-kit/golib v0.40.0
 	github.com/go-playground/validator/v10 v10.30.5
 	github.com/google/uuid v1.6.0
 	github.com/openai/openai-go/v3 v3.74.0
@@ -35,9 +35,9 @@ require (
 	github.com/coder/websocket v1.8.15 // indirect
 	github.com/felixge/httpsnoop v1.1.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.15 // indirect
-	github.com/getsentry/sentry-go v0.49.0 // indirect
+	github.com/getsentry/sentry-go v0.50.0 // indirect
 	github.com/getsentry/sentry-go/otel v0.49.0 // indirect
-	github.com/getsentry/sentry-go/otel/otlp v0.49.0 // indirect
+	github.com/getsentry/sentry-go/otel/otlp v0.50.0 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
