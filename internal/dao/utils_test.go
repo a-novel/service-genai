@@ -109,13 +109,14 @@ func settleGeneration(ctx context.Context, t *testing.T, generation *dao.Generat
 	kind := "failed"
 
 	settled, err := dao.NewGenerationSettle().Exec(ctx, &dao.GenerationSettleRequest{
-		ID:             generation.ID,
-		Attempt:        generation.Attempt,
-		ProviderCallID: generation.ProviderCallID,
-		Status:         dao.GenerationStatusFailed,
-		Failure:        &kind,
-		Error:          &reason,
-		Retention:      testRetention,
+		ID:               generation.ID,
+		Attempt:          generation.Attempt,
+		StartRequestedAt: generation.StartRequestedAt,
+		ProviderCallID:   generation.ProviderCallID,
+		Status:           dao.GenerationStatusFailed,
+		Failure:          &kind,
+		Error:            &reason,
+		Retention:        testRetention,
 	})
 	if err != nil {
 		panic(err)

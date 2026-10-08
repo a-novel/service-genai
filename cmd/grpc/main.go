@@ -105,7 +105,7 @@ func main() {
 		serviceCheck,
 	))
 	serviceGet := lo.Must(core.NewGenerationGet(
-		core.GenerationGetConfig{CheckInterval: cfg.CheckInterval},
+		core.GenerationGetConfig{CheckInterval: cfg.CheckInterval, ProviderEpoch: cfg.Provider.Epoch},
 		daoGet,
 		dao.NewGenerationElectCheck(),
 		daoUsageList,
@@ -114,6 +114,7 @@ func main() {
 	serviceCancel := lo.Must(core.NewGenerationCancel(
 		core.GenerationCancelConfig{Retention: cfg.Retention},
 		dao.NewGenerationRequestCancel(),
+		daoGet,
 		daoUsageList,
 		serviceCheck,
 	))

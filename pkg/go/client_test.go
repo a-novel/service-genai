@@ -148,6 +148,13 @@ func TestClientGenerationCancel(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, servicegenai.GenerationStatusCancelled, cancelled.GetGeneration().GetStatus())
 
+	// A retry after a lost answer succeeds, with the generation as it stands.
+	again, err := client.GenerationCancel(t.Context(), &servicegenai.GenerationCancelRequest{
+		Id: generation.GetId(), OwnerId: owner,
+	})
+	require.NoError(t, err)
+	require.Equal(t, servicegenai.GenerationStatusCancelled, again.GetGeneration().GetStatus())
+
 	// Another owner cannot stop it, and is told the same thing as if it did not exist.
 	_, err = client.GenerationCancel(t.Context(), &servicegenai.GenerationCancelRequest{
 		Id: generation.GetId(), OwnerId: uuid.Must(uuid.NewV7()).String(),

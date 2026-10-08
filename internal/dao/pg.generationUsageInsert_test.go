@@ -36,7 +36,7 @@ func TestGenerationUsageInsert(t *testing.T) {
 
 			usage: &dao.GenerationUsageInsertRequest{
 				Provider: "openai", Model: "a-model-snapshot", ReasoningEffort: &effort,
-				InputTokens: 1000, CachedInputTokens: 200,
+				InputTokens: 1000, CachedInputTokens: 200, CacheWriteTokens: 300,
 				OutputTokens: 500, ReasoningTokens: 100,
 			},
 		},
@@ -101,6 +101,8 @@ func TestGenerationUsageInsert(t *testing.T) {
 				require.Equal(t, testCase.usage.Model, usage.Model)
 				require.Equal(t, testCase.usage.ReasoningEffort, usage.ReasoningEffort)
 				require.Equal(t, testCase.usage.InputTokens, usage.InputTokens)
+				require.Equal(t, testCase.usage.CachedInputTokens, usage.CachedInputTokens)
+				require.Equal(t, testCase.usage.CacheWriteTokens, usage.CacheWriteTokens)
 
 				if !testCase.purgeParent {
 					return

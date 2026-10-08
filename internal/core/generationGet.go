@@ -39,6 +39,9 @@ type GenerationGetConfig struct {
 	// CheckInterval is how long a check stays fresh. However often callers poll, a generation reaches
 	// the provider at most once per interval.
 	CheckInterval time.Duration `validate:"required,gt=0"`
+	// ProviderEpoch is this replica's provider configuration. A poll does not take the check of a
+	// generation a newer one took over.
+	ProviderEpoch int32 `validate:"required,min=1"`
 }
 
 // GenerationGetRequest holds the parameters for a [GenerationGet.Exec] call.
@@ -121,7 +124,10 @@ func (service *GenerationGet) checkIfStale(ctx context.Context, generation *dao.
 	defer span.End()
 
 	elected, err := service.electDao.Exec(ctx, &dao.GenerationElectCheckRequest{
-		ID: generation.ID, OwnerID: generation.OwnerID, Interval: service.config.CheckInterval,
+		ID:            generation.ID,
+		OwnerID:       generation.OwnerID,
+		Interval:      service.config.CheckInterval,
+		ProviderEpoch: service.config.ProviderEpoch,
 	})
 
 	// Checked within the interval, by this caller or another: the read is current enough.

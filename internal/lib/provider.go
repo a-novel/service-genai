@@ -26,8 +26,8 @@ type TierBinding struct {
 	// ReasoningEffort is passed to the provider as is: effort values are not portable across providers.
 	// Empty sends none.
 	ReasoningEffort string
-	// MaxInputTokens is the input a caller may send: the model's context window less MaxOutputTokens.
-	// Advertised to callers and not enforced, since an oversized input already fails at no cost.
+	// MaxInputTokens is the input a caller may send: the model's published maximum input. Advertised to
+	// callers and not enforced, since an oversized input already fails at no cost.
 	MaxInputTokens int64
 	// MaxOutputTokens caps the output, reasoning included, and with it the spend of one call.
 	MaxOutputTokens int64
@@ -97,8 +97,11 @@ func (rejection *ProviderRejectionError) Unwrap() error {
 type ProviderUsage struct {
 	InputTokens       int64
 	CachedInputTokens int64
-	OutputTokens      int64
-	ReasoningTokens   int64
+	// CacheWriteTokens are input tokens written to the provider's prompt cache, billed above the plain
+	// input rate.
+	CacheWriteTokens int64
+	OutputTokens     int64
+	ReasoningTokens  int64
 }
 
 // ProviderCall is one operation as the provider describes it.
@@ -147,7 +150,7 @@ type Provider interface {
 	Start(ctx context.Context, request *ProviderStartRequest) (*ProviderCall, error)
 	// Get reads an operation by id. It is both the poll and the re-attach.
 	Get(ctx context.Context, id string) (*ProviderCall, error)
-	// Cancel stops an operation. Idempotent — cancelling a terminal operation returns its final
-	// state rather than failing.
+	// Cancel stops an operation. Cancelling a finished operation returns its final state rather than
+	// failing.
 	Cancel(ctx context.Context, id string) (*ProviderCall, error)
 }

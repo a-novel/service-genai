@@ -8,7 +8,9 @@ import "anovel/genai/v0/generation.proto";
 //
 // A generation that never started is cancelled at once. One whose provider call is known is stopped
 // and settled within the call, recording whatever it consumed before the stop: a cancelled call is
-// not a free one. One whose start is in flight is marked, and the next check stops it.
+// not a free one. One whose start is in flight is marked, and the next check stops it. One already
+// settled is returned as it stands, so a retried cancel, or one that lost a race with completion,
+// still succeeds: read its status to know which happened.
 service GenerationCancelService {
   rpc GenerationCancel(GenerationCancelRequest) returns (GenerationCancelResponse);
 }
@@ -21,8 +23,8 @@ message GenerationCancelRequest {
   string owner_id = 2;
 }
 
-// GenerationCancelResponse returns the generation as the cancellation left it: cancelled, or still
-// running when the provider had not stopped the call yet.
+// GenerationCancelResponse returns the generation as the cancellation left it: cancelled, still
+// running when the provider had not stopped the call yet, or settled before the cancel arrived.
 message GenerationCancelResponse {
   Generation generation = 1;
 }

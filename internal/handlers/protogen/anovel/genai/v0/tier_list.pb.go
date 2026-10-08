@@ -62,8 +62,8 @@ func (*TierListRequest) Descriptor() ([]byte, []int) {
 type TierCeilings struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Tier  Tier                   `protobuf:"varint,1,opt,name=tier,proto3,enum=anovel.genai.v0.Tier" json:"tier,omitempty"`
-	// MaxInputTokens is the most input the Tier's model accepts alongside its output budget. Advertised,
-	// not enforced: a request over it fails as an invalid request, at no cost.
+	// MaxInputTokens is the most input the Tier's model accepts. Advertised, not enforced: a request
+	// over it fails as an invalid request, at no cost.
 	MaxInputTokens int64 `protobuf:"varint,2,opt,name=max_input_tokens,json=maxInputTokens,proto3" json:"max_input_tokens,omitempty"`
 	// MaxOutputTokens caps the output, reasoning included.
 	MaxOutputTokens int64 `protobuf:"varint,3,opt,name=max_output_tokens,json=maxOutputTokens,proto3" json:"max_output_tokens,omitempty"`

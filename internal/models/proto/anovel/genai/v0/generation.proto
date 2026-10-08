@@ -54,10 +54,14 @@ message GenerationUsage {
   string provider = 2;
   string model = 3;
   string reasoning_effort = 4;
+  // Totals include their detail counts, as the provider counts them.
   int64 input_tokens = 5;
+  // CachedInputTokens were read from the provider's prompt cache, billed below the input rate.
   int64 cached_input_tokens = 6;
   int64 output_tokens = 7;
   int64 reasoning_tokens = 8;
+  // CacheWriteTokens were written to the provider's prompt cache, billed above the input rate.
+  int64 cache_write_tokens = 9;
 }
 
 // Tier is the level of model capability a caller asks for. This service maps each Tier to a model

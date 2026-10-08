@@ -67,7 +67,7 @@ func TestGenerationGet(t *testing.T) {
 				Status: core.GenerationStatusFailed,
 				Usage: []*core.GenerationUsage{{
 					Attempt: 1, Provider: "openai", Model: "a-model-snapshot", ReasoningEffort: &effort,
-					InputTokens: 1000, CachedInputTokens: 200, OutputTokens: 500,
+					InputTokens: 1000, CachedInputTokens: 200, CacheWriteTokens: 300, OutputTokens: 500,
 				}},
 				CreatedAt: createdAt, UpdatedAt: updatedAt, SettledAt: &settledAt,
 				ExpiresAt: &expiresAt,
@@ -181,7 +181,10 @@ func TestGenerationGet(t *testing.T) {
 			if testCase.electMock != nil {
 				electDao.EXPECT().
 					Exec(mock.Anything, &dao.GenerationElectCheckRequest{
-						ID: testCase.request.ID, OwnerID: testCase.request.OwnerID, Interval: checkInterval,
+						ID:            testCase.request.ID,
+						OwnerID:       testCase.request.OwnerID,
+						Interval:      checkInterval,
+						ProviderEpoch: testEpoch,
 					}).
 					Return(testCase.electMock.resp, testCase.electMock.err)
 			}
@@ -193,7 +196,8 @@ func TestGenerationGet(t *testing.T) {
 			}
 
 			service, err := core.NewGenerationGet(
-				core.GenerationGetConfig{CheckInterval: checkInterval}, getDao, electDao, usageDao, check,
+				core.GenerationGetConfig{CheckInterval: checkInterval, ProviderEpoch: testEpoch},
+				getDao, electDao, usageDao, check,
 			)
 			require.NoError(t, err)
 

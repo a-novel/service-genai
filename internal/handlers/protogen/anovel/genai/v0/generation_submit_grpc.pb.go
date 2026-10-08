@@ -28,7 +28,8 @@ const (
 //
 // GenerationSubmitService records a generation and starts it. Resending the same request is a
 // replay: it returns the generation already running or succeeded rather than paying again. A request
-// whose generation failed or was cancelled runs again from scratch.
+// whose generation failed or was cancelled runs again from scratch. An invalid request answers
+// INVALID_ARGUMENT with the reason, naming the field and limit to fix.
 type GenerationSubmitServiceClient interface {
 	GenerationSubmit(ctx context.Context, in *GenerationSubmitRequest, opts ...grpc.CallOption) (*GenerationSubmitResponse, error)
 }
@@ -57,7 +58,8 @@ func (c *generationSubmitServiceClient) GenerationSubmit(ctx context.Context, in
 //
 // GenerationSubmitService records a generation and starts it. Resending the same request is a
 // replay: it returns the generation already running or succeeded rather than paying again. A request
-// whose generation failed or was cancelled runs again from scratch.
+// whose generation failed or was cancelled runs again from scratch. An invalid request answers
+// INVALID_ARGUMENT with the reason, naming the field and limit to fix.
 type GenerationSubmitServiceServer interface {
 	GenerationSubmit(context.Context, *GenerationSubmitRequest) (*GenerationSubmitResponse, error)
 	mustEmbedUnimplementedGenerationSubmitServiceServer()

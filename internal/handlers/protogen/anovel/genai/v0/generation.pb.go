@@ -367,15 +367,19 @@ type GenerationUsage struct {
 	Attempt int32 `protobuf:"varint,1,opt,name=attempt,proto3" json:"attempt,omitempty"`
 	// Provider, Model and ReasoningEffort are what actually ran, read off the provider's response
 	// rather than the Tier's preset. ReasoningEffort is empty for a model without one.
-	Provider          string `protobuf:"bytes,2,opt,name=provider,proto3" json:"provider,omitempty"`
-	Model             string `protobuf:"bytes,3,opt,name=model,proto3" json:"model,omitempty"`
-	ReasoningEffort   string `protobuf:"bytes,4,opt,name=reasoning_effort,json=reasoningEffort,proto3" json:"reasoning_effort,omitempty"`
-	InputTokens       int64  `protobuf:"varint,5,opt,name=input_tokens,json=inputTokens,proto3" json:"input_tokens,omitempty"`
-	CachedInputTokens int64  `protobuf:"varint,6,opt,name=cached_input_tokens,json=cachedInputTokens,proto3" json:"cached_input_tokens,omitempty"`
-	OutputTokens      int64  `protobuf:"varint,7,opt,name=output_tokens,json=outputTokens,proto3" json:"output_tokens,omitempty"`
-	ReasoningTokens   int64  `protobuf:"varint,8,opt,name=reasoning_tokens,json=reasoningTokens,proto3" json:"reasoning_tokens,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	Provider        string `protobuf:"bytes,2,opt,name=provider,proto3" json:"provider,omitempty"`
+	Model           string `protobuf:"bytes,3,opt,name=model,proto3" json:"model,omitempty"`
+	ReasoningEffort string `protobuf:"bytes,4,opt,name=reasoning_effort,json=reasoningEffort,proto3" json:"reasoning_effort,omitempty"`
+	// Totals include their detail counts, as the provider counts them.
+	InputTokens int64 `protobuf:"varint,5,opt,name=input_tokens,json=inputTokens,proto3" json:"input_tokens,omitempty"`
+	// CachedInputTokens were read from the provider's prompt cache, billed below the input rate.
+	CachedInputTokens int64 `protobuf:"varint,6,opt,name=cached_input_tokens,json=cachedInputTokens,proto3" json:"cached_input_tokens,omitempty"`
+	OutputTokens      int64 `protobuf:"varint,7,opt,name=output_tokens,json=outputTokens,proto3" json:"output_tokens,omitempty"`
+	ReasoningTokens   int64 `protobuf:"varint,8,opt,name=reasoning_tokens,json=reasoningTokens,proto3" json:"reasoning_tokens,omitempty"`
+	// CacheWriteTokens were written to the provider's prompt cache, billed above the input rate.
+	CacheWriteTokens int64 `protobuf:"varint,9,opt,name=cache_write_tokens,json=cacheWriteTokens,proto3" json:"cache_write_tokens,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *GenerationUsage) Reset() {
@@ -464,6 +468,13 @@ func (x *GenerationUsage) GetReasoningTokens() int64 {
 	return 0
 }
 
+func (x *GenerationUsage) GetCacheWriteTokens() int64 {
+	if x != nil {
+		return x.CacheWriteTokens
+	}
+	return 0
+}
+
 var File_anovel_genai_v0_generation_proto protoreflect.FileDescriptor
 
 const file_anovel_genai_v0_generation_proto_rawDesc = "" +
@@ -487,7 +498,7 @@ const file_anovel_genai_v0_generation_proto_rawDesc = "" +
 	"\n" +
 	"expires_at\x18\f \x01(\tR\texpiresAt\x12<\n" +
 	"\afailure\x18\x0e \x01(\x0e2\".anovel.genai.v0.GenerationFailureR\afailure\x126\n" +
-	"\x05usage\x18\x0f \x03(\v2 .anovel.genai.v0.GenerationUsageR\x05usageJ\x04\b\x05\x10\x06J\x04\b\x06\x10\aJ\x04\b\r\x10\x0eR\aattemptR\fmax_attemptsR\x10provider_call_id\"\xab\x02\n" +
+	"\x05usage\x18\x0f \x03(\v2 .anovel.genai.v0.GenerationUsageR\x05usageJ\x04\b\x05\x10\x06J\x04\b\x06\x10\aJ\x04\b\r\x10\x0eR\aattemptR\fmax_attemptsR\x10provider_call_id\"\xd9\x02\n" +
 	"\x0fGenerationUsage\x12\x18\n" +
 	"\aattempt\x18\x01 \x01(\x05R\aattempt\x12\x1a\n" +
 	"\bprovider\x18\x02 \x01(\tR\bprovider\x12\x14\n" +
@@ -496,7 +507,8 @@ const file_anovel_genai_v0_generation_proto_rawDesc = "" +
 	"\finput_tokens\x18\x05 \x01(\x03R\vinputTokens\x12.\n" +
 	"\x13cached_input_tokens\x18\x06 \x01(\x03R\x11cachedInputTokens\x12#\n" +
 	"\routput_tokens\x18\a \x01(\x03R\foutputTokens\x12)\n" +
-	"\x10reasoning_tokens\x18\b \x01(\x03R\x0freasoningTokens*M\n" +
+	"\x10reasoning_tokens\x18\b \x01(\x03R\x0freasoningTokens\x12,\n" +
+	"\x12cache_write_tokens\x18\t \x01(\x03R\x10cacheWriteTokens*M\n" +
 	"\x04Tier\x12\x14\n" +
 	"\x10TIER_UNSPECIFIED\x10\x00\x12\r\n" +
 	"\tTIER_FAST\x10\x01\x12\x11\n" +

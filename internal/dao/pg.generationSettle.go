@@ -22,10 +22,11 @@ var generationSettleQuery string
 // is set: an output on success, an error otherwise.
 type GenerationSettleRequest struct {
 	ID uuid.UUID
-	// Attempt and ProviderCallID are what the caller observed. A generation that has since moved on
-	// is not settled.
-	Attempt        int16
-	ProviderCallID *string
+	// Attempt, StartRequestedAt and ProviderCallID are what the caller observed. A generation that
+	// has since moved on is not settled.
+	Attempt          int16
+	StartRequestedAt *time.Time
+	ProviderCallID   *string
 	// Status is the terminal state to land in. The terminal-fields constraint rejects any other.
 	Status GenerationStatus
 	// Output is the provider's structured output on success.
@@ -69,6 +70,7 @@ func (dao *GenerationSettle) Exec(ctx context.Context, request *GenerationSettle
 		request.Error,
 		request.Retention.Seconds(),
 		request.Failure,
+		request.StartRequestedAt,
 	).Scan(ctx, entity)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

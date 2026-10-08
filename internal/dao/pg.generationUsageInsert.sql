@@ -12,10 +12,11 @@ INSERT INTO
     cached_input_tokens,
     output_tokens,
     reasoning_tokens,
-    reasoning_effort
+    reasoning_effort,
+    cache_write_tokens
   )
 VALUES
-  (?0, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+  (?0, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
 ON CONFLICT (generation_id, attempt) DO NOTHING
 RETURNING
   *;

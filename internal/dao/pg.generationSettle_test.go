@@ -30,6 +30,9 @@ func TestGenerationSettle(t *testing.T) {
 		// recordAfterRead lands the provider call id after the caller's read, as a concurrent start
 		// would.
 		recordAfterRead bool
+		// restartAfterRead restarts the generation on a newer epoch after the caller's read, which
+		// keeps the attempt number and clears the start.
+		restartAfterRead bool
 
 		attempt int16
 		callID  *string
@@ -113,6 +116,20 @@ func TestGenerationSettle(t *testing.T) {
 			expectErr: dao.ErrGenerationChanged,
 		},
 		{
+			// A check read a start in flight, then a newer epoch restarted the generation. Settling the
+			// read as unknown would fail a generation that is about to start on the new provider.
+			name: "Error/RestartedSinceRead",
+
+			state:            "starting",
+			restartAfterRead: true,
+			attempt:          1,
+			status:           dao.GenerationStatusFailed,
+			failure:          &kindFailed,
+			error:            &failure,
+
+			expectErr: dao.ErrGenerationChanged,
+		},
+		{
 			name: "Error/AlreadySettled",
 
 			state:   "settled",
@@ -135,13 +152,16 @@ func TestGenerationSettle(t *testing.T) {
 
 				generation := seedGeneration(ctx, t, 1)
 
+				// read is the generation as the settling check last saw it.
+				read := generation
+
 				switch testCase.state {
 				case "starting":
-					startGeneration(ctx, t, generation.ID)
+					read = startGeneration(ctx, t, generation.ID)
 				case "running":
-					runGeneration(ctx, t, generation.ID)
+					read = runGeneration(ctx, t, generation.ID)
 				case "settled":
-					settleGeneration(ctx, t, runGeneration(ctx, t, generation.ID))
+					read = settleGeneration(ctx, t, runGeneration(ctx, t, generation.ID))
 				}
 
 				if testCase.recordAfterRead {
@@ -151,15 +171,23 @@ func TestGenerationSettle(t *testing.T) {
 					require.NoError(t, err)
 				}
 
+				if testCase.restartAfterRead {
+					_, err := dao.NewGenerationRestart().Exec(ctx, &dao.GenerationRestartRequest{
+						ID: generation.ID, Attempt: 1, ProviderEpoch: testEpoch + 1,
+					})
+					require.NoError(t, err)
+				}
+
 				settled, err := daoSettle.Exec(ctx, &dao.GenerationSettleRequest{
-					ID:             generation.ID,
-					Attempt:        testCase.attempt,
-					ProviderCallID: testCase.callID,
-					Status:         testCase.status,
-					Output:         testCase.output,
-					Failure:        testCase.failure,
-					Error:          testCase.error,
-					Retention:      testRetention,
+					ID:               generation.ID,
+					Attempt:          testCase.attempt,
+					StartRequestedAt: read.StartRequestedAt,
+					ProviderCallID:   testCase.callID,
+					Status:           testCase.status,
+					Output:           testCase.output,
+					Failure:          testCase.failure,
+					Error:            testCase.error,
+					Retention:        testRetention,
 				})
 				if testCase.expectRefused {
 					require.Error(t, err)

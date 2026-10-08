@@ -6,7 +6,8 @@ import "anovel/genai/v0/generation.proto";
 
 // GenerationSubmitService records a generation and starts it. Resending the same request is a
 // replay: it returns the generation already running or succeeded rather than paying again. A request
-// whose generation failed or was cancelled runs again from scratch.
+// whose generation failed or was cancelled runs again from scratch. An invalid request answers
+// INVALID_ARGUMENT with the reason, naming the field and limit to fix.
 service GenerationSubmitService {
   rpc GenerationSubmit(GenerationSubmitRequest) returns (GenerationSubmitResponse);
 }
@@ -16,17 +17,18 @@ message GenerationSubmitRequest {
   // OwnerID is the user this acts for, formatted as a UUID. Supplied by the calling service, which
   // verified it against its own credential — this service does not authenticate.
   string owner_id = 1;
-  // Purpose labels what the spend is attributed to. Required, and otherwise opaque: the vocabulary
-  // belongs to the caller.
+  // Purpose labels what the spend is attributed to. Required, at most 255 characters, and otherwise
+  // opaque: the vocabulary belongs to the caller.
   string purpose = 2;
   // Tier is the level of model capability wanted. Required.
   Tier tier = 6;
   // Instructions are the trusted channel: the caller's own directions to the model. Required.
   string instructions = 7;
-  // Input is the untrusted channel: user content as any JSON value. Required.
+  // Input is the untrusted channel: user content as any JSON value. Required. Input and schema must be
+  // I-JSON (RFC 7493): valid UTF-8, no unpaired surrogates, no duplicate names in an object.
   bytes input = 8;
-  // OutputSchema is the JSON Schema the output must conform to, within OpenAI's strict-mode subset.
-  // Required. Instructions, input and schema together are at most 3,688,000 bytes.
+  // OutputSchema is the JSON Schema the output must conform to, within OpenAI's strict-mode subset:
+  // a JSON object. Required. Instructions, input and schema together are at most 3,688,000 bytes.
   bytes output_schema = 9;
 
   // Variant asks for another generation of a request that already succeeded, such as a regenerate.

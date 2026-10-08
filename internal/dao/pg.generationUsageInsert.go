@@ -34,6 +34,7 @@ type GenerationUsageInsertRequest struct {
 
 	InputTokens       int64
 	CachedInputTokens int64
+	CacheWriteTokens  int64
 	OutputTokens      int64
 	ReasoningTokens   int64
 }
@@ -80,6 +81,7 @@ func (dao *GenerationUsageInsert) Exec(
 		request.OutputTokens,
 		request.ReasoningTokens,
 		request.ReasoningEffort,
+		request.CacheWriteTokens,
 	).Scan(ctx, entity)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

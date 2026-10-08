@@ -78,6 +78,7 @@ func NewGrpcGeneration(generation *core.Generation) *genaiv0.Generation {
 			ReasoningEffort:   lo.FromPtr(usage.ReasoningEffort),
 			InputTokens:       usage.InputTokens,
 			CachedInputTokens: usage.CachedInputTokens,
+			CacheWriteTokens:  usage.CacheWriteTokens,
 			OutputTokens:      usage.OutputTokens,
 			ReasoningTokens:   usage.ReasoningTokens,
 		}

@@ -40,12 +40,11 @@ func TestGrpcGenerationCancel(t *testing.T) {
 			serviceMock: &serviceMock{resp: testGeneration()},
 		},
 		{
-			// A settled generation and somebody else's report the same thing. Telling them apart
-			// would confirm that another owner's id is real.
-			name: "Error/NotCancellable",
+			// Somebody else's generation reports as absent, so an id cannot be probed for existence.
+			name: "Error/NotFound",
 
 			request:     &genaiv0.GenerationCancelRequest{Id: testGenerationID, OwnerId: testOwnerID},
-			serviceMock: &serviceMock{err: core.ErrGenerationNotCancellable},
+			serviceMock: &serviceMock{err: core.ErrGenerationNotFound},
 
 			expectStatus: codes.NotFound,
 		},

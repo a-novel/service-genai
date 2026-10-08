@@ -50,10 +50,9 @@ func (handler *GrpcGenerationCancel) GenerationCancel(
 		ID: generationID, OwnerID: ownerID,
 	})
 
-	// A generation that has already settled reports the same thing as one that does not exist. The
-	// two cannot be told apart without confirming that somebody else's id is real.
-	if errors.Is(err, core.ErrGenerationNotCancellable) {
-		return nil, status.Error(codes.NotFound, "generation not found or already settled")
+	// Another owner's generation reports this too, so an id cannot be probed for existence.
+	if errors.Is(err, core.ErrGenerationNotFound) {
+		return nil, status.Error(codes.NotFound, "generation not found")
 	}
 
 	if errors.Is(err, core.ErrInvalidRequest) {

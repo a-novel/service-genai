@@ -16,8 +16,8 @@ message TierListRequest {}
 // TierCeilings is how many tokens one Tier accepts.
 message TierCeilings {
   Tier tier = 1;
-  // MaxInputTokens is the most input the Tier's model accepts alongside its output budget. Advertised,
-  // not enforced: a request over it fails as an invalid request, at no cost.
+  // MaxInputTokens is the most input the Tier's model accepts. Advertised, not enforced: a request
+  // over it fails as an invalid request, at no cost.
   int64 max_input_tokens = 2;
   // MaxOutputTokens caps the output, reasoning included.
   int64 max_output_tokens = 3;

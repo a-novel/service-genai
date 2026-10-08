@@ -1,6 +1,7 @@
 package handlers_test
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/google/uuid"
@@ -42,6 +43,8 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 
 		expectCreated bool
 		expectStatus  codes.Code
+		// expectMessage is part of the error a caller reads, telling it what to fix.
+		expectMessage string
 	}{
 		{
 			name: "Success",
@@ -90,9 +93,10 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 				OwnerId: testOwnerID, Purpose: "studio.generation",
 				Instructions: "Continue.", Input: []byte(`{}`), OutputSchema: []byte(`{"type": "object"}`),
 			},
-			serviceMock: &serviceMock{err: core.ErrInvalidRequest},
+			serviceMock: &serviceMock{err: fmt.Errorf("%w: tier is required", core.ErrInvalidRequest)},
 
-			expectStatus: codes.InvalidArgument,
+			expectStatus:  codes.InvalidArgument,
+			expectMessage: "tier is required",
 		},
 		{
 			name: "Error/Internal",
@@ -134,6 +138,7 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 
 			if testCase.expectStatus != codes.OK {
 				require.Equal(t, testCase.expectStatus, status.Code(err))
+				require.Contains(t, status.Convert(err).Message(), testCase.expectMessage)
 				require.Nil(t, response)
 
 				return

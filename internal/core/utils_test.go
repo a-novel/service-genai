@@ -104,7 +104,7 @@ func settledGeneration(status dao.GenerationStatus) *dao.Generation {
 func providerCall(state lib.ProviderCallState) *lib.ProviderCall {
 	call := &lib.ProviderCall{ID: testCallID, State: state, Model: "a-model-snapshot", ReasoningEffort: "medium"}
 	if state.Terminal() {
-		call.Usage = &lib.ProviderUsage{InputTokens: 1000, CachedInputTokens: 200, OutputTokens: 500}
+		call.Usage = &lib.ProviderUsage{InputTokens: 1000, CachedInputTokens: 200, CacheWriteTokens: 300, OutputTokens: 500}
 	}
 
 	return call
@@ -125,7 +125,8 @@ func testUsageRows() []*dao.GenerationUsage {
 	return []*dao.GenerationUsage{
 		{
 			GenerationID: testGenerationID, Attempt: 1, Provider: "openai", Model: "a-model-snapshot",
-			ReasoningEffort: &effort, InputTokens: 1000, CachedInputTokens: 200, OutputTokens: 500,
+			ReasoningEffort: &effort, InputTokens: 1000, CachedInputTokens: 200, CacheWriteTokens: 300,
+			OutputTokens: 500,
 		},
 	}
 }

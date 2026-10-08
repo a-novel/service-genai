@@ -14,9 +14,11 @@ import (
 // Request, response, and entity types are re-exported from the service's generated
 // protobuf definitions, so callers never import the service's internal packages.
 type (
-	StatusRequest  = genaiv0.StatusRequest
-	StatusResponse = genaiv0.StatusResponse
-	QueueDepth     = genaiv0.QueueDepth
+	StatusRequest    = genaiv0.StatusRequest
+	StatusResponse   = genaiv0.StatusResponse
+	QueueDepth       = genaiv0.QueueDepth
+	DependencyHealth = genaiv0.DependencyHealth
+	DependencyStatus = genaiv0.DependencyStatus
 
 	GenerationSubmitRequest  = genaiv0.GenerationSubmitRequest
 	GenerationSubmitResponse = genaiv0.GenerationSubmitResponse
@@ -35,18 +37,27 @@ type (
 	Tier              = genaiv0.Tier
 )
 
-// Terminal statuses, re-exported so a caller can decide whether to keep waiting without importing
-// the generated package.
+// Dependency statuses a Status report carries.
 const (
-	GenerationStatusPending   = genaiv0.GenerationStatus_GENERATION_STATUS_PENDING
-	GenerationStatusRunning   = genaiv0.GenerationStatus_GENERATION_STATUS_RUNNING
-	GenerationStatusSucceeded = genaiv0.GenerationStatus_GENERATION_STATUS_SUCCEEDED
-	GenerationStatusFailed    = genaiv0.GenerationStatus_GENERATION_STATUS_FAILED
-	GenerationStatusCancelled = genaiv0.GenerationStatus_GENERATION_STATUS_CANCELLED
+	DependencyStatusUnspecified = genaiv0.DependencyStatus_DEPENDENCY_STATUS_UNSPECIFIED
+	DependencyStatusUp          = genaiv0.DependencyStatus_DEPENDENCY_STATUS_UP
+	DependencyStatusDown        = genaiv0.DependencyStatus_DEPENDENCY_STATUS_DOWN
+)
+
+// Generation statuses, re-exported so a caller can decide whether to keep waiting without importing
+// the generated package. Succeeded, failed and cancelled are terminal.
+const (
+	GenerationStatusUnspecified = genaiv0.GenerationStatus_GENERATION_STATUS_UNSPECIFIED
+	GenerationStatusPending     = genaiv0.GenerationStatus_GENERATION_STATUS_PENDING
+	GenerationStatusRunning     = genaiv0.GenerationStatus_GENERATION_STATUS_RUNNING
+	GenerationStatusSucceeded   = genaiv0.GenerationStatus_GENERATION_STATUS_SUCCEEDED
+	GenerationStatusFailed      = genaiv0.GenerationStatus_GENERATION_STATUS_FAILED
+	GenerationStatusCancelled   = genaiv0.GenerationStatus_GENERATION_STATUS_CANCELLED
 )
 
 // Failure kinds a failed generation carries, re-exported so a caller can act on them.
 const (
+	GenerationFailureUnspecified    = genaiv0.GenerationFailure_GENERATION_FAILURE_UNSPECIFIED
 	GenerationFailureRefused        = genaiv0.GenerationFailure_GENERATION_FAILURE_REFUSED
 	GenerationFailureIncomplete     = genaiv0.GenerationFailure_GENERATION_FAILURE_INCOMPLETE
 	GenerationFailureInvalidRequest = genaiv0.GenerationFailure_GENERATION_FAILURE_INVALID_REQUEST
@@ -55,9 +66,10 @@ const (
 
 // Tiers a caller picks from, re-exported so a caller never imports the generated package.
 const (
-	TierFast     = genaiv0.Tier_TIER_FAST
-	TierBalanced = genaiv0.Tier_TIER_BALANCED
-	TierDeep     = genaiv0.Tier_TIER_DEEP
+	TierUnspecified = genaiv0.Tier_TIER_UNSPECIFIED
+	TierFast        = genaiv0.Tier_TIER_FAST
+	TierBalanced    = genaiv0.Tier_TIER_BALANCED
+	TierDeep        = genaiv0.Tier_TIER_DEEP
 )
 
 // A Client issues the service's gRPC calls, one method per RPC. Construct one
@@ -82,7 +94,8 @@ type Client interface {
 	GenerationGet(
 		ctx context.Context, req *GenerationGetRequest, opts ...grpc.CallOption,
 	) (*GenerationGetResponse, error)
-	// GenerationCancel stops a generation so an abandoned one stops costing.
+	// GenerationCancel stops a generation so an abandoned one stops costing. A generation already
+	// settled comes back as it stands, so a retried cancel succeeds; read its status to know which.
 	GenerationCancel(
 		ctx context.Context, req *GenerationCancelRequest, opts ...grpc.CallOption,
 	) (*GenerationCancelResponse, error)

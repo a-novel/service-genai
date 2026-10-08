@@ -82,7 +82,7 @@ func (service *GenerationSweep) RunOnce(ctx context.Context) (bool, error) {
 			break
 		}
 
-		_, err = service.check.Exec(ctx, &GenerationCheckRequest{Generation: generation})
+		err = service.checkOne(ctx, generation)
 		if err != nil {
 			// One generation's failure belongs to it; the rest of the batch still progresses.
 			checkErr = errors.Join(checkErr, fmt.Errorf("check generation %s: %w", generation.ID, err))
@@ -94,4 +94,20 @@ func (service *GenerationSweep) RunOnce(ctx context.Context) (bool, error) {
 	}
 
 	return len(generations) > 0, nil
+}
+
+// checkOne keeps a panic with the generation that caused it. Escaping, it would end the process,
+// and the row would return on the next pass to end it again; a poll's panic is recovered the same
+// way by the server.
+func (service *GenerationSweep) checkOne(ctx context.Context, generation *dao.Generation) error {
+	ctx, span := otel.Tracer().Start(ctx, "core.GenerationSweep(checkOne)")
+	defer span.End()
+	defer otel.RecoverPanic(ctx, span)
+
+	_, err := service.check.Exec(ctx, &GenerationCheckRequest{Generation: generation})
+	if err != nil {
+		return otel.ReportError(span, err)
+	}
+
+	return nil
 }

@@ -277,6 +277,23 @@ func TestNewProvider(t *testing.T) {
 		})
 	}
 
+	t.Run("Success/CancelFinished", func(t *testing.T) {
+		t.Parallel()
+
+		// A cancel that arrives after the call finished must still return the result: the provider
+		// refuses to cancel it, and the adapter reads it instead.
+		started, err := provider.Start(t.Context(), request(lib.TierFast))
+		require.NoError(t, err)
+
+		finished := await(t, started.ID)
+		require.Equal(t, lib.ProviderCallSucceeded, finished.State, finished.Reason)
+
+		cancelled, err := provider.Cancel(t.Context(), started.ID)
+		require.NoError(t, err)
+		require.Equal(t, lib.ProviderCallSucceeded, cancelled.State)
+		require.JSONEq(t, string(finished.Output), string(cancelled.Output))
+	})
+
 	t.Run("Success/Cancel", func(t *testing.T) {
 		t.Parallel()
 

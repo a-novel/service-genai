@@ -27,17 +27,18 @@ type GenerationSubmitRequest struct {
 	// OwnerID is the user this acts for, formatted as a UUID. Supplied by the calling service, which
 	// verified it against its own credential — this service does not authenticate.
 	OwnerId string `protobuf:"bytes,1,opt,name=owner_id,json=ownerId,proto3" json:"owner_id,omitempty"`
-	// Purpose labels what the spend is attributed to. Required, and otherwise opaque: the vocabulary
-	// belongs to the caller.
+	// Purpose labels what the spend is attributed to. Required, at most 255 characters, and otherwise
+	// opaque: the vocabulary belongs to the caller.
 	Purpose string `protobuf:"bytes,2,opt,name=purpose,proto3" json:"purpose,omitempty"`
 	// Tier is the level of model capability wanted. Required.
 	Tier Tier `protobuf:"varint,6,opt,name=tier,proto3,enum=anovel.genai.v0.Tier" json:"tier,omitempty"`
 	// Instructions are the trusted channel: the caller's own directions to the model. Required.
 	Instructions string `protobuf:"bytes,7,opt,name=instructions,proto3" json:"instructions,omitempty"`
-	// Input is the untrusted channel: user content as any JSON value. Required.
+	// Input is the untrusted channel: user content as any JSON value. Required. Input and schema must be
+	// I-JSON (RFC 7493): valid UTF-8, no unpaired surrogates, no duplicate names in an object.
 	Input []byte `protobuf:"bytes,8,opt,name=input,proto3" json:"input,omitempty"`
-	// OutputSchema is the JSON Schema the output must conform to, within OpenAI's strict-mode subset.
-	// Required. Instructions, input and schema together are at most 3,688,000 bytes.
+	// OutputSchema is the JSON Schema the output must conform to, within OpenAI's strict-mode subset:
+	// a JSON object. Required. Instructions, input and schema together are at most 3,688,000 bytes.
 	OutputSchema []byte `protobuf:"bytes,9,opt,name=output_schema,json=outputSchema,proto3" json:"output_schema,omitempty"`
 	// Variant asks for another generation of a request that already succeeded, such as a regenerate.
 	// Zero by default. A caller recovering from a crash counts variants from zero again, and each one

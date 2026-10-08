@@ -1,5 +1,6 @@
--- Fenced by the attempt and provider call the caller observed, so a check acting on an outdated read
--- cannot settle an attempt it never saw.
+-- Fenced by the attempt, start and provider call the caller observed, so a check acting on an outdated
+-- read cannot settle an attempt it never saw. The start matters on its own: a requeue or a restart
+-- keeps the attempt number and clears the call, and only the start tells that state from the one read.
 --
 -- One instant serves every timestamp: two clock_timestamp() calls in one statement can differ, and
 -- the retention between settled_at and expires_at must be exact.
@@ -21,6 +22,7 @@ WHERE
   generations.id = ?0
   AND generations.attempt = ?1
   AND generations.provider_call_id IS NOT DISTINCT FROM ?2
+  AND generations.start_requested_at IS NOT DISTINCT FROM ?8
   AND generations.status IN ('pending', 'running')
 RETURNING
   generations.*;

@@ -51,8 +51,9 @@ func (handler *GrpcGenerationSubmit) GenerationSubmit(
 		Variant:      request.GetVariant(),
 	})
 
+	// The reason names the caller's own fields and limits, so it tells the caller what to fix.
 	if errors.Is(err, core.ErrInvalidRequest) {
-		return nil, status.Error(codes.InvalidArgument, "invalid submission")
+		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
 	if err != nil {
