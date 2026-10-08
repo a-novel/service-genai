@@ -102,13 +102,15 @@ func execute(ctx context.Context, t *testing.T, query string, args ...any) {
 func settleGeneration(ctx context.Context, t *testing.T, generation *dao.Generation) *dao.Generation {
 	t.Helper()
 
-	reason := "generation failed"
+	reason := "the provider call failed"
+	kind := "failed"
 
 	settled, err := dao.NewGenerationSettle().Exec(ctx, &dao.GenerationSettleRequest{
 		ID:             generation.ID,
 		Attempt:        generation.Attempt,
 		ProviderCallID: generation.ProviderCallID,
 		Status:         dao.GenerationStatusFailed,
+		Failure:        &kind,
 		Error:          &reason,
 		Retention:      testRetention,
 	})

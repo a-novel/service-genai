@@ -33,6 +33,7 @@ func TestGenerationCancel(t *testing.T) {
 
 		daoMock   *daoMock
 		checkMock *daoMock
+		usageErr  error
 
 		expectStatus core.GenerationStatus
 		expectErr    error
@@ -91,6 +92,15 @@ func TestGenerationCancel(t *testing.T) {
 			expectErr: errFoo,
 		},
 		{
+			name: "Error/Usage",
+
+			request:  &core.GenerationCancelRequest{ID: generationID, OwnerID: owner},
+			daoMock:  &daoMock{resp: settledGeneration(dao.GenerationStatusCancelled)},
+			usageErr: errFoo,
+
+			expectErr: errFoo,
+		},
+		{
 			name: "Error/Check",
 
 			request:   &core.GenerationCancelRequest{ID: generationID, OwnerID: owner},
@@ -107,6 +117,7 @@ func TestGenerationCancel(t *testing.T) {
 
 			cancelDao := coremocks.NewMockGenerationCancelDao(t)
 			check := coremocks.NewMockGenerationCancelServiceCheck(t)
+			usageDao := coremocks.NewMockGenerationCancelUsageListDao(t)
 
 			if testCase.daoMock != nil {
 				cancelDao.EXPECT().
@@ -125,7 +136,15 @@ func TestGenerationCancel(t *testing.T) {
 					Return(testCase.checkMock.resp, testCase.checkMock.err)
 			}
 
-			service, err := core.NewGenerationCancel(core.GenerationCancelConfig{Retention: retention}, cancelDao, check)
+			if testCase.expectStatus != "" || testCase.usageErr != nil {
+				usageDao.EXPECT().
+					Exec(mock.Anything, &dao.GenerationUsageListRequest{GenerationID: testGenerationID}).
+					Return(testUsageRows(), testCase.usageErr)
+			}
+
+			service, err := core.NewGenerationCancel(
+				core.GenerationCancelConfig{Retention: retention}, cancelDao, usageDao, check,
+			)
 			require.NoError(t, err)
 
 			result, err := service.Exec(t.Context(), testCase.request)
@@ -135,10 +154,12 @@ func TestGenerationCancel(t *testing.T) {
 				require.Nil(t, result)
 			} else {
 				require.Equal(t, testCase.expectStatus, result.Status)
+				require.Len(t, result.Usage, len(testUsageRows()))
 			}
 
 			cancelDao.AssertExpectations(t)
 			check.AssertExpectations(t)
+			usageDao.AssertExpectations(t)
 		})
 	}
 }

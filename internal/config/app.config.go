@@ -35,12 +35,21 @@ type Sweep struct {
 	BatchSize int `json:"batchSize" yaml:"batchSize"`
 }
 
+// TierBinding is what a Tier runs on the provider.
+type TierBinding struct {
+	Model           string `json:"model"           yaml:"model"`
+	ReasoningEffort string `json:"reasoningEffort" yaml:"reasoningEffort"`
+	MaxOutputTokens int64  `json:"maxOutputTokens" yaml:"maxOutputTokens"`
+}
+
 // Provider holds the generative AI provider's settings.
 type Provider struct {
 	// APIKey authenticates against the provider. The only credential this service holds.
 	APIKey string `json:"-" yaml:"-"`
 	// BaseURL overrides the provider endpoint. Empty uses the client default.
 	BaseURL string `json:"baseURL" yaml:"baseURL"`
+	// Tiers binds each Tier, by name, to what it runs.
+	Tiers map[string]TierBinding `json:"tiers" yaml:"tiers"`
 }
 
 // App is the complete configuration consumed by the service at startup, grouping
@@ -54,6 +63,8 @@ type App struct {
 	// CheckInterval is how long a check stays fresh: a polled generation reaches the provider at most
 	// once per interval.
 	CheckInterval time.Duration `json:"checkInterval" yaml:"checkInterval"`
+	// MaxAttempts caps the provider calls a generation gets when a call fails retryably.
+	MaxAttempts int16 `json:"maxAttempts" yaml:"maxAttempts"`
 	// Retention is how long a settled generation's user content survives before the purge.
 	Retention time.Duration `json:"retention" yaml:"retention"`
 

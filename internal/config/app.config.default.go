@@ -54,9 +54,11 @@ var AppPresetDefault = App{
 		BatchSize: env.SweepBatchSize,
 	},
 	CheckInterval: env.CheckInterval,
+	MaxAttempts:   env.MaxAttempts,
 	Provider: Provider{
 		APIKey:  env.OpenAIAPIKey,
 		BaseURL: env.OpenAIBaseURL,
+		Tiers:   TiersOpenAI,
 	},
 	Retention: env.Retention,
 

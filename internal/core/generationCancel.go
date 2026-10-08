@@ -20,6 +20,10 @@ type (
 	GenerationCancelDao interface {
 		Exec(ctx context.Context, request *dao.GenerationRequestCancelRequest) (*dao.Generation, error)
 	}
+	// GenerationCancelUsageListDao reads what the generation consumed.
+	GenerationCancelUsageListDao interface {
+		Exec(ctx context.Context, request *dao.GenerationUsageListRequest) ([]*dao.GenerationUsage, error)
+	}
 	// GenerationCancelServiceCheck stops a running provider call.
 	GenerationCancelServiceCheck interface {
 		Exec(ctx context.Context, request *GenerationCheckRequest) (*dao.Generation, error)
@@ -44,20 +48,24 @@ type GenerationCancelRequest struct {
 // away, which cancels the call and settles it with whatever it consumed: a cancelled call is not a
 // free one. One whose start is in flight is only marked, and the next check stops it.
 type GenerationCancel struct {
-	config GenerationCancelConfig
-	dao    GenerationCancelDao
-	check  GenerationCancelServiceCheck
+	config   GenerationCancelConfig
+	dao      GenerationCancelDao
+	usageDao GenerationCancelUsageListDao
+	check    GenerationCancelServiceCheck
 }
 
 func NewGenerationCancel(
-	config GenerationCancelConfig, cancelDao GenerationCancelDao, check GenerationCancelServiceCheck,
+	config GenerationCancelConfig,
+	cancelDao GenerationCancelDao,
+	usageDao GenerationCancelUsageListDao,
+	check GenerationCancelServiceCheck,
 ) (*GenerationCancel, error) {
 	err := validate.Struct(config)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 	}
 
-	return &GenerationCancel{config: config, dao: cancelDao, check: check}, nil
+	return &GenerationCancel{config: config, dao: cancelDao, usageDao: usageDao, check: check}, nil
 }
 
 func (service *GenerationCancel) Exec(
@@ -98,5 +106,10 @@ func (service *GenerationCancel) Exec(
 		}
 	}
 
-	return newGeneration(generation), nil
+	usage, err := service.usageDao.Exec(ctx, &dao.GenerationUsageListRequest{GenerationID: generation.ID})
+	if err != nil {
+		return nil, otel.ReportError(span, fmt.Errorf("list usage: %w", err))
+	}
+
+	return newGeneration(generation, usage), nil
 }

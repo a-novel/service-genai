@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/a-novel/service-genai/internal/dao"
+	"github.com/a-novel/service-genai/internal/lib"
 )
 
 // Ceilings the configuration and requests are held to. They live here because validation is this
@@ -17,11 +18,10 @@ const (
 	// background response stays retrievable for only about ten minutes when it is not stored, so the
 	// sweep must reach it well inside that window.
 	SweepIntervalCeiling = 5 * time.Minute
-	// RequestSizeCeiling bounds a submitted provider payload. It estimates OpenAI's 922,000-token
-	// maximum input using the rough English heuristic of four characters per token and one byte per
-	// ASCII character, leaving the model's separate 128,000-token output allowance untouched.
-	// Tokenization and UTF-8 width vary, so this is a transport and storage bound, not a promise that
-	// every payload below it fits every model.
+	// RequestSizeCeiling bounds a request's instructions, input and output schema together. It
+	// estimates OpenAI's 922,000-token maximum input using the rough English heuristic of four
+	// characters per token and one byte per ASCII character. Tokenization and UTF-8 width vary, so this
+	// is a transport and storage bound, not a promise that every request below it fits every model.
 	//
 	// The ceiling also remains below gRPC's default 4 MiB receive limit, leaving room for the
 	// protobuf envelope so an oversized request reaches application validation.
@@ -52,16 +52,16 @@ type Generation struct {
 	OwnerID uuid.UUID
 	// Purpose groups the generation under the caller's workflow vocabulary.
 	Purpose string
-	// Output is the provider response when the generation succeeds.
+	// Output is the document conforming to the output schema, when the generation succeeds.
 	Output json.RawMessage
-	// Error is the serialized failure when the generation does not succeed.
+	// Failure is the kind of failure that ended a failed generation.
+	Failure *lib.FailureKind
+	// Error names the cause of a failure or cancellation in this service's own words.
 	Error *string
 	// Status identifies the generation's current lifecycle state.
 	Status GenerationStatus
-	// Attempt counts the provider calls started, including one in flight.
-	Attempt int16
-	// MaxAttempts caps the number of provider attempts.
-	MaxAttempts int16
+	// Usage is what each provider call consumed, in attempt order.
+	Usage []*GenerationUsage
 	// CreatedAt is when the generation was submitted.
 	CreatedAt time.Time
 	// UpdatedAt is when the generation last changed.
@@ -72,25 +72,60 @@ type Generation struct {
 	ExpiresAt *time.Time
 }
 
-func newGeneration(generation *dao.Generation) *Generation {
-	if generation == nil {
-		return nil
+// GenerationUsage is what one provider call consumed, with the model and effort that actually ran.
+type GenerationUsage struct {
+	Attempt           int16
+	Provider          string
+	Model             string
+	ReasoningEffort   *string
+	InputTokens       int64
+	CachedInputTokens int64
+	OutputTokens      int64
+	ReasoningTokens   int64
+}
+
+// generationRequest is the provider-neutral request a generation stores and its checks send.
+type generationRequest struct {
+	Tier         lib.Tier        `json:"tier"`
+	Instructions string          `json:"instructions"`
+	Input        json.RawMessage `json:"input"`
+	OutputSchema json.RawMessage `json:"outputSchema"`
+}
+
+func newGeneration(generation *dao.Generation, usage []*dao.GenerationUsage) *Generation {
+	result := &Generation{
+		ID:        generation.ID,
+		OwnerID:   generation.OwnerID,
+		Purpose:   generation.Purpose,
+		Output:    generation.Output,
+		Error:     generation.Error,
+		Status:    GenerationStatus(generation.Status),
+		Usage:     make([]*GenerationUsage, len(usage)),
+		CreatedAt: generation.CreatedAt,
+		UpdatedAt: generation.UpdatedAt,
+		SettledAt: generation.SettledAt,
+		ExpiresAt: generation.ExpiresAt,
 	}
 
-	return &Generation{
-		ID:          generation.ID,
-		OwnerID:     generation.OwnerID,
-		Purpose:     generation.Purpose,
-		Output:      generation.Output,
-		Error:       generation.Error,
-		Status:      GenerationStatus(generation.Status),
-		Attempt:     generation.Attempt,
-		MaxAttempts: generation.MaxAttempts,
-		CreatedAt:   generation.CreatedAt,
-		UpdatedAt:   generation.UpdatedAt,
-		SettledAt:   generation.SettledAt,
-		ExpiresAt:   generation.ExpiresAt,
+	if generation.Failure != nil {
+		failure := lib.FailureKind(*generation.Failure)
+		result.Failure = &failure
 	}
+
+	for index, attempt := range usage {
+		result.Usage[index] = &GenerationUsage{
+			Attempt:           attempt.Attempt,
+			Provider:          attempt.Provider,
+			Model:             attempt.Model,
+			ReasoningEffort:   attempt.ReasoningEffort,
+			InputTokens:       attempt.InputTokens,
+			CachedInputTokens: attempt.CachedInputTokens,
+			OutputTokens:      attempt.OutputTokens,
+			ReasoningTokens:   attempt.ReasoningTokens,
+		}
+	}
+
+	return result
 }
 
 // Errors a caller can act on. Everything else is a fault.

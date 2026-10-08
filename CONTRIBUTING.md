@@ -47,9 +47,9 @@ Its jobs run as background workers inside PostgreSQL. Under SCRAM authentication
 
 Neither is worth thirty days of user content sitting with the provider. Output that outlives the call is already stored here, in `generations`, and chaining is ruled out by the request boundary — a caller hands over a self-contained payload, so there is no prior response to name.
 
-Every request goes out with `store: false`, overwriting whatever the caller sent, since this service is the platform's only path to a provider. A caller that chains anyway gets `Item not found` back.
+Every request goes out with `store: false`. This service composes the request, so no caller can ask otherwise, and it is the platform's only path to a provider. A caller that chains anyway gets `Item not found` back.
 
-Re-attach does not depend on it: a background response stays on the provider's disk for about ten minutes so it can be polled, which `store` does not govern, and a check re-attaches as soon as a poll or the sweep reaches it. **Revisit this** if a re-attach starts failing with a not-found on an operation that should still be running — that window has moved. A 404 settles the generation as failed, so being wrong costs one result, not a second paid call.
+Re-attach does not depend on it: a finished background response stays retrievable for a while, which `store` does not govern. OpenAI documents about ten minutes; on 2026-10-08 it measured over an hour. The sweep reaches every unpolled generation within a minute, and a check re-attaches as soon as a poll or the sweep reaches it. **Revisit this** if a re-attach starts failing with a not-found on an operation that should still be running — that window has moved. A 404 settles the generation as failed, so being wrong costs one result, not a second paid call.
 
 ---
 

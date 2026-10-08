@@ -24,6 +24,10 @@ type (
 	GenerationGetElectCheckDao interface {
 		Exec(ctx context.Context, request *dao.GenerationElectCheckRequest) (*dao.Generation, error)
 	}
+	// GenerationGetUsageListDao reads what the generation consumed.
+	GenerationGetUsageListDao interface {
+		Exec(ctx context.Context, request *dao.GenerationUsageListRequest) ([]*dao.GenerationUsage, error)
+	}
 	// GenerationGetServiceCheck checks the generation.
 	GenerationGetServiceCheck interface {
 		Exec(ctx context.Context, request *GenerationCheckRequest) (*dao.Generation, error)
@@ -51,6 +55,7 @@ type GenerationGet struct {
 	config   GenerationGetConfig
 	dao      GenerationGetDao
 	electDao GenerationGetElectCheckDao
+	usageDao GenerationGetUsageListDao
 	check    GenerationGetServiceCheck
 }
 
@@ -58,6 +63,7 @@ func NewGenerationGet(
 	config GenerationGetConfig,
 	getDao GenerationGetDao,
 	electDao GenerationGetElectCheckDao,
+	usageDao GenerationGetUsageListDao,
 	check GenerationGetServiceCheck,
 ) (*GenerationGet, error) {
 	err := validate.Struct(config)
@@ -65,7 +71,7 @@ func NewGenerationGet(
 		return nil, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 	}
 
-	return &GenerationGet{config: config, dao: getDao, electDao: electDao, check: check}, nil
+	return &GenerationGet{config: config, dao: getDao, electDao: electDao, usageDao: usageDao, check: check}, nil
 }
 
 func (service *GenerationGet) Exec(ctx context.Context, request *GenerationGetRequest) (*Generation, error) {
@@ -94,27 +100,43 @@ func (service *GenerationGet) Exec(ctx context.Context, request *GenerationGetRe
 		return nil, otel.ReportError(span, fmt.Errorf("get generation: %w", err))
 	}
 
-	if generation.SettledAt != nil {
-		return newGeneration(generation), nil
+	if generation.SettledAt == nil {
+		generation, err = service.checkIfStale(ctx, generation)
+		if err != nil {
+			return nil, otel.ReportError(span, err)
+		}
 	}
 
+	usage, err := service.usageDao.Exec(ctx, &dao.GenerationUsageListRequest{GenerationID: generation.ID})
+	if err != nil {
+		return nil, otel.ReportError(span, fmt.Errorf("list usage: %w", err))
+	}
+
+	return newGeneration(generation, usage), nil
+}
+
+// checkIfStale checks the generation when no one checked it within the interval.
+func (service *GenerationGet) checkIfStale(ctx context.Context, generation *dao.Generation) (*dao.Generation, error) {
+	ctx, span := otel.Tracer().Start(ctx, "core.GenerationGet(checkIfStale)")
+	defer span.End()
+
 	elected, err := service.electDao.Exec(ctx, &dao.GenerationElectCheckRequest{
-		ID: request.ID, OwnerID: request.OwnerID, Interval: service.config.CheckInterval,
+		ID: generation.ID, OwnerID: generation.OwnerID, Interval: service.config.CheckInterval,
 	})
 
 	// Checked within the interval, by this caller or another: the read is current enough.
 	if errors.Is(err, dao.ErrGenerationCheckNotDue) {
-		return newGeneration(generation), nil
+		return generation, nil
 	}
 
 	if err != nil {
 		return nil, otel.ReportError(span, fmt.Errorf("elect check: %w", err))
 	}
 
-	generation, err = service.check.Exec(ctx, &GenerationCheckRequest{Generation: elected})
+	checked, err := service.check.Exec(ctx, &GenerationCheckRequest{Generation: elected})
 	if err != nil {
 		return nil, otel.ReportError(span, fmt.Errorf("check generation: %w", err))
 	}
 
-	return newGeneration(generation), nil
+	return checked, nil
 }

@@ -40,10 +40,12 @@ type Generation struct {
 
 	IdempotencyKey     string `bun:"idempotency_key"`
 	RequestFingerprint []byte `bun:"request_fingerprint"`
-	// Request is the provider payload, forwarded verbatim. Opaque here: the caller owns it.
-	Request json.RawMessage `bun:"request,type:jsonb"`
-	Output  json.RawMessage `bun:"output,type:jsonb,nullzero"`
-	// Error is the serialised failure. Nothing queries inside it.
+	// Request is the caller's provider-neutral request, stored as sent.
+	Request json.RawMessage `bun:"request,type:json"`
+	Output  json.RawMessage `bun:"output,type:json,nullzero"`
+	// Failure is the kind of failure that ended a failed generation.
+	Failure *string `bun:"failure,nullzero"`
+	// Error names the cause of a failure or cancellation in this service's own words.
 	Error *string `bun:"error,nullzero"`
 
 	Status      GenerationStatus `bun:"status"`

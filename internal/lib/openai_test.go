@@ -2,6 +2,7 @@ package lib_test
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -14,14 +15,14 @@ import (
 	"github.com/a-novel/service-genai/internal/lib"
 )
 
-// scriptedProvider stands in for the Responses API. It records the last request body so the
-// pass-through assertions can read it, and answers with whatever the case scripted.
+// scriptedProvider stands in for the Responses API. It records the last request so the composition
+// assertions can read it, and answers with whatever the case scripted.
 type scriptedProvider struct {
 	status int
 	body   string
 
 	lastPath string
-	lastBody map[string]any
+	lastBody json.RawMessage
 }
 
 func (script *scriptedProvider) serve(t *testing.T) *httptest.Server {
@@ -31,7 +32,7 @@ func (script *scriptedProvider) serve(t *testing.T) *httptest.Server {
 		script.lastPath = request.URL.Path
 
 		if request.Body != nil {
-			_ = json.NewDecoder(request.Body).Decode(&script.lastBody)
+			script.lastBody, _ = io.ReadAll(request.Body)
 		}
 
 		writer.Header().Set("Content-Type", "application/json")
@@ -44,6 +45,12 @@ func (script *scriptedProvider) serve(t *testing.T) *httptest.Server {
 	return server
 }
 
+var testTiers = map[lib.Tier]lib.TierBinding{
+	lib.TierFast:     {Model: "gpt-5.6-luna", ReasoningEffort: "low", MaxOutputTokens: 1024},
+	lib.TierBalanced: {Model: "gpt-5.6-terra", ReasoningEffort: "medium", MaxOutputTokens: 2048},
+	lib.TierDeep:     {Model: "gpt-5.6-sol", MaxOutputTokens: 4096},
+}
+
 func newTestProvider(t *testing.T, script *scriptedProvider) *lib.OpenAI {
 	t.Helper()
 
@@ -51,58 +58,57 @@ func newTestProvider(t *testing.T, script *scriptedProvider) *lib.OpenAI {
 
 	// MaxRetries(0) so a scripted 5xx surfaces as one classified error instead of the SDK's own
 	// retry loop deciding first.
-	return lib.NewOpenAI(
+	provider, err := lib.NewOpenAI(
+		testTiers,
 		option.WithBaseURL(server.URL),
 		option.WithHTTPClient(server.Client()),
 		option.WithAPIKey("test-key"),
 		option.WithMaxRetries(0),
 	)
+	if err != nil {
+		panic(err)
+	}
+
+	return provider
+}
+
+func testStartRequest(tier lib.Tier) *lib.ProviderStartRequest {
+	return &lib.ProviderStartRequest{
+		Tier:         tier,
+		Instructions: "Continue the scene.",
+		Input:        json.RawMessage(`{"scene": "a door"}`),
+		OutputSchema: json.RawMessage(`{"type":"object","properties":{"z":{"type":"string"},"a":{"type":"string"}}}`),
+		EndUserID:    "00000000-0000-0000-0000-000000000001",
+		GenerationID: "01999999-0000-7000-8000-000000000001",
+		Attempt:      1,
+	}
+}
+
+// response builds a Responses API body around the given status and extra fields.
+func response(status string, extra string) string {
+	body := `{"id": "resp_1", "status": "` + status + `", "model": "gpt-5.6-terra-2026-01-01",` +
+		` "reasoning": {"effort": "medium"}`
+	if extra != "" {
+		body += ", " + extra
+	}
+
+	return body + "}"
 }
 
 const (
-	responseCompleted = `{
-		"id": "resp_1",
-		"status": "completed",
-		"model": "gpt-5.6-terra-2026-01-01",
-		"usage": {
-			"input_tokens": 1000,
-			"input_tokens_details": {"cached_tokens": 200},
-			"output_tokens": 500,
-			"output_tokens_details": {"reasoning_tokens": 100},
-			"total_tokens": 1500
-		}
+	testUsage = `"usage": {
+		"input_tokens": 1000, "input_tokens_details": {"cached_tokens": 200},
+		"output_tokens": 500, "output_tokens_details": {"reasoning_tokens": 100}, "total_tokens": 1500
 	}`
-	responseQueued     = `{"id": "resp_1", "status": "queued", "model": "gpt-5.6-terra"}`
-	responseIncomplete = `{
-		"id": "resp_1",
-		"status": "incomplete",
-		"model": "gpt-5.6-terra",
-		"incomplete_details": {"reason": "max_output_tokens"},
-		"usage": {
-			"input_tokens": 10,
-			"input_tokens_details": {"cached_tokens": 0},
-			"output_tokens": 4096,
-			"output_tokens_details": {"reasoning_tokens": 0},
-			"total_tokens": 4106
-		}
-	}`
-	responseFailed = `{
-		"id": "resp_1",
-		"status": "failed",
-		"model": "gpt-5.6-terra",
-		"error": {"code": "server_error", "message": "the model failed"}
-	}`
-	responseFailedTerminal = `{
-		"id": "resp_1",
-		"status": "failed",
-		"model": "gpt-5.6-terra",
-		"error": {"code": "invalid_prompt", "message": "the prompt was rejected"}
-	}`
-	responseCancelled = `{"id": "resp_1", "status": "cancelled", "model": "gpt-5.6-terra"}`
+	testOutput  = `"output": [{"type": "message", "content": [{"type": "output_text", "text": "{\"text\": \"done\"}"}]}]`
+	testRefusal = `"output": [{"type": "message", "content": [{"type": "refusal", "refusal": "no"}]}]`
+	testProse   = `"output": [{"type": "message", "content": [{"type": "output_text", "text": "not json"}]}]`
 )
 
 func TestOpenAI(t *testing.T) {
 	t.Parallel()
+
+	fullUsage := &lib.ProviderUsage{InputTokens: 1000, CachedInputTokens: 200, OutputTokens: 500, ReasoningTokens: 100}
 
 	testCases := []struct {
 		name string
@@ -110,100 +116,162 @@ func TestOpenAI(t *testing.T) {
 		script *scriptedProvider
 
 		expectState     lib.ProviderCallState
-		expectModel     string
-		expectReason    string
+		expectOutput    string
 		expectUsage     *lib.ProviderUsage
+		expectFailure   *lib.Failure
 		expectRetryable bool
 		expectErr       error
+		// expectRejection is the failure a definitive start rejection carries.
+		expectRejection *lib.Failure
 	}{
 		{
+			// The output is the schema document itself, not the provider's envelope.
 			name: "Success/Completed",
 
-			script: &scriptedProvider{status: http.StatusOK, body: responseCompleted},
+			script: &scriptedProvider{status: http.StatusOK, body: response("completed", testOutput+", "+testUsage)},
 
-			expectState: lib.ProviderCallSucceeded,
-			// The snapshot the provider served, not the alias the caller asked for.
-			expectModel: "gpt-5.6-terra-2026-01-01",
-			expectUsage: &lib.ProviderUsage{
-				InputTokens: 1000, CachedInputTokens: 200,
-				OutputTokens: 500, ReasoningTokens: 100,
+			expectState:  lib.ProviderCallSucceeded,
+			expectOutput: `{"text": "done"}`,
+			expectUsage:  fullUsage,
+		},
+		{
+			// Background mode answers before the model has run: the identifier is recorded now and
+			// polled later.
+			name: "Success/QueuedIsNotTerminal",
+
+			script: &scriptedProvider{status: http.StatusOK, body: response("queued", "")},
+
+			expectState: lib.ProviderCallRunning,
+		},
+		{
+			name: "Success/Refused",
+
+			script: &scriptedProvider{status: http.StatusOK, body: response("completed", testRefusal+", "+testUsage)},
+
+			expectState:   lib.ProviderCallFailed,
+			expectUsage:   fullUsage,
+			expectFailure: &lib.Failure{Kind: lib.FailureRefused, Message: "the model refused the request"},
+		},
+		{
+			name: "Success/OutputNotAnObject",
+
+			script: &scriptedProvider{status: http.StatusOK, body: response("completed", testProse+", "+testUsage)},
+
+			expectState: lib.ProviderCallFailed,
+			expectUsage: fullUsage,
+			expectFailure: &lib.Failure{
+				Kind: lib.FailureFailed, Message: "the provider returned an output that is not a JSON object",
 			},
 		},
 		{
-			// Background mode answers before the model has run, which is the whole point: the
-			// identifier exists to be recorded now and polled later.
-			name: "Success/QueuedIsNotTerminal",
+			// Terminal, and it consumed tokens: the usage is kept.
+			name: "Success/IncompleteAtCeiling",
 
-			script: &scriptedProvider{status: http.StatusOK, body: responseQueued},
+			script: &scriptedProvider{status: http.StatusOK, body: response(
+				"incomplete", `"incomplete_details": {"reason": "max_output_tokens"}, `+testUsage,
+			)},
 
-			expectState: lib.ProviderCallRunning,
-			expectModel: "gpt-5.6-terra",
+			expectState: lib.ProviderCallFailed,
+			expectUsage: fullUsage,
+			expectFailure: &lib.Failure{
+				Kind: lib.FailureIncomplete, Message: "the output reached the tier's output token ceiling",
+			},
 		},
 		{
-			// Terminal, and it consumed tokens. Treating it as a failure would lose the usage.
-			name: "Success/IncompleteCarriesUsage",
+			name: "Success/IncompleteContentFilter",
 
-			script: &scriptedProvider{status: http.StatusOK, body: responseIncomplete},
+			script: &scriptedProvider{status: http.StatusOK, body: response(
+				"incomplete", `"incomplete_details": {"reason": "content_filter"}`,
+			)},
 
-			expectState:  lib.ProviderCallIncomplete,
-			expectModel:  "gpt-5.6-terra",
-			expectReason: "max_output_tokens",
-			expectUsage: &lib.ProviderUsage{
-				InputTokens: 10, OutputTokens: 4096, ReasoningTokens: 0,
+			expectState: lib.ProviderCallFailed,
+			expectFailure: &lib.Failure{
+				Kind: lib.FailureRefused, Message: "the provider's content filter stopped the output",
 			},
 		},
 		{
 			name: "Success/RetryableFailure",
 
-			script: &scriptedProvider{status: http.StatusOK, body: responseFailed},
+			script: &scriptedProvider{status: http.StatusOK, body: response(
+				"failed", `"error": {"code": "server_error", "message": "the model failed"}`,
+			)},
 
 			expectState:     lib.ProviderCallFailed,
-			expectModel:     "gpt-5.6-terra",
-			expectReason:    "the model failed",
+			expectFailure:   &lib.Failure{Kind: lib.FailureFailed, Message: "the provider failed to complete the call"},
 			expectRetryable: true,
 		},
 		{
-			name: "Success/TerminalFailure",
+			name: "Success/PolicyFailure",
 
-			script: &scriptedProvider{status: http.StatusOK, body: responseFailedTerminal},
+			script: &scriptedProvider{status: http.StatusOK, body: response(
+				"failed", `"error": {"code": "invalid_prompt", "message": "the prompt was rejected"}`,
+			)},
 
-			expectState:  lib.ProviderCallFailed,
-			expectModel:  "gpt-5.6-terra",
-			expectReason: "the prompt was rejected",
+			expectState: lib.ProviderCallFailed,
+			expectFailure: &lib.Failure{
+				Kind: lib.FailureRefused, Message: "the provider's usage policy refused the request",
+			},
 		},
 		{
 			name: "Success/Cancelled",
 
-			script: &scriptedProvider{status: http.StatusOK, body: responseCancelled},
+			script: &scriptedProvider{status: http.StatusOK, body: response("cancelled", "")},
 
 			expectState: lib.ProviderCallCancelled,
-			expectModel: "gpt-5.6-terra",
 		},
 		{
-			// The request was fine and may succeed unchanged, so another attempt is worth spending.
-			name: "Error/Retryable/RateLimited",
+			// Nothing was accepted, so another start costs nothing.
+			name: "Error/RateLimited",
 
 			script: &scriptedProvider{status: http.StatusTooManyRequests, body: `{"error":{"message":"slow down"}}`},
 
 			expectErr: lib.ErrProviderRetryable,
 		},
 		{
-			name: "Error/Ambiguous/ProviderFault",
+			name: "Error/ProviderFaultIsAmbiguous",
 
 			script: &scriptedProvider{status: http.StatusBadGateway, body: `{"error":{"message":"bad gateway"}}`},
 
 			expectErr: lib.ErrProviderStartAmbiguous,
 		},
 		{
-			// Terminal: retrying only spends an attempt to be rejected again.
-			name: "Error/Terminal/BadRequest",
+			name: "Error/ContextExceeded",
 
-			script: &scriptedProvider{status: http.StatusBadRequest, body: `{"error":{"message":"unknown model"}}`},
+			script: &scriptedProvider{
+				status: http.StatusBadRequest,
+				body:   `{"error":{"message":"too long","code":"context_length_exceeded"}}`,
+			},
+
+			expectRejection: &lib.Failure{
+				Kind: lib.FailureInvalidRequest, Message: "the input exceeds the model's context window",
+			},
 		},
 		{
-			name: "Error/Terminal/Unauthorized",
+			name: "Error/SchemaRejected",
+
+			script: &scriptedProvider{
+				status: http.StatusBadRequest,
+				body:   `{"error":{"message":"bad schema","param":"text.format.schema"}}`,
+			},
+
+			expectRejection: &lib.Failure{
+				Kind: lib.FailureInvalidRequest, Message: "the provider rejected the output schema",
+			},
+		},
+		{
+			name: "Error/BadRequest",
+
+			script: &scriptedProvider{status: http.StatusBadRequest, body: `{"error":{"message":"nope"}}`},
+
+			expectRejection: &lib.Failure{Kind: lib.FailureInvalidRequest, Message: "the provider rejected the request"},
+		},
+		{
+			// The service's credentials, not the caller's request: fixing the request would not help.
+			name: "Error/Unauthorized",
 
 			script: &scriptedProvider{status: http.StatusUnauthorized, body: `{"error":{"message":"bad key"}}`},
+
+			expectRejection: &lib.Failure{Kind: lib.FailureFailed, Message: "the provider refused the call"},
 		},
 	}
 
@@ -213,95 +281,73 @@ func TestOpenAI(t *testing.T) {
 
 			provider := newTestProvider(t, testCase.script)
 
-			call, err := provider.Start(t.Context(), &lib.ProviderStartRequest{
-				Request:      json.RawMessage(`{"model": "gpt-5.6-terra", "input": "write"}`),
-				GenerationID: "01999999-0000-7000-8000-000000000001",
-				Attempt:      1,
-			})
+			call, err := provider.Start(t.Context(), testStartRequest(lib.TierBalanced))
 
-			if testCase.expectState == "" {
-				require.Error(t, err)
+			if testCase.expectRejection != nil {
+				var rejection *lib.ProviderRejectionError
 
-				if testCase.expectErr != nil {
-					require.ErrorIs(t, err, testCase.expectErr)
-				} else {
-					// Terminal failures must not be mistaken for retryable ones, or a rejected
-					// request burns every attempt it has.
-					require.NotErrorIs(t, err, lib.ErrProviderRetryable)
-				}
+				require.ErrorAs(t, err, &rejection)
+				require.Equal(t, *testCase.expectRejection, rejection.Failure)
+				require.NotErrorIs(t, err, lib.ErrProviderRetryable)
 
 				return
 			}
 
-			require.NoError(t, err)
+			require.ErrorIs(t, err, testCase.expectErr)
+
+			if testCase.expectErr != nil {
+				return
+			}
+
 			require.Equal(t, "resp_1", call.ID)
 			require.Equal(t, testCase.expectState, call.State)
-			require.Equal(t, testCase.expectModel, call.Model)
-			require.Equal(t, testCase.expectReason, call.Reason)
+			// What the provider served, not what the Tier asked for.
+			require.Equal(t, "gpt-5.6-terra-2026-01-01", call.Model)
+			require.Equal(t, "medium", call.ReasoningEffort)
 			require.Equal(t, testCase.expectUsage, call.Usage)
+			require.Equal(t, testCase.expectFailure, call.Failure)
 			require.Equal(t, testCase.expectRetryable, call.Retryable)
-			require.Equal(t, testCase.expectState != lib.ProviderCallRunning, call.State.Terminal())
-			// The output is the provider's response verbatim, so the caller reads whatever it asked
-			// for without this service knowing the shape.
-			require.NotEmpty(t, call.Output)
+
+			if testCase.expectOutput != "" {
+				require.JSONEq(t, testCase.expectOutput, string(call.Output))
+			} else {
+				require.Empty(t, call.Output)
+			}
 		})
 	}
 }
 
-// The pass-through is the contract: the caller owns every parameter, and this service adds only the
-// two fields crash-safety needs.
-func TestOpenAIRequestPassThrough(t *testing.T) {
+// The request is composed here from the Tier's binding: the caller never names a model, and the
+// fields crash-safety and privacy depend on are always set.
+func TestOpenAIRequest(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
 		name string
 
-		request json.RawMessage
+		tier lib.Tier
 
-		// expectKept are caller fields that must reach the provider untouched, including ones this
-		// SDK version has no typed parameter for.
-		expectKept map[string]any
+		expectModel     string
+		expectReasoning any
+		expectMaxOutput float64
 	}{
 		{
-			name: "KeepsEveryCallerField",
+			name: "Success/Balanced",
 
-			request: json.RawMessage(`{
-				"model": "gpt-5.6-terra",
-				"input": "write",
-				"max_output_tokens": 4096,
-				"reasoning": {"effort": "high"}
-			}`),
+			tier: lib.TierBalanced,
 
-			expectKept: map[string]any{
-				"model":             "gpt-5.6-terra",
-				"input":             "write",
-				"max_output_tokens": float64(4096),
-			},
+			expectModel:     "gpt-5.6-terra",
+			expectReasoning: map[string]any{"effort": "medium"},
+			expectMaxOutput: 2048,
 		},
 		{
-			// A field this SDK has never heard of must survive. Decoding into typed parameters
-			// would drop it, which is why the request is forwarded as raw JSON.
-			name: "KeepsAFieldTheSdkDoesNotKnow",
+			// A binding without an effort sends none rather than an empty one the provider rejects.
+			name: "Success/NoEffort",
 
-			request: json.RawMessage(`{"model": "gpt-5.6-terra", "some_future_knob": "on"}`),
+			tier: lib.TierDeep,
 
-			expectKept: map[string]any{"some_future_knob": "on"},
-		},
-		{
-			// Crash-safety is not the caller's to disable.
-			name: "OverridesBackgroundEvenWhenTheCallerSetIt",
-
-			request: json.RawMessage(`{"model": "gpt-5.6-terra", "background": false}`),
-
-			expectKept: map[string]any{"model": "gpt-5.6-terra"},
-		},
-		{
-			// Retention is not the caller's to set either.
-			name: "OverridesStoreEvenWhenTheCallerSetIt",
-
-			request: json.RawMessage(`{"model": "gpt-5.6-terra", "store": true}`),
-
-			expectKept: map[string]any{"model": "gpt-5.6-terra"},
+			expectModel:     "gpt-5.6-sol",
+			expectMaxOutput: 4096,
 		},
 	}
 
@@ -309,32 +355,83 @@ func TestOpenAIRequestPassThrough(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			script := &scriptedProvider{status: http.StatusOK, body: responseQueued}
+			script := &scriptedProvider{status: http.StatusOK, body: response("queued", "")}
 			provider := newTestProvider(t, script)
 
-			_, err := provider.Start(t.Context(), &lib.ProviderStartRequest{
-				Request:      testCase.request,
-				GenerationID: "01999999-0000-7000-8000-000000000001",
-				Attempt:      2,
-			})
+			_, err := provider.Start(t.Context(), testStartRequest(testCase.tier))
 			require.NoError(t, err)
+			require.Equal(t, "/responses", script.lastPath)
 
-			for key, value := range testCase.expectKept {
-				require.Equal(t, value, script.lastBody[key], "field %q", key)
-			}
+			var sent map[string]any
+			require.NoError(t, json.Unmarshal(script.lastBody, &sent))
 
-			require.Equal(t, true, script.lastBody["background"])
-			require.Equal(t, false, script.lastBody["store"])
+			require.Equal(t, testCase.expectModel, sent["model"])
+			require.Equal(t, testCase.expectReasoning, sent["reasoning"])
+			require.InDelta(t, testCase.expectMaxOutput, sent["max_output_tokens"], 0)
+			require.Equal(t, "Continue the scene.", sent["instructions"])
+			require.JSONEq(t, `{"scene": "a door"}`, sent["input"].(string))
+			require.Equal(t, true, sent["background"])
+			require.Equal(t, false, sent["store"])
 			require.Equal(t, map[string]any{
-				"generation_id": "01999999-0000-7000-8000-000000000001",
-				"attempt":       "2",
-			}, script.lastBody["metadata"])
+				"generation_id": "01999999-0000-7000-8000-000000000001", "attempt": "1",
+			}, sent["metadata"])
+			// Hashed: the provider attributes abuse without learning the platform's own identifier.
+			require.Len(t, sent["safety_identifier"], 64)
+			require.NotContains(t, sent["safety_identifier"], "00000000-0000-0000-0000-000000000001")
+
+			// The schema reaches the provider as sent: its property order steers the output.
+			require.Contains(t, string(script.lastBody),
+				`"schema":{"type":"object","properties":{"z":{"type":"string"},"a":{"type":"string"}}}`)
+			require.Contains(t, string(script.lastBody), `"strict":true`)
 		})
 	}
 }
 
-// Get is both the poll and the re-attach. A generation recovered from a crash calls it and resumes
-// the operation already paid for.
+func TestNewOpenAI(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name string
+
+		tiers map[lib.Tier]lib.TierBinding
+
+		expectErr error
+	}{
+		{
+			name: "Success",
+
+			tiers: testTiers,
+		},
+		{
+			name: "Error/TierUnbound",
+
+			tiers: map[lib.Tier]lib.TierBinding{lib.TierFast: testTiers[lib.TierFast]},
+
+			expectErr: lib.ErrTierNotBound,
+		},
+		{
+			name: "Error/NoOutputCeiling",
+
+			tiers: map[lib.Tier]lib.TierBinding{
+				lib.TierFast:     {Model: "a-model"},
+				lib.TierBalanced: testTiers[lib.TierBalanced],
+				lib.TierDeep:     testTiers[lib.TierDeep],
+			},
+
+			expectErr: lib.ErrTierNotBound,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := lib.NewOpenAI(testCase.tiers)
+			require.ErrorIs(t, err, testCase.expectErr)
+		})
+	}
+}
+
 func TestOpenAIGet(t *testing.T) {
 	t.Parallel()
 
@@ -347,30 +444,22 @@ func TestOpenAIGet(t *testing.T) {
 		expectErr   error
 	}{
 		{
-			name: "Success/StillRunning",
+			name: "Success",
 
-			script: &scriptedProvider{status: http.StatusOK, body: responseQueued},
-
-			expectState: lib.ProviderCallRunning,
-		},
-		{
-			name: "Success/Completed",
-
-			script: &scriptedProvider{status: http.StatusOK, body: responseCompleted},
+			script: &scriptedProvider{status: http.StatusOK, body: response("completed", testOutput)},
 
 			expectState: lib.ProviderCallSucceeded,
 		},
 		{
-			// The operation is gone, so there is nothing to re-attach to. Terminal, not retryable:
-			// polling again cannot bring it back.
-			name: "Error/Terminal/NotFound",
+			// Gone past the provider's retention window: not something another read fixes.
+			name: "Error/NotFound",
 
 			script: &scriptedProvider{status: http.StatusNotFound, body: `{"error":{"message":"no such response"}}`},
 		},
 		{
-			name: "Error/Retryable/ProviderFault",
+			name: "Error/Retryable",
 
-			script: &scriptedProvider{status: http.StatusServiceUnavailable, body: `{"error":{"message":"unavailable"}}`},
+			script: &scriptedProvider{status: http.StatusBadGateway, body: `{"error":{"message":"bad gateway"}}`},
 
 			expectErr: lib.ErrProviderRetryable,
 		},
@@ -398,7 +487,7 @@ func TestOpenAIGet(t *testing.T) {
 
 			require.NoError(t, err)
 			require.Equal(t, testCase.expectState, call.State)
-			require.Contains(t, testCase.script.lastPath, "resp_1")
+			require.Equal(t, "/responses/resp_1", testCase.script.lastPath)
 		})
 	}
 }
@@ -417,21 +506,20 @@ func TestOpenAICancel(t *testing.T) {
 		{
 			name: "Success",
 
-			script: &scriptedProvider{status: http.StatusOK, body: responseCancelled},
+			script: &scriptedProvider{status: http.StatusOK, body: response("cancelled", "")},
 
 			expectState: lib.ProviderCallCancelled,
 		},
 		{
-			// Cancelling twice returns the final state rather than failing, so a worker racing the
-			// provider does not need to care which got there first.
-			name: "Success/AlreadyTerminal",
+			// Cancelling a finished operation returns its final state, so the result is still read.
+			name: "Success/AlreadyCompleted",
 
-			script: &scriptedProvider{status: http.StatusOK, body: responseCompleted},
+			script: &scriptedProvider{status: http.StatusOK, body: response("completed", testOutput)},
 
 			expectState: lib.ProviderCallSucceeded,
 		},
 		{
-			name: "Error/Retryable/ProviderFault",
+			name: "Error/Retryable",
 
 			script: &scriptedProvider{status: http.StatusBadGateway, body: `{"error":{"message":"bad gateway"}}`},
 
@@ -446,19 +534,19 @@ func TestOpenAICancel(t *testing.T) {
 			provider := newTestProvider(t, testCase.script)
 
 			call, err := provider.Cancel(t.Context(), "resp_1")
+			require.ErrorIs(t, err, testCase.expectErr)
 
-			if testCase.expectState == "" {
-				require.ErrorIs(t, err, testCase.expectErr)
-
+			if testCase.expectErr != nil {
 				return
 			}
 
-			require.NoError(t, err)
 			require.Equal(t, testCase.expectState, call.State)
+			require.Equal(t, "/responses/resp_1/cancel", testCase.script.lastPath)
 		})
 	}
 }
 
+// A start the provider may have received but never answered cannot be retried as a new one.
 func TestOpenAIStartTimeoutIsAmbiguous(t *testing.T) {
 	t.Parallel()
 
@@ -474,18 +562,16 @@ func TestOpenAIStartTimeoutIsAmbiguous(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	provider := lib.NewOpenAI(
+	provider, err := lib.NewOpenAI(
+		testTiers,
 		option.WithBaseURL(server.URL),
 		option.WithHTTPClient(server.Client()),
 		option.WithAPIKey("test-key"),
 		option.WithRequestTimeout(time.Second),
 	)
+	require.NoError(t, err)
 
-	_, err := provider.Start(t.Context(), &lib.ProviderStartRequest{
-		Request:      json.RawMessage(`{"model": "gpt-5.6-terra"}`),
-		GenerationID: "01999999-0000-7000-8000-000000000001",
-		Attempt:      1,
-	})
+	_, err = provider.Start(t.Context(), testStartRequest(lib.TierFast))
 	require.ErrorIs(t, err, lib.ErrProviderStartAmbiguous)
 	require.Equal(t, int32(1), requests.Load())
 }
@@ -496,58 +582,34 @@ func TestOpenAITransportFailure(t *testing.T) {
 	t.Parallel()
 
 	// A port nothing listens on.
-	provider := lib.NewOpenAI(
+	provider, err := lib.NewOpenAI(
+		testTiers,
 		option.WithBaseURL("https://127.0.0.1:1"),
 		option.WithAPIKey("test-key"),
 		option.WithMaxRetries(0),
 	)
+	require.NoError(t, err)
 
-	_, err := provider.Start(t.Context(), &lib.ProviderStartRequest{
-		Request:      json.RawMessage(`{"model": "gpt-5.6-terra"}`),
-		GenerationID: "01999999-0000-7000-8000-000000000001",
-		Attempt:      1,
-	})
+	_, err = provider.Start(t.Context(), testStartRequest(lib.TierFast))
 	require.ErrorIs(t, err, lib.ErrProviderRetryable)
 }
 
-// A request that is not a JSON object cannot have the two owned fields merged into it, and that is
-// a caller bug rather than something to send and have rejected.
-func TestOpenAIMalformedRequest(t *testing.T) {
-	t.Parallel()
-
-	script := &scriptedProvider{status: http.StatusOK, body: responseQueued}
-	provider := newTestProvider(t, script)
-
-	_, err := provider.Start(t.Context(), &lib.ProviderStartRequest{
-		Request:      json.RawMessage(`"not an object"`),
-		GenerationID: "01999999-0000-7000-8000-000000000001",
-		Attempt:      1,
-	})
-	require.Error(t, err)
-	require.NotErrorIs(t, err, lib.ErrProviderRetryable)
-}
-
-// Name is what the usage record stores as the provider, so it is part of the contract rather than a
-// label.
 func TestOpenAIName(t *testing.T) {
 	t.Parallel()
 
-	provider := lib.NewOpenAI(option.WithAPIKey("test-key"))
+	provider, err := lib.NewOpenAI(testTiers)
+	require.NoError(t, err)
 	require.Equal(t, lib.ProviderNameOpenAI, provider.Name())
 }
 
-// A status this adapter has never seen is treated as still running, not as terminal. Polling again
-// is cheap; settling on a state we do not understand throws away work already paid for.
+// An unknown status is polled again rather than settled: settling on a state this service does not
+// understand would throw away work already paid for.
 func TestOpenAIUnknownStatus(t *testing.T) {
 	t.Parallel()
 
-	script := &scriptedProvider{
-		status: http.StatusOK,
-		body:   `{"id": "resp_1", "status": "something_new", "model": "gpt-5.6-terra"}`,
-	}
-	provider := newTestProvider(t, script)
+	provider := newTestProvider(t, &scriptedProvider{status: http.StatusOK, body: response("thinking", "")})
 
-	call, err := provider.Get(t.Context(), "resp_1")
+	call, err := provider.Start(t.Context(), testStartRequest(lib.TierFast))
 	require.NoError(t, err)
 	require.Equal(t, lib.ProviderCallRunning, call.State)
 	require.False(t, call.State.Terminal())

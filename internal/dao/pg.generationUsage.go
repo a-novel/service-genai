@@ -9,13 +9,10 @@ import (
 
 // GenerationUsage is what one attempt consumed.
 //
-// It carries no user content, so it outlives the generation it describes: the retention purge
-// deletes the parent while this row is kept. Owner and purpose are duplicated here for that reason,
-// and there is no foreign key.
+// It is purged with the generation it describes: callers keep long-term usage.
 //
-// Provider and Model come from the provider's response, not the request. A provider may serve a
-// different snapshot than the one asked for, and the model that billed is the one downstream
-// pricing needs.
+// Provider, Model and ReasoningEffort come from the provider's response, not the request. A provider
+// may serve a different snapshot or effort than the one asked for.
 type GenerationUsage struct {
 	bun.BaseModel `bun:"table:generation_usage,alias:generation_usage"`
 
@@ -26,6 +23,8 @@ type GenerationUsage struct {
 	Purpose  string    `bun:"purpose"`
 	Provider string    `bun:"provider"`
 	Model    string    `bun:"model"`
+	// ReasoningEffort is absent for a model without one.
+	ReasoningEffort *string `bun:"reasoning_effort,nullzero"`
 
 	// Totals include their detail counts, as the provider reports them.
 	InputTokens       int64 `bun:"input_tokens"`

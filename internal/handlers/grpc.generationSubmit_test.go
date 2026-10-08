@@ -13,6 +13,7 @@ import (
 	"github.com/a-novel/service-genai/internal/handlers"
 	handlersmocks "github.com/a-novel/service-genai/internal/handlers/mocks"
 	genaiv0 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v0"
+	"github.com/a-novel/service-genai/internal/lib"
 )
 
 func TestGrpcGenerationSubmit(t *testing.T) {
@@ -38,7 +39,8 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 
 			request: &genaiv0.GenerationSubmitRequest{
 				OwnerId: testOwnerID, Purpose: "studio.generation", IdempotencyKey: "key",
-				Request: []byte(`{"model": "a-model"}`), MaxAttempts: 3,
+				Tier: genaiv0.Tier_TIER_BALANCED, Instructions: "Continue.",
+				Input: []byte(`{"scene": "a door"}`), OutputSchema: []byte(`{"type": "object"}`),
 			},
 			serviceMock: &serviceMock{resp: &core.GenerationSubmitResult{
 				Generation: testGeneration(), Created: true,
@@ -53,7 +55,8 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 
 			request: &genaiv0.GenerationSubmitRequest{
 				OwnerId: testOwnerID, Purpose: "studio.generation", IdempotencyKey: "key",
-				Request: []byte(`{"model": "a-model"}`),
+				Tier: genaiv0.Tier_TIER_BALANCED, Instructions: "Continue.",
+				Input: []byte(`{"scene": "a door"}`), OutputSchema: []byte(`{"type": "object"}`),
 			},
 			serviceMock: &serviceMock{resp: &core.GenerationSubmitResult{
 				Generation: testGeneration(), Created: false,
@@ -64,8 +67,21 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 
 			request: &genaiv0.GenerationSubmitRequest{
 				OwnerId: "not-a-uuid", Purpose: "studio.generation", IdempotencyKey: "key",
-				Request: []byte(`{"model": "a-model"}`),
+				Tier: genaiv0.Tier_TIER_BALANCED, Instructions: "Continue.",
+				Input: []byte(`{"scene": "a door"}`), OutputSchema: []byte(`{"type": "object"}`),
 			},
+
+			expectStatus: codes.InvalidArgument,
+		},
+		{
+			// An unspecified Tier maps to none, which the core layer refuses.
+			name: "Error/UnspecifiedTier",
+
+			request: &genaiv0.GenerationSubmitRequest{
+				OwnerId: testOwnerID, Purpose: "studio.generation", IdempotencyKey: "key",
+				Instructions: "Continue.", Input: []byte(`{}`), OutputSchema: []byte(`{"type": "object"}`),
+			},
+			serviceMock: &serviceMock{err: core.ErrInvalidRequest},
 
 			expectStatus: codes.InvalidArgument,
 		},
@@ -75,7 +91,8 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 
 			request: &genaiv0.GenerationSubmitRequest{
 				OwnerId: testOwnerID, Purpose: "studio.generation",
-				Request: []byte(`{"model": "a-model"}`),
+				Tier: genaiv0.Tier_TIER_BALANCED, Instructions: "Continue.",
+				Input: []byte(`{"scene": "a door"}`), OutputSchema: []byte(`{"type": "object"}`),
 			},
 			serviceMock: &serviceMock{err: core.ErrInvalidRequest},
 
@@ -88,7 +105,8 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 
 			request: &genaiv0.GenerationSubmitRequest{
 				OwnerId: testOwnerID, Purpose: "studio.generation", IdempotencyKey: "key",
-				Request: []byte(`{"model": "something else"}`),
+				Tier: genaiv0.Tier_TIER_BALANCED, Instructions: "Something else.",
+				Input: []byte(`{"scene": "a door"}`), OutputSchema: []byte(`{"type": "object"}`),
 			},
 			serviceMock: &serviceMock{err: core.ErrIdempotencyConflict},
 
@@ -99,7 +117,8 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 
 			request: &genaiv0.GenerationSubmitRequest{
 				OwnerId: testOwnerID, Purpose: "studio.generation", IdempotencyKey: "key",
-				Request: []byte(`{"model": "a-model"}`),
+				Tier: genaiv0.Tier_TIER_BALANCED, Instructions: "Continue.",
+				Input: []byte(`{"scene": "a door"}`), OutputSchema: []byte(`{"type": "object"}`),
 			},
 			serviceMock: &serviceMock{err: errFoo},
 
@@ -116,8 +135,14 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 			if testCase.serviceMock != nil {
 				service.EXPECT().
 					Exec(mock.Anything, mock.MatchedBy(func(request *core.GenerationSubmitRequest) bool {
+						expectTier := map[genaiv0.Tier]lib.Tier{genaiv0.Tier_TIER_BALANCED: lib.TierBalanced}
+
 						return request.OwnerID == uuid.MustParse(testCase.request.GetOwnerId()) &&
-							request.IdempotencyKey == testCase.request.GetIdempotencyKey()
+							request.IdempotencyKey == testCase.request.GetIdempotencyKey() &&
+							request.Tier == expectTier[testCase.request.GetTier()] &&
+							request.Instructions == testCase.request.GetInstructions() &&
+							string(request.Input) == string(testCase.request.GetInput()) &&
+							string(request.OutputSchema) == string(testCase.request.GetOutputSchema())
 					})).
 					Return(testCase.serviceMock.resp, testCase.serviceMock.err)
 			}

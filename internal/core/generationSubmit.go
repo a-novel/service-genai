@@ -13,6 +13,7 @@ import (
 	"github.com/a-novel-kit/golib/otel"
 
 	"github.com/a-novel/service-genai/internal/dao"
+	"github.com/a-novel/service-genai/internal/lib"
 )
 
 // Dependencies of [GenerationSubmit].
@@ -21,11 +22,21 @@ type (
 	GenerationSubmitDao interface {
 		Exec(ctx context.Context, request *dao.GenerationSubmitRequest) (*dao.GenerationSubmitResult, error)
 	}
+	// GenerationSubmitUsageListDao reads what a replayed generation consumed.
+	GenerationSubmitUsageListDao interface {
+		Exec(ctx context.Context, request *dao.GenerationUsageListRequest) ([]*dao.GenerationUsage, error)
+	}
 	// GenerationSubmitServiceCheck starts a newly recorded generation.
 	GenerationSubmitServiceCheck interface {
 		Exec(ctx context.Context, request *GenerationCheckRequest) (*dao.Generation, error)
 	}
 )
+
+// GenerationSubmitConfig is what a [GenerationSubmit] needs to run.
+type GenerationSubmitConfig struct {
+	// MaxAttempts caps the provider calls a generation gets when a call fails retryably.
+	MaxAttempts int16 `validate:"required,min=1,max=10"`
+}
 
 // GenerationSubmitRequest holds the parameters for a [GenerationSubmit.Exec] call.
 type GenerationSubmitRequest struct {
@@ -34,14 +45,16 @@ type GenerationSubmitRequest struct {
 	// Purpose is what the caller attributes this spend to. Free-form: the vocabulary belongs to the
 	// caller, and this service only groups by it.
 	Purpose string `validate:"required,notblank,max=255"`
-	// IdempotencyKey deduplicates repeat submissions within one owner. Required — an unkeyed
-	// submission of a priced call is a bug, not a default.
+	// IdempotencyKey deduplicates repeat submissions within one owner.
 	IdempotencyKey string `validate:"required,notblank,max=255"`
-	// Request is the provider payload, forwarded verbatim. [RequestSizeCeiling] bounds its bytes.
-	Request json.RawMessage `validate:"required"`
-	// MaxAttempts caps the runs this generation gets. Zero means one, the right floor for a priced
-	// call.
-	MaxAttempts int16 `validate:"min=0,max=10"`
+	// Tier is the level of model capability wanted.
+	Tier lib.Tier `validate:"required,oneof=fast balanced deep"`
+	// Instructions are the trusted channel.
+	Instructions string `validate:"required,notblank"`
+	// Input is the untrusted channel: any JSON value.
+	Input json.RawMessage `validate:"required"`
+	// OutputSchema is the JSON Schema the output conforms to: a JSON object.
+	OutputSchema json.RawMessage `validate:"required"`
 }
 
 // GenerationSubmitResult reports the stored generation and how it got there.
@@ -57,12 +70,24 @@ type GenerationSubmitResult struct {
 // A replay returns the recorded generation as it stands, without checking it: the caller polls
 // that generation next, and the poll checks it.
 type GenerationSubmit struct {
-	dao   GenerationSubmitDao
-	check GenerationSubmitServiceCheck
+	config   GenerationSubmitConfig
+	dao      GenerationSubmitDao
+	usageDao GenerationSubmitUsageListDao
+	check    GenerationSubmitServiceCheck
 }
 
-func NewGenerationSubmit(submitDao GenerationSubmitDao, check GenerationSubmitServiceCheck) *GenerationSubmit {
-	return &GenerationSubmit{dao: submitDao, check: check}
+func NewGenerationSubmit(
+	config GenerationSubmitConfig,
+	submitDao GenerationSubmitDao,
+	usageDao GenerationSubmitUsageListDao,
+	check GenerationSubmitServiceCheck,
+) (*GenerationSubmit, error) {
+	err := validate.Struct(config)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
+	}
+
+	return &GenerationSubmit{config: config, dao: submitDao, usageDao: usageDao, check: check}, nil
 }
 
 func (service *GenerationSubmit) Exec(
@@ -74,7 +99,8 @@ func (service *GenerationSubmit) Exec(
 	span.SetAttributes(
 		attribute.String("generation.owner_id", request.OwnerID.String()),
 		attribute.String("generation.purpose", request.Purpose),
-		attribute.Int("generation.request_bytes", len(request.Request)),
+		attribute.String("generation.tier", string(request.Tier)),
+		attribute.Int("generation.request_bytes", requestBytes(request)),
 	)
 
 	err := validateSubmit(request)
@@ -82,14 +108,18 @@ func (service *GenerationSubmit) Exec(
 		return nil, otel.ReportError(span, err)
 	}
 
-	maxAttempts := request.MaxAttempts
-	if maxAttempts == 0 {
-		maxAttempts = 1
+	stored, err := json.Marshal(&generationRequest{
+		Tier:         request.Tier,
+		Instructions: request.Instructions,
+		Input:        request.Input,
+		OutputSchema: request.OutputSchema,
+	})
+	if err != nil {
+		return nil, otel.ReportError(span, fmt.Errorf("encode request: %w", err))
 	}
 
-	// The digest is what tells a replay from a reused key. It covers the request alone: the same
-	// payload under the same key is the same work, whatever else the caller varied.
-	fingerprint := sha256.Sum256(request.Request)
+	// The digest is what tells a replay from a reused key.
+	fingerprint := sha256.Sum256(stored)
 
 	result, err := service.dao.Exec(ctx, &dao.GenerationSubmitRequest{
 		// Minted here so the created and replayed cases can be told apart without a second
@@ -99,8 +129,8 @@ func (service *GenerationSubmit) Exec(
 		Purpose:            request.Purpose,
 		IdempotencyKey:     request.IdempotencyKey,
 		RequestFingerprint: fingerprint[:],
-		Request:            request.Request,
-		MaxAttempts:        maxAttempts,
+		Request:            stored,
+		MaxAttempts:        service.config.MaxAttempts,
 	})
 
 	if errors.Is(err, dao.ErrGenerationSubmitConflict) {
@@ -122,10 +152,19 @@ func (service *GenerationSubmit) Exec(
 		}
 	}
 
+	usage, err := service.usageDao.Exec(ctx, &dao.GenerationUsageListRequest{GenerationID: generation.ID})
+	if err != nil {
+		return nil, otel.ReportError(span, fmt.Errorf("list usage: %w", err))
+	}
+
 	return &GenerationSubmitResult{
-		Generation: newGeneration(generation),
+		Generation: newGeneration(generation, usage),
 		Created:    result.Created,
 	}, nil
+}
+
+func requestBytes(request *GenerationSubmitRequest) int {
+	return len(request.Instructions) + len(request.Input) + len(request.OutputSchema)
 }
 
 func validateSubmit(request *GenerationSubmitRequest) error {
@@ -134,23 +173,23 @@ func validateSubmit(request *GenerationSubmitRequest) error {
 		return fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 	}
 
-	if len(request.Request) > RequestSizeCeiling {
+	if size := requestBytes(request); size > RequestSizeCeiling {
 		return fmt.Errorf(
-			"%w: request contains %d bytes, limit is %d",
-			ErrInvalidRequest,
-			len(request.Request),
-			RequestSizeCeiling,
+			"%w: request contains %d bytes, limit is %d", ErrInvalidRequest, size, RequestSizeCeiling,
 		)
 	}
 
-	// The payload is opaque, but it still has to be an object: the provider adapter merges its own
-	// two fields into it, and there is nowhere to merge them into anything else. No tag expresses
-	// this, so it stays an explicit check.
-	var fields map[string]json.RawMessage
+	if !json.Valid(request.Input) {
+		return fmt.Errorf("%w: input is not JSON", ErrInvalidRequest)
+	}
 
-	err = json.Unmarshal(request.Request, &fields)
+	// The schema's content is the provider's to judge; its shape is not. A strict schema's root is
+	// always an object.
+	var schema map[string]json.RawMessage
+
+	err = json.Unmarshal(request.OutputSchema, &schema)
 	if err != nil {
-		return fmt.Errorf("%w: request is not a JSON object", ErrInvalidRequest)
+		return fmt.Errorf("%w: output schema is not a JSON object", ErrInvalidRequest)
 	}
 
 	return nil

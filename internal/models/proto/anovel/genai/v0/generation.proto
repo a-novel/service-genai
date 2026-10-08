@@ -4,9 +4,8 @@ package anovel.genai.v0;
 
 // A Generation is one AI generative call as this service records it.
 //
-// The service is a crash-safe metering proxy: the caller composes the provider request and owns
-// every parameter in it, and this service executes it durably, never pays for it twice, and records
-// what it consumed.
+// The caller states what it wants in provider-neutral terms; this service composes the provider call,
+// executes it durably, never pays for it twice, and reports what it consumed.
 message Generation {
   // Unique identifier, formatted as a UUID.
   string id = 1;
@@ -16,14 +15,10 @@ message Generation {
   string purpose = 3;
   // Status is where the generation sits in its lifecycle.
   GenerationStatus status = 4;
-  // Attempt counts runs already begun.
-  int32 attempt = 5;
-  // MaxAttempts caps the value Attempt may reach.
-  int32 max_attempts = 6;
-  // Output is the provider's response on success, as JSON bytes. Empty until it succeeds.
+  // Output is the JSON document conforming to the request's output schema. Empty until it succeeds.
   bytes output = 7;
-  // Error is a stable, opaque service-owned failure reason on a terminal failure. Provider and
-  // internal details remain in server-side logs. Empty otherwise.
+  // Error names the cause of a failure in this service's own words. Raw provider details remain in
+  // server-side logs. Empty unless the generation failed or was cancelled.
   string error = 8;
   // Creation timestamp, formatted as RFC 3339.
   string created_at = 9;
@@ -31,14 +26,66 @@ message Generation {
   string updated_at = 10;
   // Timestamp the generation reached a terminal status, formatted as RFC 3339. Empty until then.
   string settled_at = 11;
-  // Timestamp the settled generation's content may be purged, formatted as RFC 3339. Its usage
-  // record carries no content and is kept regardless.
+  // Timestamp the settled generation and its usage may be purged, formatted as RFC 3339.
   string expires_at = 12;
+  // Failure says what kind of failure ended the generation, so the caller can decide what to do.
+  // Unspecified unless the status is failed.
+  GenerationFailure failure = 14;
+  // Usage lists what each provider call consumed, failed ones included, with the model and effort
+  // that actually ran. The caller keeps long-term usage; this record is purged with the generation.
+  repeated GenerationUsage usage = 15;
 
+  // Attempts are an execution policy of this service; usage carries each attempt that consumed.
+  reserved 5, 6;
+  reserved "attempt", "max_attempts";
   // The provider's own identifier for the operation is deliberately absent: it is this service's
   // recovery mechanism, not a caller's concern, and exposing it would invite a caller to act on it.
   reserved 13;
   reserved "provider_call_id";
+}
+
+// GenerationUsage is what one provider call consumed. Totals include their detail counts, as the
+// provider counts them.
+message GenerationUsage {
+  // Attempt numbers the provider call within its generation, from one.
+  int32 attempt = 1;
+  // Provider, Model and ReasoningEffort are what actually ran, read off the provider's response
+  // rather than the Tier's preset. ReasoningEffort is empty for a model without one.
+  string provider = 2;
+  string model = 3;
+  string reasoning_effort = 4;
+  int64 input_tokens = 5;
+  int64 cached_input_tokens = 6;
+  int64 output_tokens = 7;
+  int64 reasoning_tokens = 8;
+}
+
+// Tier is the level of model capability a caller asks for. This service maps each Tier to a model
+// and a reasoning effort for the configured provider; callers never name a model.
+enum Tier {
+  // TIER_UNSPECIFIED is never valid in a request.
+  TIER_UNSPECIFIED = 0;
+  // TIER_FAST favours latency and cost.
+  TIER_FAST = 1;
+  // TIER_BALANCED trades capability against cost.
+  TIER_BALANCED = 2;
+  // TIER_DEEP favours capability.
+  TIER_DEEP = 3;
+}
+
+// GenerationFailure is what kind of failure ended a generation.
+enum GenerationFailure {
+  // GENERATION_FAILURE_UNSPECIFIED means the generation did not fail.
+  GENERATION_FAILURE_UNSPECIFIED = 0;
+  // GENERATION_FAILURE_REFUSED means the model or the provider's policy declined the request.
+  GENERATION_FAILURE_REFUSED = 1;
+  // GENERATION_FAILURE_INCOMPLETE means the output stopped at the Tier's output ceiling.
+  GENERATION_FAILURE_INCOMPLETE = 2;
+  // GENERATION_FAILURE_INVALID_REQUEST means the provider rejected the request before running it,
+  // for example an input over the context window or an unsupported output schema. It cost nothing.
+  GENERATION_FAILURE_INVALID_REQUEST = 3;
+  // GENERATION_FAILURE_FAILED is every other failure, including an unknown outcome.
+  GENERATION_FAILURE_FAILED = 4;
 }
 
 // GenerationStatus is where a generation sits in its lifecycle.
@@ -51,11 +98,14 @@ enum GenerationStatus {
   GENERATION_STATUS_RUNNING = 2;
   // GENERATION_STATUS_SUCCEEDED means the provider returned a usable output.
   GENERATION_STATUS_SUCCEEDED = 3;
-  // GENERATION_STATUS_FAILED means the generation failed with no attempt left to retry.
+  // GENERATION_STATUS_FAILED means the generation failed; its failure says how. A resend of the same
+  // request runs again from scratch.
   GENERATION_STATUS_FAILED = 4;
-  // GENERATION_STATUS_ABANDONED is no longer produced: no process holds a generation, so none is
-  // left behind when one dies.
-  GENERATION_STATUS_ABANDONED = 5;
-  // GENERATION_STATUS_CANCELLED means the generation was stopped on the owner's request.
+  // GENERATION_STATUS_CANCELLED means the generation was stopped on the owner's request. A resend of
+  // the same request runs again from scratch.
   GENERATION_STATUS_CANCELLED = 6;
+
+  // Produced while a worker held generations; none does any more.
+  reserved 5;
+  reserved "GENERATION_STATUS_ABANDONED";
 }

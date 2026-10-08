@@ -1,9 +1,7 @@
 package servicegenai_test
 
 import (
-	"context"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -33,15 +31,21 @@ func newClient(t *testing.T) servicegenai.Client {
 	return client
 }
 
+// submitRequest is a valid submission under the given key.
+func submitRequest(owner, key string) *servicegenai.GenerationSubmitRequest {
+	return &servicegenai.GenerationSubmitRequest{
+		OwnerId: owner, Purpose: "studio.generation", IdempotencyKey: key,
+		Tier: servicegenai.TierBalanced, Instructions: "Continue the scene.",
+		Input:        []byte(`{"scene": "a door"}`),
+		OutputSchema: []byte(`{"type": "object", "properties": {}, "required": [], "additionalProperties": false}`),
+	}
+}
+
 // submit records a generation for the owner, returning it.
 func submit(t *testing.T, client servicegenai.Client, owner string) *servicegenai.Generation {
 	t.Helper()
 
-	response, err := client.GenerationSubmit(t.Context(), &servicegenai.GenerationSubmitRequest{
-		OwnerId: owner, Purpose: "studio.generation",
-		IdempotencyKey: uuid.Must(uuid.NewV7()).String(),
-		Request:        []byte(`{"model": "a-model"}`),
-	})
+	response, err := client.GenerationSubmit(t.Context(), submitRequest(owner, uuid.Must(uuid.NewV7()).String()))
 	if err != nil {
 		panic(err)
 	}
@@ -72,35 +76,27 @@ func TestClientGenerationSubmit(t *testing.T) {
 
 	owner := uuid.Must(uuid.NewV7()).String()
 	key := uuid.Must(uuid.NewV7()).String()
-	request := []byte(`{"model": "a-model", "input": "write"}`)
 
-	created, err := client.GenerationSubmit(t.Context(), &servicegenai.GenerationSubmitRequest{
-		OwnerId: owner, Purpose: "studio.generation", IdempotencyKey: key,
-		Request: request, MaxAttempts: 1,
-	})
+	created, err := client.GenerationSubmit(t.Context(), submitRequest(owner, key))
 	require.NoError(t, err)
 	require.True(t, created.GetCreated())
 
 	// A retry attaches to the work already in flight rather than paying for a second run.
-	replayed, err := client.GenerationSubmit(t.Context(), &servicegenai.GenerationSubmitRequest{
-		OwnerId: owner, Purpose: "studio.generation", IdempotencyKey: key,
-		Request: request, MaxAttempts: 1,
-	})
+	replayed, err := client.GenerationSubmit(t.Context(), submitRequest(owner, key))
 	require.NoError(t, err)
 	require.False(t, replayed.GetCreated())
 	require.Equal(t, created.GetGeneration().GetId(), replayed.GetGeneration().GetId())
 
 	// The same key with different content is a caller bug, not a replay.
-	_, err = client.GenerationSubmit(t.Context(), &servicegenai.GenerationSubmitRequest{
-		OwnerId: owner, Purpose: "studio.generation", IdempotencyKey: key,
-		Request: []byte(`{"model": "a-model", "input": "something else"}`), MaxAttempts: 1,
-	})
+	different := submitRequest(owner, key)
+	different.Instructions = "Something else."
+	_, err = client.GenerationSubmit(t.Context(), different)
 	require.Equal(t, codes.AlreadyExists, status.Code(err))
 
-	// An unkeyed submission of a priced call is refused rather than defaulted.
-	_, err = client.GenerationSubmit(t.Context(), &servicegenai.GenerationSubmitRequest{
-		OwnerId: owner, Purpose: "studio.generation", Request: request,
-	})
+	// A request without a Tier names no model to run.
+	untiered := submitRequest(owner, uuid.Must(uuid.NewV7()).String())
+	untiered.Tier = servicegenai.Tier(0)
+	_, err = client.GenerationSubmit(t.Context(), untiered)
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
 }
 
@@ -146,64 +142,4 @@ func TestClientGenerationCancel(t *testing.T) {
 		Id: generation.GetId(), OwnerId: uuid.Must(uuid.NewV7()).String(),
 	})
 	require.Equal(t, codes.NotFound, status.Code(err))
-}
-
-// The stream answers from durable state, so a subscribe yields the generation as it stands even
-// when nothing has changed since it was submitted.
-func TestClientGenerationWatch(t *testing.T) {
-	t.Parallel()
-
-	client := newClient(t)
-
-	owner := uuid.Must(uuid.NewV7()).String()
-	generation := submit(t, client, owner)
-
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-	defer cancel()
-
-	stream, err := client.GenerationWatch(ctx, &servicegenai.GenerationWatchRequest{
-		Id: generation.GetId(), OwnerId: owner,
-	})
-	require.NoError(t, err)
-
-	first, err := stream.Recv()
-	require.NoError(t, err)
-	require.Equal(t, generation.GetId(), first.GetGeneration().GetId())
-
-	// Another owner's watch is refused on the first receive, the same as a read.
-	otherStream, err := client.GenerationWatch(t.Context(), &servicegenai.GenerationWatchRequest{
-		Id: generation.GetId(), OwnerId: uuid.Must(uuid.NewV7()).String(),
-	})
-	require.NoError(t, err)
-
-	_, err = otherStream.Recv()
-	require.Equal(t, codes.NotFound, status.Code(err))
-}
-
-// The usage surface over the wire. A generation that has not run yet consumed nothing, so an owner
-// with only fresh submissions reports an empty set with a zero total — not an error, and not a nil
-// total a caller would have to guard.
-func TestClientUsageQuery(t *testing.T) {
-	t.Parallel()
-
-	client := newClient(t)
-
-	owner := uuid.Must(uuid.NewV7()).String()
-	submit(t, client, owner)
-
-	now := time.Now()
-
-	response, err := client.UsageQuery(t.Context(), &servicegenai.UsageQueryRequest{
-		OwnerId: owner,
-		From:    now.Add(-time.Hour).Format(time.RFC3339),
-		To:      now.Add(time.Hour).Format(time.RFC3339),
-	})
-	require.NoError(t, err)
-	require.Empty(t, response.GetGroups())
-	require.NotNil(t, response.GetTotal())
-	require.Zero(t, response.GetTotal().GetAttempts())
-
-	// The window is required: this record is never purged, so an unbounded scan grows without limit.
-	_, err = client.UsageQuery(t.Context(), &servicegenai.UsageQueryRequest{OwnerId: owner})
-	require.Equal(t, codes.InvalidArgument, status.Code(err))
 }
