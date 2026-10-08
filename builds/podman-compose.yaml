@@ -3,7 +3,7 @@ services:
   # DATABASE
   # ====================================================================================================================
 
-  postgres-template:
+  postgres-genai:
     build:
       context: ..
       dockerfile: ./builds/database.Dockerfile
@@ -18,7 +18,7 @@ services:
       POSTGRES_HOST_AUTH_METHOD: scram-sha-256
       POSTGRES_INITDB_ARGS: --auth=scram-sha-256
     volumes:
-      - template-postgres-data:/var/lib/postgresql/
+      - genai-postgres-data:/var/lib/postgresql/
 
   # ====================================================================================================================
   # ONE-SHOT TARGETS
@@ -30,10 +30,10 @@ services:
       context: ..
       dockerfile: ./builds/migrations.Dockerfile
     depends_on:
-      postgres-template:
+      postgres-genai:
         condition: service_healthy
     environment:
-      POSTGRES_DSN: postgres://postgres:postgres@postgres-template:5432/postgres?sslmode=disable
+      POSTGRES_DSN: postgres://postgres:postgres@postgres-genai:5432/postgres?sslmode=disable
     networks:
       - api
 
@@ -49,12 +49,12 @@ services:
     ports:
       - "${GRPC_PORT}:8080"
     depends_on:
-      postgres-template:
+      postgres-genai:
         condition: service_healthy
       service-genai-migrations:
         condition: service_completed_successfully
     environment:
-      POSTGRES_DSN: postgres://postgres:postgres@postgres-template:5432/postgres?sslmode=disable
+      POSTGRES_DSN: postgres://postgres:postgres@postgres-genai:5432/postgres?sslmode=disable
     networks:
       - api
 
@@ -62,4 +62,4 @@ networks:
   api:
 
 volumes:
-  template-postgres-data:
+  genai-postgres-data:
