@@ -19,6 +19,15 @@ import (
 func TestGrpcGenerationSubmit(t *testing.T) {
 	t.Parallel()
 
+	// Every request field reaches the request key: it is how a resend finds its generation. A new
+	// field must be mapped below and added to the key, or two different requests would share one.
+	keyFields := []string{"owner_id", "purpose", "tier", "instructions", "input", "output_schema", "variant"}
+
+	fields := (&genaiv0.GenerationSubmitRequest{}).ProtoReflect().Descriptor().Fields()
+	for index := range fields.Len() {
+		require.Contains(t, keyFields, string(fields.Get(index).Name()))
+	}
+
 	type serviceMock struct {
 		resp *core.GenerationSubmitResult
 		err  error
@@ -38,9 +47,9 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 			name: "Success",
 
 			request: &genaiv0.GenerationSubmitRequest{
-				OwnerId: testOwnerID, Purpose: "studio.generation", IdempotencyKey: "key",
+				OwnerId: testOwnerID, Purpose: "studio.generation",
 				Tier: genaiv0.Tier_TIER_BALANCED, Instructions: "Continue.",
-				Input: []byte(`{"scene": "a door"}`), OutputSchema: []byte(`{"type": "object"}`),
+				Input: []byte(`{"scene": "a door"}`), OutputSchema: []byte(`{"type": "object"}`), Variant: 2,
 			},
 			serviceMock: &serviceMock{resp: &core.GenerationSubmitResult{
 				Generation: testGeneration(), Created: true,
@@ -54,7 +63,7 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 			name: "Success/Replayed",
 
 			request: &genaiv0.GenerationSubmitRequest{
-				OwnerId: testOwnerID, Purpose: "studio.generation", IdempotencyKey: "key",
+				OwnerId: testOwnerID, Purpose: "studio.generation",
 				Tier: genaiv0.Tier_TIER_BALANCED, Instructions: "Continue.",
 				Input: []byte(`{"scene": "a door"}`), OutputSchema: []byte(`{"type": "object"}`),
 			},
@@ -66,7 +75,7 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 			name: "Error/InvalidOwnerID",
 
 			request: &genaiv0.GenerationSubmitRequest{
-				OwnerId: "not-a-uuid", Purpose: "studio.generation", IdempotencyKey: "key",
+				OwnerId: "not-a-uuid", Purpose: "studio.generation",
 				Tier: genaiv0.Tier_TIER_BALANCED, Instructions: "Continue.",
 				Input: []byte(`{"scene": "a door"}`), OutputSchema: []byte(`{"type": "object"}`),
 			},
@@ -78,7 +87,7 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 			name: "Error/UnspecifiedTier",
 
 			request: &genaiv0.GenerationSubmitRequest{
-				OwnerId: testOwnerID, Purpose: "studio.generation", IdempotencyKey: "key",
+				OwnerId: testOwnerID, Purpose: "studio.generation",
 				Instructions: "Continue.", Input: []byte(`{}`), OutputSchema: []byte(`{"type": "object"}`),
 			},
 			serviceMock: &serviceMock{err: core.ErrInvalidRequest},
@@ -86,37 +95,10 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 			expectStatus: codes.InvalidArgument,
 		},
 		{
-			// An unkeyed submission of a priced call is refused rather than defaulted.
-			name: "Error/NoIdempotencyKey",
-
-			request: &genaiv0.GenerationSubmitRequest{
-				OwnerId: testOwnerID, Purpose: "studio.generation",
-				Tier: genaiv0.Tier_TIER_BALANCED, Instructions: "Continue.",
-				Input: []byte(`{"scene": "a door"}`), OutputSchema: []byte(`{"type": "object"}`),
-			},
-			serviceMock: &serviceMock{err: core.ErrInvalidRequest},
-
-			expectStatus: codes.InvalidArgument,
-		},
-		{
-			// The key is held by a different request. Answering with the earlier generation would
-			// answer a question the caller never asked.
-			name: "Error/IdempotencyConflict",
-
-			request: &genaiv0.GenerationSubmitRequest{
-				OwnerId: testOwnerID, Purpose: "studio.generation", IdempotencyKey: "key",
-				Tier: genaiv0.Tier_TIER_BALANCED, Instructions: "Something else.",
-				Input: []byte(`{"scene": "a door"}`), OutputSchema: []byte(`{"type": "object"}`),
-			},
-			serviceMock: &serviceMock{err: core.ErrIdempotencyConflict},
-
-			expectStatus: codes.AlreadyExists,
-		},
-		{
 			name: "Error/Internal",
 
 			request: &genaiv0.GenerationSubmitRequest{
-				OwnerId: testOwnerID, Purpose: "studio.generation", IdempotencyKey: "key",
+				OwnerId: testOwnerID, Purpose: "studio.generation",
 				Tier: genaiv0.Tier_TIER_BALANCED, Instructions: "Continue.",
 				Input: []byte(`{"scene": "a door"}`), OutputSchema: []byte(`{"type": "object"}`),
 			},
@@ -138,11 +120,11 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 						expectTier := map[genaiv0.Tier]lib.Tier{genaiv0.Tier_TIER_BALANCED: lib.TierBalanced}
 
 						return request.OwnerID == uuid.MustParse(testCase.request.GetOwnerId()) &&
-							request.IdempotencyKey == testCase.request.GetIdempotencyKey() &&
 							request.Tier == expectTier[testCase.request.GetTier()] &&
 							request.Instructions == testCase.request.GetInstructions() &&
 							string(request.Input) == string(testCase.request.GetInput()) &&
-							string(request.OutputSchema) == string(testCase.request.GetOutputSchema())
+							string(request.OutputSchema) == string(testCase.request.GetOutputSchema()) &&
+							request.Variant == testCase.request.GetVariant()
 					})).
 					Return(testCase.serviceMock.resp, testCase.serviceMock.err)
 			}

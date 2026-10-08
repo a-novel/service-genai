@@ -42,23 +42,17 @@ func (handler *GrpcGenerationSubmit) GenerationSubmit(
 	}
 
 	result, err := handler.service.Exec(ctx, &core.GenerationSubmitRequest{
-		OwnerID:        ownerID,
-		Purpose:        request.GetPurpose(),
-		IdempotencyKey: request.GetIdempotencyKey(),
-		Tier:           generationTiers[request.GetTier()],
-		Instructions:   request.GetInstructions(),
-		Input:          request.GetInput(),
-		OutputSchema:   request.GetOutputSchema(),
+		OwnerID:      ownerID,
+		Purpose:      request.GetPurpose(),
+		Tier:         generationTiers[request.GetTier()],
+		Instructions: request.GetInstructions(),
+		Input:        request.GetInput(),
+		OutputSchema: request.GetOutputSchema(),
+		Variant:      request.GetVariant(),
 	})
 
 	if errors.Is(err, core.ErrInvalidRequest) {
 		return nil, status.Error(codes.InvalidArgument, "invalid submission")
-	}
-
-	// The key is held by a different request. Answering with the earlier generation would answer a
-	// question the caller never asked.
-	if errors.Is(err, core.ErrIdempotencyConflict) {
-		return nil, status.Error(codes.AlreadyExists, "idempotency key already used with a different request")
 	}
 
 	if err != nil {
