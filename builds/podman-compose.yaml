@@ -55,6 +55,9 @@ services:
         condition: service_completed_successfully
     environment:
       POSTGRES_DSN: postgres://postgres:postgres@postgres-genai:5432/postgres?sslmode=disable
+      # The server refuses to start without a key. The placeholder starts it; generations fail until a
+      # real key is exported.
+      PROVIDER_API_KEY: "${PROVIDER_API_KEY:-placeholder}"
     networks:
       - api
 

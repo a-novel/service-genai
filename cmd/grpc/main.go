@@ -18,7 +18,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/openai/openai-go/v3/option"
 	"github.com/samber/lo"
 	"go.opentelemetry.io/otel/attribute"
 	"google.golang.org/grpc"
@@ -78,10 +77,16 @@ func main() {
 	// SERVICES
 	// =================================================================================================================
 
-	provider := lo.Must(lib.NewOpenAI(providerTiers(cfg.Provider), providerOptions(cfg.Provider)...))
+	tiers := providerTiers(cfg.Provider)
+
+	provider := lo.Must(lib.NewOpenAI(lib.OpenAIConfig{
+		BaseURL: cfg.Provider.BaseURL, APIKey: cfg.Provider.APIKey, Tiers: tiers,
+	}))
 
 	serviceCheck := lo.Must(core.NewGenerationCheck(
-		core.GenerationCheckConfig{Retention: cfg.Retention},
+		core.GenerationCheckConfig{
+			Retention: cfg.Retention, ProviderName: cfg.Provider.Name, ProviderEpoch: cfg.Provider.Epoch,
+		},
 		cfg.Log,
 		provider,
 		postgres.NewTransactor(nil),
@@ -91,6 +96,7 @@ func main() {
 			Record:       dao.NewGenerationRecordProviderCall(),
 			Settle:       dao.NewGenerationSettle(),
 			Requeue:      dao.NewGenerationRequeue(),
+			Restart:      dao.NewGenerationRestart(),
 			Usage:        dao.NewGenerationUsageInsert(),
 			Get:          daoGet,
 		},
@@ -118,7 +124,9 @@ func main() {
 	serviceQueueDepth := core.NewQueueDepth(dao.NewGenerationQueueDepth())
 
 	sweep := lo.Must(core.NewGenerationSweep(
-		core.GenerationSweepConfig{Interval: cfg.Sweep.Interval, BatchSize: cfg.Sweep.BatchSize},
+		core.GenerationSweepConfig{
+			Interval: cfg.Sweep.Interval, BatchSize: cfg.Sweep.BatchSize, ProviderEpoch: cfg.Provider.Epoch,
+		},
 		dao.NewGenerationSweep(),
 		serviceCheck,
 	))
@@ -280,21 +288,10 @@ func providerTiers(provider config.Provider) map[lib.Tier]lib.TierBinding {
 		tiers[lib.Tier(name)] = lib.TierBinding{
 			Model:           binding.Model,
 			ReasoningEffort: binding.ReasoningEffort,
+			MaxInputTokens:  binding.MaxInputTokens,
 			MaxOutputTokens: binding.MaxOutputTokens,
 		}
 	}
 
 	return tiers
-}
-
-// providerOptions builds the client options from configuration. An empty base URL leaves the
-// client's own default, so only a deployment pointing at another endpoint sets one.
-func providerOptions(provider config.Provider) []option.RequestOption {
-	opts := []option.RequestOption{option.WithAPIKey(provider.APIKey)}
-
-	if provider.BaseURL != "" {
-		opts = append(opts, option.WithBaseURL(provider.BaseURL))
-	}
-
-	return opts
 }

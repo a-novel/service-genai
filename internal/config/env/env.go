@@ -32,6 +32,12 @@ const (
 	// it reaches the provider at most once per interval.
 	CheckIntervalDefault = 2 * time.Second
 
+	// ProviderNameDefault and ProviderBaseURLDefault name and reach OpenAI, the committed provider.
+	ProviderNameDefault    = "openai"
+	ProviderBaseURLDefault = "https://api.openai.com/v1/"
+	// ProviderEpochDefault is the first provider configuration. Each switch raises it.
+	ProviderEpochDefault = 1
+
 	// MaxAttemptsDefault lets one retryable provider failure be retried once. Each attempt is paid.
 	MaxAttemptsDefault = 2
 
@@ -77,8 +83,11 @@ var (
 	grpcPing            = getEnv("GRPC_PING")
 	grpcTimeoutShutdown = getEnv("GRPC_TIMEOUT_SHUTDOWN")
 
-	openaiAPIKey  = getEnv("OPENAI_API_KEY")
-	openaiBaseURL = getEnv("OPENAI_BASE_URL")
+	providerName    = getEnv("PROVIDER_NAME")
+	providerEpoch   = getEnv("PROVIDER_EPOCH")
+	providerBaseURL = getEnv("PROVIDER_BASE_URL")
+	providerAPIKey  = getEnv("PROVIDER_API_KEY")
+	providerTiers   = getEnv("PROVIDER_TIERS")
 
 	checkInterval = getEnv("CHECK_INTERVAL")
 	maxAttempts   = getEnv("MAX_ATTEMPTS")
@@ -135,12 +144,20 @@ var (
 		grpcTimeoutShutdown, GrpcTimeoutShutdownDefault, config.DurationParser,
 	)
 
-	// OpenAIAPIKey authenticates against the provider. The only credential this service holds, and
+	// ProviderName identifies the provider on usage records. Changed with the account or endpoint,
+	// not on key rotation.
+	ProviderName = config.LoadEnv(providerName, ProviderNameDefault, config.StringParser)
+	// ProviderEpoch orders provider configurations: raised on every switch, so replicas running two
+	// configurations during a rollout agree on which one wins.
+	ProviderEpoch = config.LoadEnv(providerEpoch, ProviderEpochDefault, config.Int32Parser)
+	// ProviderBaseURL is the Responses API endpoint.
+	ProviderBaseURL = config.LoadEnv(providerBaseURL, ProviderBaseURLDefault, config.StringParser)
+	// ProviderAPIKey authenticates against the provider. The only credential this service holds, and
 	// the reason no consumer holds one.
-	OpenAIAPIKey = openaiAPIKey
-	// OpenAIBaseURL overrides the provider endpoint. Empty uses the SDK default; a value points at
-	// an OpenAI-compatible provider or a local stand-in.
-	OpenAIBaseURL = openaiBaseURL
+	ProviderAPIKey = providerAPIKey
+	// ProviderTiers is a JSON object binding each Tier to a model, an effort and token ceilings.
+	// Empty keeps the committed OpenAI bindings.
+	ProviderTiers = providerTiers
 
 	// CheckInterval is how long a check stays fresh.
 	CheckInterval = config.LoadEnv(checkInterval, CheckIntervalDefault, config.DurationParser)

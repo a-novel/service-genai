@@ -39,14 +39,20 @@ type Sweep struct {
 type TierBinding struct {
 	Model           string `json:"model"           yaml:"model"`
 	ReasoningEffort string `json:"reasoningEffort" yaml:"reasoningEffort"`
+	MaxInputTokens  int64  `json:"maxInputTokens"  yaml:"maxInputTokens"`
 	MaxOutputTokens int64  `json:"maxOutputTokens" yaml:"maxOutputTokens"`
 }
 
-// Provider holds the generative AI provider's settings.
+// Provider holds the generative AI provider's settings. Switching provider changes these and nothing
+// else.
 type Provider struct {
+	// Name identifies the provider on usage records.
+	Name string `json:"name" yaml:"name"`
+	// Epoch orders provider configurations; work started under a lower one restarts on this one.
+	Epoch int32 `json:"epoch" yaml:"epoch"`
 	// APIKey authenticates against the provider. The only credential this service holds.
 	APIKey string `json:"-" yaml:"-"`
-	// BaseURL overrides the provider endpoint. Empty uses the client default.
+	// BaseURL is the Responses API endpoint.
 	BaseURL string `json:"baseURL" yaml:"baseURL"`
 	// Tiers binds each Tier, by name, to what it runs.
 	Tiers map[string]TierBinding `json:"tiers" yaml:"tiers"`

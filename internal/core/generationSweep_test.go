@@ -15,7 +15,7 @@ import (
 func TestGenerationSweep(t *testing.T) {
 	t.Parallel()
 
-	config := core.GenerationSweepConfig{Interval: time.Minute, BatchSize: 10}
+	config := core.GenerationSweepConfig{Interval: time.Minute, BatchSize: 10, ProviderEpoch: testEpoch}
 
 	first := runningGeneration(1)
 	second := pendingGeneration()
@@ -83,7 +83,7 @@ func TestGenerationSweep(t *testing.T) {
 			// A finished result stays retrievable for about ten minutes; a slower sweep would lose it.
 			name: "Error/IntervalAboveCeiling",
 
-			config: core.GenerationSweepConfig{Interval: 10 * time.Minute, BatchSize: 10},
+			config: core.GenerationSweepConfig{Interval: 10 * time.Minute, BatchSize: 10, ProviderEpoch: testEpoch},
 
 			expectBuildErr: core.ErrInvalidRequest,
 		},
@@ -105,7 +105,9 @@ func TestGenerationSweep(t *testing.T) {
 
 			sweepDao.EXPECT().
 				Exec(mock.Anything, &dao.GenerationSweepRequest{
-					Interval: testCase.config.Interval, Limit: testCase.config.BatchSize,
+					Interval:      testCase.config.Interval,
+					Limit:         testCase.config.BatchSize,
+					ProviderEpoch: testEpoch,
 				}).
 				Return(testCase.swept, testCase.sweepErr)
 

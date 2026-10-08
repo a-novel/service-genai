@@ -66,6 +66,7 @@ func TestGenerationCheck(t *testing.T) {
 		observe       *lib.ProviderCall
 		observeErr    error
 		settleErr     error
+		restartErr    error
 
 		expectStart      bool
 		expectRelease    bool
@@ -73,6 +74,7 @@ func TestGenerationCheck(t *testing.T) {
 		expectStopOrphan bool
 		expectSettle     *settle
 		expectRequeue    bool
+		expectRestart    bool
 		expectUsage      bool
 		expectReread     bool
 
@@ -309,6 +311,64 @@ func TestGenerationCheck(t *testing.T) {
 			expectStatus: dao.GenerationStatusSucceeded,
 		},
 		{
+			// Requeued on an older provider configuration: the next attempt simply starts on this one.
+			name: "Success/StartAfterOlderEpoch",
+
+			generation: withEpoch(pendingGeneration(), testEpoch-1),
+			start:      providerCall(lib.ProviderCallRunning),
+
+			expectStart:  true,
+			expectRecord: true,
+			expectStatus: dao.GenerationStatusRunning,
+		},
+		{
+			// The call runs on a provider this configuration has no credentials for. It is abandoned,
+			// and the generation queued to start again here.
+			name: "Success/RestartRunning",
+
+			generation: withEpoch(runningGeneration(1), testEpoch-1),
+
+			expectRestart: true,
+			expectStatus:  dao.GenerationStatusPending,
+		},
+		{
+			// Even a start that may still be in flight: its record finds the attempt gone and stops it.
+			name: "Success/RestartStarting",
+
+			generation: withEpoch(startingGeneration(time.Second), testEpoch-1),
+
+			expectRestart: true,
+			expectStatus:  dao.GenerationStatusPending,
+		},
+		{
+			name: "Success/RestartedByAnotherCheck",
+
+			generation: withEpoch(runningGeneration(1), testEpoch-1),
+			restartErr: dao.ErrGenerationChanged,
+
+			expectRestart: true,
+			expectReread:  true,
+			expectStatus:  dao.GenerationStatusSucceeded,
+		},
+		{
+			// A newer configuration took it over during a rollout. Its replicas check it; reading the
+			// call here would ask the wrong provider and settle a live call as lost.
+			name: "Success/NewerEpoch",
+
+			generation: withEpoch(withCancel(runningGeneration(1)), testEpoch+1),
+
+			expectStatus: dao.GenerationStatusRunning,
+		},
+		{
+			name: "Error/Restart",
+
+			generation: withEpoch(runningGeneration(1), testEpoch-1),
+			restartErr: errFoo,
+
+			expectRestart: true,
+			expectErr:     errFoo,
+		},
+		{
 			name: "Error/Record",
 
 			generation: pendingGeneration(),
@@ -345,17 +405,16 @@ func TestGenerationCheck(t *testing.T) {
 			record := coremocks.NewMockGenerationCheckRecordProviderCallDao(t)
 			settleDao := coremocks.NewMockGenerationCheckSettleDao(t)
 			requeue := coremocks.NewMockGenerationCheckRequeueDao(t)
+			restart := coremocks.NewMockGenerationCheckRestartDao(t)
 			usage := coremocks.NewMockGenerationCheckUsageInsertDao(t)
 			get := coremocks.NewMockGenerationCheckGetDao(t)
-
-			provider.EXPECT().Name().Return(lib.ProviderNameOpenAI).Maybe()
 
 			// The attempt a fresh start takes.
 			intent := startingGeneration(0)
 
 			if testCase.expectStart || testCase.beginStartErr != nil {
 				beginStart.EXPECT().
-					Exec(mock.Anything, &dao.GenerationBeginStartRequest{ID: generation.ID}).
+					Exec(mock.Anything, &dao.GenerationBeginStartRequest{ID: generation.ID, ProviderEpoch: testEpoch}).
 					Return(intent, testCase.beginStartErr)
 			}
 
@@ -425,6 +484,17 @@ func TestGenerationCheck(t *testing.T) {
 					Return(pendingGeneration(), nil)
 			}
 
+			if testCase.expectRestart {
+				restart.EXPECT().
+					Exec(mock.Anything, &dao.GenerationRestartRequest{
+						ID:             generation.ID,
+						Attempt:        generation.Attempt,
+						ProviderCallID: generation.ProviderCallID,
+						ProviderEpoch:  testEpoch,
+					}).
+					Return(withEpoch(pendingGeneration(), testEpoch), testCase.restartErr)
+			}
+
 			if testCase.expectUsage {
 				usage.EXPECT().
 					Exec(mock.Anything, &dao.GenerationUsageInsertRequest{
@@ -432,7 +502,7 @@ func TestGenerationCheck(t *testing.T) {
 						Attempt:           generation.Attempt,
 						OwnerID:           generation.OwnerID,
 						Purpose:           generation.Purpose,
-						Provider:          lib.ProviderNameOpenAI,
+						Provider:          testProviderName,
 						Model:             testCase.observe.Model,
 						ReasoningEffort:   &testCase.observe.ReasoningEffort,
 						InputTokens:       testCase.observe.Usage.InputTokens,
@@ -450,13 +520,15 @@ func TestGenerationCheck(t *testing.T) {
 			}
 
 			check, err := core.NewGenerationCheck(
-				core.GenerationCheckConfig{Retention: retention},
+				core.GenerationCheckConfig{
+					Retention: retention, ProviderName: testProviderName, ProviderEpoch: testEpoch,
+				},
 				discardLogger{},
 				provider,
 				transactiontest.NewTransactor(),
 				core.GenerationCheckDaos{
 					BeginStart: beginStart, ReleaseStart: releaseStart, Record: record, Settle: settleDao,
-					Requeue: requeue, Usage: usage, Get: get,
+					Requeue: requeue, Restart: restart, Usage: usage, Get: get,
 				},
 			)
 			require.NoError(t, err)
@@ -471,7 +543,7 @@ func TestGenerationCheck(t *testing.T) {
 			}
 
 			for _, assertable := range []interface{ AssertExpectations(t mock.TestingT) bool }{
-				provider, beginStart, releaseStart, record, settleDao, requeue, usage, get,
+				provider, beginStart, releaseStart, record, settleDao, requeue, restart, usage, get,
 			} {
 				assertable.AssertExpectations(t)
 			}

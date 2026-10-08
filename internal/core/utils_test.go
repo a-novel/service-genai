@@ -15,7 +15,12 @@ import (
 
 var errFoo = errors.New("foo")
 
-const testCallID = "resp_1"
+const (
+	testCallID = "resp_1"
+	// testProviderName and testEpoch are the configured provider the checks under test run on.
+	testProviderName       = "openai"
+	testEpoch        int32 = 2
+)
 
 // testStoredRequest is a generation's provider-neutral request as it is stored.
 var testStoredRequest = json.RawMessage(
@@ -53,6 +58,7 @@ func startingGeneration(age time.Duration) *dao.Generation {
 	requested := testNow.Add(-age)
 	generation.Attempt = 1
 	generation.StartRequestedAt = &requested
+	generation.ProviderEpoch = new(testEpoch)
 
 	return generation
 }
@@ -72,6 +78,13 @@ func runningGeneration(attempt int16) *dao.Generation {
 func withCancel(generation *dao.Generation) *dao.Generation {
 	requested := testNow
 	generation.CancelRequestedAt = &requested
+
+	return generation
+}
+
+// withEpoch sets the provider configuration the generation was last started or restarted on.
+func withEpoch(generation *dao.Generation, epoch int32) *dao.Generation {
+	generation.ProviderEpoch = &epoch
 
 	return generation
 }
