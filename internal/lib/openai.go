@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"strconv"
 
@@ -191,6 +192,12 @@ func providerCallStateOf(status responses.ResponseStatus) ProviderCallState {
 
 // classifyOpenAIStartError separates definitive rejection from a response that may have been lost.
 func classifyOpenAIStartError(err error) error {
+	// A failed dial proves the request never left: no connection, so nothing reached the provider.
+	var dialErr *net.OpError
+	if errors.As(err, &dialErr) && dialErr.Op == "dial" {
+		return fmt.Errorf("%w: %w", ErrProviderRetryable, err)
+	}
+
 	var apiErr *openai.Error
 
 	if !errors.As(err, &apiErr) {
