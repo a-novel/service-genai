@@ -4,13 +4,17 @@ import (
 	"encoding/json"
 	"io"
 	"maps"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/openai/openai-go/v3/option"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 
 	"github.com/a-novel/service-genai/internal/lib"
@@ -21,6 +25,8 @@ import (
 type scriptedProvider struct {
 	status int
 	body   string
+	// cancel, when set, answers cancel requests instead.
+	cancel *scriptedProvider
 
 	lastPath string
 	lastBody json.RawMessage
@@ -36,9 +42,14 @@ func (script *scriptedProvider) serve(t *testing.T) *httptest.Server {
 			script.lastBody, _ = io.ReadAll(request.Body)
 		}
 
+		answer := script
+		if script.cancel != nil && strings.HasSuffix(request.URL.Path, "/cancel") {
+			answer = script.cancel
+		}
+
 		writer.Header().Set("Content-Type", "application/json")
-		writer.WriteHeader(script.status)
-		_, _ = writer.Write([]byte(script.body))
+		writer.WriteHeader(answer.status)
+		_, _ = writer.Write([]byte(answer.body))
 	}))
 
 	t.Cleanup(server.Close)
@@ -99,7 +110,7 @@ func response(status string, extra string) string {
 
 const (
 	testUsage = `"usage": {
-		"input_tokens": 1000, "input_tokens_details": {"cached_tokens": 200},
+		"input_tokens": 1000, "input_tokens_details": {"cached_tokens": 200, "cache_write_tokens": 300},
 		"output_tokens": 500, "output_tokens_details": {"reasoning_tokens": 100}, "total_tokens": 1500
 	}`
 	testOutput  = `"output": [{"type": "message", "content": [{"type": "output_text", "text": "{\"text\": \"done\"}"}]}]`
@@ -110,7 +121,9 @@ const (
 func TestOpenAI(t *testing.T) {
 	t.Parallel()
 
-	fullUsage := &lib.ProviderUsage{InputTokens: 1000, CachedInputTokens: 200, OutputTokens: 500, ReasoningTokens: 100}
+	fullUsage := &lib.ProviderUsage{
+		InputTokens: 1000, CachedInputTokens: 200, CacheWriteTokens: 300, OutputTokens: 500, ReasoningTokens: 100,
+	}
 
 	testCases := []struct {
 		name string
@@ -235,6 +248,17 @@ func TestOpenAI(t *testing.T) {
 			script: &scriptedProvider{status: http.StatusBadGateway, body: `{"error":{"message":"bad gateway"}}`},
 
 			expectErr: lib.ErrProviderStartAmbiguous,
+		},
+		{
+			// Retrying cannot help until an operator adds credit, so the generation fails with a reason.
+			name: "Error/QuotaExhausted",
+
+			script: &scriptedProvider{
+				status: http.StatusTooManyRequests,
+				body:   `{"error":{"message":"You exceeded your current quota","code":"insufficient_quota"}}`,
+			},
+
+			expectRejection: &lib.Failure{Kind: lib.FailureFailed, Message: "the provider account has no quota left"},
 		},
 		{
 			name: "Error/ContextExceeded",
@@ -512,6 +536,15 @@ func TestOpenAIGet(t *testing.T) {
 
 			expectErr: lib.ErrProviderRetryable,
 		},
+		{
+			// Refused credentials are this service's configuration, not the operation's fate: once the
+			// key is fixed, the result is read again.
+			name: "Error/Unauthorized",
+
+			script: &scriptedProvider{status: http.StatusUnauthorized, body: `{"error":{"message":"bad key"}}`},
+
+			expectErr: lib.ErrProviderRetryable,
+		},
 	}
 
 	for _, testCase := range testCases {
@@ -550,7 +583,9 @@ func TestOpenAICancel(t *testing.T) {
 		script *scriptedProvider
 
 		expectState lib.ProviderCallState
-		expectErr   error
+		// expectPath is the last path requested, the cancel itself unless stated.
+		expectPath string
+		expectErr  error
 	}{
 		{
 			name: "Success",
@@ -560,12 +595,20 @@ func TestOpenAICancel(t *testing.T) {
 			expectState: lib.ProviderCallCancelled,
 		},
 		{
-			// Cancelling a finished operation returns its final state, so the result is still read.
+			// OpenAI refuses to cancel a finished response; its result is read instead, so a paid
+			// output is not mistaken for a lost one.
 			name: "Success/AlreadyCompleted",
 
-			script: &scriptedProvider{status: http.StatusOK, body: response("completed", testOutput)},
+			script: &scriptedProvider{
+				status: http.StatusOK,
+				body:   response("completed", testOutput),
+				cancel: &scriptedProvider{
+					status: http.StatusBadRequest, body: `{"error":{"message":"Cannot cancel a completed response."}}`,
+				},
+			},
 
 			expectState: lib.ProviderCallSucceeded,
+			expectPath:  "/responses/resp_1",
 		},
 		{
 			name: "Error/Retryable",
@@ -590,7 +633,7 @@ func TestOpenAICancel(t *testing.T) {
 			}
 
 			require.Equal(t, testCase.expectState, call.State)
-			require.Equal(t, "/responses/resp_1/cancel", testCase.script.lastPath)
+			require.Equal(t, lo.CoalesceOrEmpty(testCase.expectPath, "/responses/resp_1/cancel"), testCase.script.lastPath)
 		})
 	}
 }
@@ -628,6 +671,53 @@ func TestOpenAITransportFailure(t *testing.T) {
 
 	// A port nothing listens on.
 	provider, err := lib.NewOpenAI(testConfig("https://127.0.0.1:1"), option.WithMaxRetries(0))
+	require.NoError(t, err)
+
+	_, err = provider.Start(t.Context(), testStartRequest(lib.TierFast))
+	require.ErrorIs(t, err, lib.ErrProviderRetryable)
+}
+
+// A start whose deadline passes before the request leaves, here during a TLS handshake that never
+// completes, cannot have been accepted: it is retried rather than settled as an unknown outcome.
+func TestOpenAIStartStalledBeforeSending(t *testing.T) {
+	t.Parallel()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	var (
+		mu    sync.Mutex
+		conns []net.Conn
+	)
+
+	t.Cleanup(func() {
+		_ = listener.Close()
+
+		mu.Lock()
+		defer mu.Unlock()
+
+		for _, conn := range conns {
+			_ = conn.Close()
+		}
+	})
+
+	// Accepts connections and never speaks, so the handshake stalls.
+	go func() {
+		for {
+			conn, acceptErr := listener.Accept()
+			if acceptErr != nil {
+				return
+			}
+
+			mu.Lock()
+			conns = append(conns, conn)
+			mu.Unlock()
+		}
+	}()
+
+	provider, err := lib.NewOpenAI(
+		testConfig("https://"+listener.Addr().String()), option.WithRequestTimeout(500*time.Millisecond),
+	)
 	require.NoError(t, err)
 
 	_, err = provider.Start(t.Context(), testStartRequest(lib.TierFast))
