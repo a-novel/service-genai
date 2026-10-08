@@ -25,13 +25,12 @@ func seedGeneration(ctx context.Context, t *testing.T, maxAttempts int16) *dao.G
 	t.Helper()
 
 	result, err := dao.NewGenerationSubmit().Exec(ctx, &dao.GenerationSubmitRequest{
-		ID:                 uuid.Must(uuid.NewV7()),
-		OwnerID:            testOwner,
-		Purpose:            "studio.generation",
-		IdempotencyKey:     uuid.Must(uuid.NewV7()).String(),
-		RequestFingerprint: []byte{0x01},
-		Request:            json.RawMessage(`{"model": "a-model"}`),
-		MaxAttempts:        maxAttempts,
+		ID:          uuid.Must(uuid.NewV7()),
+		OwnerID:     testOwner,
+		Purpose:     "studio.generation",
+		RequestKey:  []byte(uuid.Must(uuid.NewV7()).String()),
+		Request:     json.RawMessage(`{"tier": "balanced"}`),
+		MaxAttempts: maxAttempts,
 	})
 	if err != nil {
 		panic(err)

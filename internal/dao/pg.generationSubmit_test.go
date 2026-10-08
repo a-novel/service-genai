@@ -16,54 +16,67 @@ import (
 	"github.com/a-novel/service-genai/internal/models/migrations"
 )
 
-var (
-	submitOwner      = uuid.MustParse("00000000-0000-0000-0000-000000000001")
-	submitOtherOwner = uuid.MustParse("00000000-0000-0000-0000-000000000002")
-)
+var submitOwner = uuid.MustParse("00000000-0000-0000-0000-000000000001")
 
-// submission is one call in a case's sequence. Empty override fields take the base request's value,
-// so a case only states what it changes.
+// submission is one call in a case's sequence.
 type submission struct {
-	ownerID     uuid.UUID
-	purpose     string
-	fingerprint []byte
-	request     json.RawMessage
+	// key overrides the base request key.
+	key []byte
+	// settleBefore moves the previous submission's generation to this status first.
+	settleBefore dao.GenerationStatus
 
 	expectCreated bool
 	// expectReplayOf is the 1-based index of an earlier submission whose generation this one must
 	// return. Zero means the assertion does not apply.
 	expectReplayOf int
-	expectErr      error
 }
 
 func (sub submission) build() *dao.GenerationSubmitRequest {
 	base := &dao.GenerationSubmitRequest{
-		ID:                 uuid.Must(uuid.NewV7()),
-		OwnerID:            submitOwner,
-		Purpose:            "studio.generation",
-		IdempotencyKey:     "the-key",
-		RequestFingerprint: []byte{0x01},
-		Request:            json.RawMessage(`{"instructions": "write"}`),
-		MaxAttempts:        1,
+		ID:          uuid.Must(uuid.NewV7()),
+		OwnerID:     submitOwner,
+		Purpose:     "studio.generation",
+		RequestKey:  []byte("the-request-key"),
+		Request:     json.RawMessage(`{"instructions": "write"}`),
+		MaxAttempts: 1,
 	}
 
-	if sub.ownerID != uuid.Nil {
-		base.OwnerID = sub.ownerID
-	}
-
-	if sub.purpose != "" {
-		base.Purpose = sub.purpose
-	}
-
-	if sub.fingerprint != nil {
-		base.RequestFingerprint = sub.fingerprint
-	}
-
-	if sub.request != nil {
-		base.Request = sub.request
+	if sub.key != nil {
+		base.RequestKey = sub.key
 	}
 
 	return base
+}
+
+// settleTo moves a pending generation to the given terminal status the way checks would.
+func settleTo(ctx context.Context, t *testing.T, generation *dao.Generation, status dao.GenerationStatus) {
+	t.Helper()
+
+	switch status {
+	case dao.GenerationStatusFailed:
+		settleGeneration(ctx, t, generation)
+	case dao.GenerationStatusCancelled:
+		_, err := dao.NewGenerationRequestCancel().Exec(ctx, &dao.GenerationRequestCancelRequest{
+			ID: generation.ID, OwnerID: generation.OwnerID, Error: "generation cancelled", Retention: testRetention,
+		})
+		if err != nil {
+			panic(err)
+		}
+	case dao.GenerationStatusSucceeded:
+		running := runGeneration(ctx, t, generation.ID)
+
+		_, err := dao.NewGenerationSettle().Exec(ctx, &dao.GenerationSettleRequest{
+			ID: running.ID, Attempt: running.Attempt, ProviderCallID: running.ProviderCallID,
+			Status: dao.GenerationStatusSucceeded, Output: json.RawMessage(`{"text": "done"}`),
+			Retention: testRetention,
+		})
+		if err != nil {
+			panic(err)
+		}
+	case dao.GenerationStatusRunning:
+		runGeneration(ctx, t, generation.ID)
+	case dao.GenerationStatusPending:
+	}
 }
 
 func TestGenerationSubmit(t *testing.T) {
@@ -82,45 +95,54 @@ func TestGenerationSubmit(t *testing.T) {
 			submissions: []submission{{expectCreated: true}},
 		},
 		{
-			// A retry mints a fresh identifier, exactly as a caller that never saw the first answer
+			// A resend mints a fresh identifier, exactly as a caller that never saw the first answer
 			// would. The stored generation wins, and the caller is told it did.
 			name: "Replayed",
 
 			submissions: []submission{
 				{expectCreated: true},
-				{expectCreated: false, expectReplayOf: 1},
+				{expectReplayOf: 1},
 			},
 		},
 		{
-			// The key is scoped to the owner alone, so a caller reusing one across its own features
-			// gets a replay. Namespacing the key is the caller's job.
-			name: "SameKeyDifferentPurpose",
+			name: "DifferentKey",
 
 			submissions: []submission{
 				{expectCreated: true},
-				{purpose: "discovery.recommendation", expectCreated: false, expectReplayOf: 1},
+				{key: []byte("another-request-key"), expectCreated: true},
 			},
 		},
 		{
-			name: "SameKeyDifferentOwner",
+			name: "ReplayedWhileRunning",
 
 			submissions: []submission{
 				{expectCreated: true},
-				{ownerID: submitOtherOwner, expectCreated: true},
+				{settleBefore: dao.GenerationStatusRunning, expectReplayOf: 1},
 			},
 		},
 		{
-			// Same key, different request. A caller bug, not a replay — answering with the earlier
-			// generation would answer a question that was never asked.
-			name: "Error/Conflict",
+			name: "ReplayedAfterSuccess",
 
 			submissions: []submission{
 				{expectCreated: true},
-				{
-					fingerprint: []byte{0x02},
-					request:     json.RawMessage(`{"instructions": "something else"}`),
-					expectErr:   dao.ErrGenerationSubmitConflict,
-				},
+				{settleBefore: dao.GenerationStatusSucceeded, expectReplayOf: 1},
+			},
+		},
+		{
+			// A failure is reported, not cached: resending the request runs it again.
+			name: "RerunAfterFailure",
+
+			submissions: []submission{
+				{expectCreated: true},
+				{settleBefore: dao.GenerationStatusFailed, expectCreated: true},
+			},
+		},
+		{
+			name: "RerunAfterCancellation",
+
+			submissions: []submission{
+				{expectCreated: true},
+				{settleBefore: dao.GenerationStatusCancelled, expectCreated: true},
 			},
 		},
 	}
@@ -137,19 +159,14 @@ func TestGenerationSubmit(t *testing.T) {
 				results := make([]*dao.GenerationSubmitResult, 0, len(testCase.submissions))
 
 				for index, sub := range testCase.submissions {
+					if sub.settleBefore != "" {
+						settleTo(ctx, t, results[index-1].Generation, sub.settleBefore)
+					}
+
 					request := sub.build()
 
 					result, err := daoGenerationSubmit.Exec(ctx, request)
-					require.ErrorIsf(t, err, sub.expectErr, "submission %d", index+1)
-
-					if sub.expectErr != nil {
-						require.Nilf(t, result, "submission %d", index+1)
-
-						results = append(results, nil)
-
-						continue
-					}
-
+					require.NoErrorf(t, err, "submission %d", index+1)
 					require.Equalf(t, sub.expectCreated, result.Created, "submission %d", index+1)
 
 					if sub.expectCreated {
