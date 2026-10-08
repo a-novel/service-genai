@@ -2,12 +2,15 @@ package lib
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
@@ -20,41 +23,108 @@ import (
 // ProviderNameOpenAI identifies this provider on the usage record.
 const ProviderNameOpenAI = "openai"
 
-// responsesPath is the endpoint the raw request is posted to. The typed params are deliberately
-// bypassed — see [OpenAI.Start].
+// responsesPath is the endpoint requests are posted to.
 const responsesPath = "responses"
+
+// ErrTierNotBound is returned when the adapter has no binding for a Tier.
+var ErrTierNotBound = errors.New("tier has no model binding")
 
 // OpenAI talks to the Responses API.
 type OpenAI struct {
 	client openai.Client
+	tiers  map[Tier]TierBinding
 }
 
-// NewOpenAI builds an adapter. Options are forwarded to the SDK, so a test points it at a scripted
-// server with option.WithBaseURL.
-func NewOpenAI(opts ...option.RequestOption) *OpenAI {
-	return &OpenAI{client: openai.NewClient(opts...)}
+// NewOpenAI builds an adapter for the given Tier bindings. Options are forwarded to the SDK, so a
+// test points it at a scripted server with option.WithBaseURL.
+func NewOpenAI(tiers map[Tier]TierBinding, opts ...option.RequestOption) (*OpenAI, error) {
+	for _, tier := range Tiers {
+		binding, ok := tiers[tier]
+		if !ok || binding.Model == "" || binding.MaxOutputTokens <= 0 {
+			return nil, fmt.Errorf("%w: %s", ErrTierNotBound, tier)
+		}
+	}
+
+	return &OpenAI{client: openai.NewClient(opts...), tiers: tiers}, nil
 }
 
 func (provider *OpenAI) Name() string { return ProviderNameOpenAI }
 
-// Start posts the caller's request, merged with the two fields crash-safety requires.
+// openAIRequest is the Responses API request this service sends. It is posted as raw JSON rather
+// than through the SDK's typed parameters, which take the schema as a map and would reorder its
+// properties; the output follows the schema's order, so the caller's order must survive.
 //
-// The request is sent as raw JSON rather than through the SDK's typed parameters. Unmarshalling it
-// into those would silently drop any field this SDK version does not know, which is exactly the
-// control the caller is supposed to keep — and it would mean a release here every time the provider
-// adds a parameter.
+//nolint:tagliatelle // OpenAI owns these snake_case fields.
+type openAIRequest struct {
+	Model            string            `json:"model"`
+	Instructions     string            `json:"instructions"`
+	Input            string            `json:"input"`
+	Reasoning        *openAIReasoning  `json:"reasoning,omitempty"`
+	MaxOutputTokens  int64             `json:"max_output_tokens"`
+	Text             openAIText        `json:"text"`
+	Background       bool              `json:"background"`
+	Store            bool              `json:"store"`
+	Metadata         map[string]string `json:"metadata"`
+	SafetyIdentifier string            `json:"safety_identifier"`
+}
+
+type openAIReasoning struct {
+	Effort string `json:"effort"`
+}
+
+type openAIText struct {
+	Format openAIFormat `json:"format"`
+}
+
+type openAIFormat struct {
+	Type   string          `json:"type"`
+	Name   string          `json:"name"`
+	Schema json.RawMessage `json:"schema"`
+	Strict bool            `json:"strict"`
+}
+
+// Start composes the request from the Tier's binding and posts it.
+//
+// background makes crash-safety possible: the call returns an identifier immediately, so a restarted
+// check resumes an operation already paid for. store keeps the provider from retaining user content,
+// and leaves re-attach intact because the result is read back well inside the polling window.
+// metadata identifies an operation orphaned between the provider accepting a call and its identifier
+// reaching the database.
 func (provider *OpenAI) Start(ctx context.Context, request *ProviderStartRequest) (*ProviderCall, error) {
 	ctx, span := otel.Tracer().Start(ctx, "lib.OpenAI.Start")
 	defer span.End()
 
-	body, err := mergeProviderFields(request)
-	if err != nil {
-		return nil, otel.ReportError(span, err)
+	binding, ok := provider.tiers[request.Tier]
+	if !ok {
+		return nil, otel.ReportError(span, fmt.Errorf("%w: %s", ErrTierNotBound, request.Tier))
 	}
 
-	response := new(responses.Response)
+	span.SetAttributes(attribute.String("provider.model", binding.Model))
 
-	err = provider.client.Post(ctx, responsesPath, body, response, option.WithMaxRetries(0))
+	body := &openAIRequest{
+		Model:           binding.Model,
+		Instructions:    request.Instructions,
+		Input:           string(request.Input),
+		MaxOutputTokens: binding.MaxOutputTokens,
+		Text: openAIText{Format: openAIFormat{
+			Type: "json_schema", Name: "output", Schema: request.OutputSchema, Strict: true,
+		}},
+		Background: true,
+		Store:      false,
+		Metadata: map[string]string{
+			"generation_id": request.GenerationID,
+			"attempt":       strconv.Itoa(int(request.Attempt)),
+		},
+		SafetyIdentifier: safetyIdentifier(request.EndUserID),
+	}
+
+	if binding.ReasoningEffort != "" {
+		body.Reasoning = &openAIReasoning{Effort: binding.ReasoningEffort}
+	}
+
+	response := &responses.Response{}
+
+	err := provider.client.Post(ctx, responsesPath, body, response, option.WithMaxRetries(0))
 	if err != nil {
 		return nil, otel.ReportError(span, classifyOpenAIStartError(err))
 	}
@@ -92,58 +162,21 @@ func (provider *OpenAI) Cancel(ctx context.Context, id string) (*ProviderCall, e
 	return providerCallOf(response), nil
 }
 
-// mergeProviderFields adds the three fields this service owns, overwriting whatever the caller set.
-//
-// background makes crash-safety possible: the call returns an identifier immediately, so a restarted
-// worker resumes an operation already paid for. store keeps the provider from retaining user content,
-// and leaves re-attach intact because it reads the operation back inside the polling window. metadata
-// identifies an operation orphaned between the provider accepting a call and its identifier reaching
-// the database.
-func mergeProviderFields(request *ProviderStartRequest) (json.RawMessage, error) {
-	fields := map[string]json.RawMessage{}
+// safetyIdentifier hashes the end user, as OpenAI asks: the provider attributes abuse to a stable
+// identifier without learning the platform's own.
+func safetyIdentifier(endUserID string) string {
+	digest := sha256.Sum256([]byte("a-novel/genai/safety-identifier/v1:" + endUserID))
 
-	err := json.Unmarshal(request.Request, &fields)
-	if err != nil {
-		return nil, fmt.Errorf("decode request: %w", err)
-	}
-
-	metadata, err := json.Marshal(map[string]string{
-		"generation_id": request.GenerationID,
-		"attempt":       strconv.Itoa(int(request.Attempt)),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("encode metadata: %w", err)
-	}
-
-	fields["background"] = json.RawMessage("true")
-	fields["store"] = json.RawMessage("false")
-	fields["metadata"] = metadata
-
-	body, err := json.Marshal(fields)
-	if err != nil {
-		return nil, fmt.Errorf("encode request: %w", err)
-	}
-
-	return body, nil
+	return hex.EncodeToString(digest[:])
 }
 
-// providerCallOf reads the fields this service records off a provider response, and leaves the rest
-// as the opaque output the caller asked for.
+// providerCallOf reads the fields this service records off a provider response.
 func providerCallOf(response *responses.Response) *ProviderCall {
 	call := &ProviderCall{
-		ID:     response.ID,
-		State:  providerCallStateOf(response.Status),
-		Model:  response.Model,
-		Output: []byte(response.RawJSON()),
-	}
-
-	switch call.State {
-	case ProviderCallIncomplete:
-		call.Reason = response.IncompleteDetails.Reason
-	case ProviderCallFailed:
-		call.Retryable = providerFailureRetryable(response.Error.Code)
-		call.Reason = response.Error.Message
-	case ProviderCallRunning, ProviderCallSucceeded, ProviderCallCancelled:
+		ID:              response.ID,
+		State:           ProviderCallRunning,
+		Model:           response.Model,
+		ReasoningEffort: string(response.Reasoning.Effort),
 	}
 
 	// Absent while running, and on a failure that never reached the model. Zero tokens is a real
@@ -157,36 +190,83 @@ func providerCallOf(response *responses.Response) *ProviderCall {
 		}
 	}
 
+	switch response.Status {
+	case responses.ResponseStatusCompleted:
+		completed(call, response)
+	case responses.ResponseStatusIncomplete:
+		call.State = ProviderCallFailed
+		call.Reason = response.IncompleteDetails.Reason
+		call.Failure = incompleteFailure(response.IncompleteDetails.Reason)
+	case responses.ResponseStatusFailed:
+		call.State = ProviderCallFailed
+		call.Reason = response.Error.Message
+		call.Failure, call.Retryable = failedFailure(response.Error.Code)
+	case responses.ResponseStatusCancelled:
+		call.State = ProviderCallCancelled
+	case responses.ResponseStatusQueued, responses.ResponseStatusInProgress:
+	default:
+		// An unknown status is treated as still running rather than terminal: polling again is
+		// cheap, and settling on a status we do not understand throws away work already paid for.
+	}
+
 	return call
 }
 
-func providerFailureRetryable(code responses.ResponseErrorCode) bool {
+// completed reads a finished response: the schema document, or the refusal that replaced it.
+func completed(call *ProviderCall, response *responses.Response) {
+	call.State = ProviderCallFailed
+
+	for _, item := range response.Output {
+		for _, content := range item.Content {
+			if content.Type == "refusal" {
+				call.Reason = content.Refusal
+				call.Failure = &Failure{Kind: FailureRefused, Message: "the model refused the request"}
+
+				return
+			}
+		}
+	}
+
+	output := json.RawMessage(strings.TrimSpace(response.OutputText()))
+
+	var document map[string]json.RawMessage
+
+	err := json.Unmarshal(output, &document)
+	if err != nil {
+		call.Reason = "output is not a JSON object"
+		call.Failure = &Failure{Kind: FailureFailed, Message: "the provider returned an output that is not a JSON object"}
+
+		return
+	}
+
+	call.State = ProviderCallSucceeded
+	call.Output = output
+}
+
+func incompleteFailure(reason string) *Failure {
+	switch reason {
+	case "max_output_tokens":
+		return &Failure{Kind: FailureIncomplete, Message: "the output reached the tier's output token ceiling"}
+	case "content_filter":
+		return &Failure{Kind: FailureRefused, Message: "the provider's content filter stopped the output"}
+	default:
+		return &Failure{Kind: FailureIncomplete, Message: "the provider stopped the output early"}
+	}
+}
+
+// failedFailure maps a provider failure onto a kind, and whether another attempt is worth paying for.
+func failedFailure(code responses.ResponseErrorCode) (*Failure, bool) {
 	switch code {
 	case responses.ResponseErrorCodeServerError,
 		responses.ResponseErrorCodeRateLimitExceeded,
 		responses.ResponseErrorCodeVectorStoreTimeout:
-		return true
+		return &Failure{Kind: FailureFailed, Message: "the provider failed to complete the call"}, true
+	case responses.ResponseErrorCodeInvalidPrompt,
+		responses.ResponseErrorCodeBioPolicy,
+		responses.ResponseErrorCodeMisalignmentPolicyViolation:
+		return &Failure{Kind: FailureRefused, Message: "the provider's usage policy refused the request"}, false
 	default:
-		return false
-	}
-}
-
-func providerCallStateOf(status responses.ResponseStatus) ProviderCallState {
-	switch status {
-	case responses.ResponseStatusCompleted:
-		return ProviderCallSucceeded
-	case responses.ResponseStatusIncomplete:
-		return ProviderCallIncomplete
-	case responses.ResponseStatusFailed:
-		return ProviderCallFailed
-	case responses.ResponseStatusCancelled:
-		return ProviderCallCancelled
-	case responses.ResponseStatusQueued, responses.ResponseStatusInProgress:
-		return ProviderCallRunning
-	default:
-		// An unknown status is treated as still running rather than terminal: polling again is
-		// cheap, and settling on a status we do not understand throws away work already paid for.
-		return ProviderCallRunning
+		return &Failure{Kind: FailureFailed, Message: "the provider failed the call"}, false
 	}
 }
 
@@ -209,16 +289,31 @@ func classifyOpenAIStartError(err error) error {
 		return fmt.Errorf("%w: %w", ErrProviderRetryable, err)
 	case status == http.StatusRequestTimeout, status >= http.StatusInternalServerError:
 		return fmt.Errorf("%w: %w", ErrProviderStartAmbiguous, err)
+	case status == http.StatusBadRequest, status == http.StatusUnprocessableEntity:
+		return &ProviderRejectionError{Failure: invalidRequestFailure(apiErr), Err: err}
 	}
 
-	return fmt.Errorf("provider rejected the request: %w", err)
+	// Credentials, permissions or an unknown model: this service's configuration, not the caller's.
+	return &ProviderRejectionError{
+		Failure: Failure{Kind: FailureFailed, Message: "the provider refused the call"}, Err: err,
+	}
 }
 
-// classifyOpenAIError decides whether another attempt is worth spending.
+func invalidRequestFailure(apiErr *openai.Error) Failure {
+	switch {
+	case apiErr.Code == "context_length_exceeded":
+		return Failure{Kind: FailureInvalidRequest, Message: "the input exceeds the model's context window"}
+	case strings.HasPrefix(apiErr.Param, "text.format"):
+		return Failure{Kind: FailureInvalidRequest, Message: "the provider rejected the output schema"}
+	default:
+		return Failure{Kind: FailureInvalidRequest, Message: "the provider rejected the request"}
+	}
+}
+
+// classifyOpenAIError decides whether reading an operation again is worth it.
 //
-// Retryable: transport failures, rate limits, and provider-side faults — the request was fine and
-// may succeed unchanged. Terminal: anything the provider rejected on its content, because retrying
-// only spends an attempt to be rejected again.
+// Retryable: transport failures, rate limits, and provider-side faults. Anything else, a not-found
+// above all, means the operation cannot be read.
 func classifyOpenAIError(err error) error {
 	var apiErr *openai.Error
 
