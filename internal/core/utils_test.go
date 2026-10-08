@@ -1,6 +1,7 @@
 package core_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -15,6 +16,11 @@ import (
 var errFoo = errors.New("foo")
 
 const testCallID = "resp_1"
+
+// testStoredRequest is a generation's provider-neutral request as it is stored.
+var testStoredRequest = json.RawMessage(
+	`{"tier":"balanced","instructions":"Continue.","input":{"scene":"a door"},"outputSchema":{"type":"object"}}`,
+)
 
 var (
 	testOwner        = uuid.MustParse("00000000-0000-0000-0000-000000000001")
@@ -34,7 +40,7 @@ func pendingGeneration() *dao.Generation {
 		ID:          testGenerationID,
 		OwnerID:     testOwner,
 		Purpose:     "studio.generation",
-		Request:     json.RawMessage(`{"model": "a-model"}`),
+		Request:     testStoredRequest,
 		Status:      dao.GenerationStatusPending,
 		MaxAttempts: 2,
 		CheckedAt:   testNow,
@@ -83,10 +89,42 @@ func settledGeneration(status dao.GenerationStatus) *dao.Generation {
 }
 
 func providerCall(state lib.ProviderCallState) *lib.ProviderCall {
-	call := &lib.ProviderCall{ID: testCallID, State: state, Model: "a-model-snapshot"}
+	call := &lib.ProviderCall{ID: testCallID, State: state, Model: "a-model-snapshot", ReasoningEffort: "medium"}
 	if state.Terminal() {
 		call.Usage = &lib.ProviderUsage{InputTokens: 1000, CachedInputTokens: 200, OutputTokens: 500}
 	}
 
 	return call
+}
+
+// failedCall is a terminal call that ended in the given failure.
+func failedCall(failure lib.Failure) *lib.ProviderCall {
+	call := providerCall(lib.ProviderCallFailed)
+	call.Failure = &failure
+
+	return call
+}
+
+// testUsageRows is what a generation's provider calls consumed, as stored.
+func testUsageRows() []*dao.GenerationUsage {
+	effort := "medium"
+
+	return []*dao.GenerationUsage{
+		{
+			GenerationID: testGenerationID, Attempt: 1, Provider: "openai", Model: "a-model-snapshot",
+			ReasoningEffort: &effort, InputTokens: 1000, CachedInputTokens: 200, OutputTokens: 500,
+		},
+	}
+}
+
+// compact is how a request's JSON reads once stored: whitespace removed, key order kept.
+func compact(value json.RawMessage) string {
+	var buffer bytes.Buffer
+
+	err := json.Compact(&buffer, value)
+	if err != nil {
+		panic(err)
+	}
+
+	return buffer.String()
 }

@@ -1,7 +1,6 @@
 package core_test
 
 import (
-	"encoding/json"
 	"testing"
 	"time"
 
@@ -12,6 +11,7 @@ import (
 	"github.com/a-novel/service-genai/internal/core"
 	coremocks "github.com/a-novel/service-genai/internal/core/mocks"
 	"github.com/a-novel/service-genai/internal/dao"
+	"github.com/a-novel/service-genai/internal/lib"
 )
 
 func TestGenerationGet(t *testing.T) {
@@ -23,7 +23,10 @@ func TestGenerationGet(t *testing.T) {
 	updatedAt := createdAt.Add(time.Minute)
 	settledAt := updatedAt.Add(time.Minute)
 	expiresAt := settledAt.Add(time.Hour)
-	generationError := "provider error"
+	generationError := "the provider rejected the request"
+	failureKind := "invalid_request"
+	coreFailure := lib.FailureInvalidRequest
+	effort := "medium"
 
 	const checkInterval = 2 * time.Second
 
@@ -40,6 +43,7 @@ func TestGenerationGet(t *testing.T) {
 		daoMock   *daoMock
 		electMock *daoMock
 		checkMock *daoMock
+		usageErr  error
 
 		expect       *core.Generation
 		expectStatus core.GenerationStatus
@@ -51,15 +55,20 @@ func TestGenerationGet(t *testing.T) {
 			request: &core.GenerationGetRequest{ID: generationID, OwnerID: owner},
 			daoMock: &daoMock{resp: &dao.Generation{
 				ID: generationID, OwnerID: owner, Purpose: "studio.generation",
-				Output: json.RawMessage(`{"text":"done"}`), Error: &generationError,
+				Failure: &failureKind, Error: &generationError,
 				Status: dao.GenerationStatusFailed, Attempt: 2, MaxAttempts: 3,
 				CreatedAt: createdAt, UpdatedAt: updatedAt, SettledAt: &settledAt,
 				ExpiresAt: &expiresAt,
 			}},
+			// A failure still reports what it consumed.
 			expect: &core.Generation{
 				ID: generationID, OwnerID: owner, Purpose: "studio.generation",
-				Output: json.RawMessage(`{"text":"done"}`), Error: &generationError,
-				Status: core.GenerationStatusFailed, Attempt: 2, MaxAttempts: 3,
+				Failure: &coreFailure, Error: &generationError,
+				Status: core.GenerationStatusFailed,
+				Usage: []*core.GenerationUsage{{
+					Attempt: 1, Provider: "openai", Model: "a-model-snapshot", ReasoningEffort: &effort,
+					InputTokens: 1000, CachedInputTokens: 200, OutputTokens: 500,
+				}},
 				CreatedAt: createdAt, UpdatedAt: updatedAt, SettledAt: &settledAt,
 				ExpiresAt: &expiresAt,
 			},
@@ -83,6 +92,15 @@ func TestGenerationGet(t *testing.T) {
 			checkMock: &daoMock{resp: settledGeneration(dao.GenerationStatusSucceeded)},
 
 			expectStatus: core.GenerationStatusSucceeded,
+		},
+		{
+			name: "Error/Usage",
+
+			request:  &core.GenerationGetRequest{ID: generationID, OwnerID: owner},
+			daoMock:  &daoMock{resp: settledGeneration(dao.GenerationStatusSucceeded)},
+			usageErr: errFoo,
+
+			expectErr: errFoo,
 		},
 		{
 			name: "Error/Elect",
@@ -144,6 +162,13 @@ func TestGenerationGet(t *testing.T) {
 			getDao := coremocks.NewMockGenerationGetDao(t)
 			electDao := coremocks.NewMockGenerationGetElectCheckDao(t)
 			check := coremocks.NewMockGenerationGetServiceCheck(t)
+			usageDao := coremocks.NewMockGenerationGetUsageListDao(t)
+
+			if testCase.expect != nil || testCase.expectStatus != "" || testCase.usageErr != nil {
+				usageDao.EXPECT().
+					Exec(mock.Anything, &dao.GenerationUsageListRequest{GenerationID: testCase.request.ID}).
+					Return(testUsageRows(), testCase.usageErr)
+			}
 
 			if testCase.daoMock != nil {
 				getDao.EXPECT().
@@ -168,7 +193,7 @@ func TestGenerationGet(t *testing.T) {
 			}
 
 			service, err := core.NewGenerationGet(
-				core.GenerationGetConfig{CheckInterval: checkInterval}, getDao, electDao, check,
+				core.GenerationGetConfig{CheckInterval: checkInterval}, getDao, electDao, usageDao, check,
 			)
 			require.NoError(t, err)
 
@@ -187,6 +212,7 @@ func TestGenerationGet(t *testing.T) {
 			getDao.AssertExpectations(t)
 			electDao.AssertExpectations(t)
 			check.AssertExpectations(t)
+			usageDao.AssertExpectations(t)
 		})
 	}
 }

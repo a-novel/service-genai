@@ -23,15 +23,26 @@ func TestGenerationCheck(t *testing.T) {
 	const retention = time.Hour
 
 	callID := testCallID
-	failedReason := "generation failed"
-	unknownReason := "generation outcome unknown"
 	cancelledReason := "generation cancelled"
+	kindFailed := string(lib.FailureFailed)
+	kindIncomplete := string(lib.FailureIncomplete)
+	kindInvalid := string(lib.FailureInvalidRequest)
+	unknownMessage := "the provider may have accepted the call, but its outcome is unknown"
+	lostMessage := "the provider no longer holds the result"
+	startFailedMessage := "the provider call could not be started"
+	rejectedMessage := "the provider rejected the request"
+	unreadableMessage := "the stored request is unreadable"
+	incompleteMessage := "the output reached the tier's output token ceiling"
+	callFailedMessage := "the provider failed to complete the call"
 
 	succeeded := providerCall(lib.ProviderCallSucceeded)
 	succeeded.Output = json.RawMessage(`{"text": "done"}`)
 
-	retryable := providerCall(lib.ProviderCallFailed)
+	retryable := failedCall(lib.Failure{Kind: lib.FailureFailed, Message: callFailedMessage})
 	retryable.Retryable = true
+
+	unreadable := pendingGeneration()
+	unreadable.Request = json.RawMessage(`{"tier": 1}`)
 
 	// settle describes the settle a case expects; the runner fills in the id and retention.
 	type settle struct {
@@ -39,6 +50,7 @@ func TestGenerationCheck(t *testing.T) {
 		callID  *string
 		status  dao.GenerationStatus
 		output  json.RawMessage
+		failure *string
 		reason  *string
 	}
 
@@ -96,13 +108,38 @@ func TestGenerationCheck(t *testing.T) {
 			expectStatus:  dao.GenerationStatusPending,
 		},
 		{
+			// Nothing ran, so the caller learns why and decides what to fix.
 			name: "Success/StartRejected",
+
+			generation: pendingGeneration(),
+			startErr: &lib.ProviderRejectionError{
+				Failure: lib.Failure{Kind: lib.FailureInvalidRequest, Message: rejectedMessage}, Err: errFoo,
+			},
+
+			expectStart: true,
+			expectSettle: &settle{
+				attempt: 1, status: dao.GenerationStatusFailed, failure: &kindInvalid, reason: &rejectedMessage,
+			},
+			expectStatus: dao.GenerationStatusFailed,
+		},
+		{
+			name: "Success/StartFailed",
 
 			generation: pendingGeneration(),
 			startErr:   errFoo,
 
-			expectStart:  true,
-			expectSettle: &settle{attempt: 1, status: dao.GenerationStatusFailed, reason: &failedReason},
+			expectStart: true,
+			expectSettle: &settle{
+				attempt: 1, status: dao.GenerationStatusFailed, failure: &kindFailed, reason: &startFailedMessage,
+			},
+			expectStatus: dao.GenerationStatusFailed,
+		},
+		{
+			name: "Success/UnreadableRequest",
+
+			generation: unreadable,
+
+			expectSettle: &settle{status: dao.GenerationStatusFailed, failure: &kindFailed, reason: &unreadableMessage},
 			expectStatus: dao.GenerationStatusFailed,
 		},
 		{
@@ -112,8 +149,10 @@ func TestGenerationCheck(t *testing.T) {
 			generation: pendingGeneration(),
 			startErr:   lib.ErrProviderStartAmbiguous,
 
-			expectStart:  true,
-			expectSettle: &settle{attempt: 1, status: dao.GenerationStatusFailed, reason: &unknownReason},
+			expectStart: true,
+			expectSettle: &settle{
+				attempt: 1, status: dao.GenerationStatusFailed, failure: &kindFailed, reason: &unknownMessage,
+			},
 			expectStatus: dao.GenerationStatusFailed,
 		},
 		{
@@ -160,7 +199,9 @@ func TestGenerationCheck(t *testing.T) {
 
 			generation: startingGeneration(time.Minute),
 
-			expectSettle: &settle{attempt: 1, status: dao.GenerationStatusFailed, reason: &unknownReason},
+			expectSettle: &settle{
+				attempt: 1, status: dao.GenerationStatusFailed, failure: &kindFailed, reason: &unknownMessage,
+			},
 			expectStatus: dao.GenerationStatusFailed,
 		},
 		{
@@ -200,10 +241,11 @@ func TestGenerationCheck(t *testing.T) {
 			name: "Success/Incomplete",
 
 			generation: runningGeneration(1),
-			observe:    providerCall(lib.ProviderCallIncomplete),
+			observe:    failedCall(lib.Failure{Kind: lib.FailureIncomplete, Message: incompleteMessage}),
 
 			expectSettle: &settle{
-				attempt: 1, callID: &callID, status: dao.GenerationStatusFailed, reason: &failedReason,
+				attempt: 1, callID: &callID, status: dao.GenerationStatusFailed,
+				failure: &kindIncomplete, reason: &incompleteMessage,
 			},
 			expectUsage:  true,
 			expectStatus: dao.GenerationStatusFailed,
@@ -225,7 +267,8 @@ func TestGenerationCheck(t *testing.T) {
 			observe:    retryable,
 
 			expectSettle: &settle{
-				attempt: 2, callID: &callID, status: dao.GenerationStatusFailed, reason: &failedReason,
+				attempt: 2, callID: &callID, status: dao.GenerationStatusFailed,
+				failure: &kindFailed, reason: &callFailedMessage,
 			},
 			expectUsage:  true,
 			expectStatus: dao.GenerationStatusFailed,
@@ -247,7 +290,8 @@ func TestGenerationCheck(t *testing.T) {
 			observeErr: errFoo,
 
 			expectSettle: &settle{
-				attempt: 1, callID: &callID, status: dao.GenerationStatusFailed, reason: &failedReason,
+				attempt: 1, callID: &callID, status: dao.GenerationStatusFailed,
+				failure: &kindFailed, reason: &lostMessage,
 			},
 			expectStatus: dao.GenerationStatusFailed,
 		},
@@ -318,7 +362,13 @@ func TestGenerationCheck(t *testing.T) {
 			if testCase.expectStart {
 				provider.EXPECT().
 					Start(mock.Anything, &lib.ProviderStartRequest{
-						Request: intent.Request, GenerationID: intent.ID.String(), Attempt: intent.Attempt,
+						Tier:         lib.TierBalanced,
+						Instructions: "Continue.",
+						Input:        json.RawMessage(`{"scene":"a door"}`),
+						OutputSchema: json.RawMessage(`{"type":"object"}`),
+						EndUserID:    intent.OwnerID.String(),
+						GenerationID: intent.ID.String(),
+						Attempt:      intent.Attempt,
 					}).
 					Return(testCase.start, testCase.startErr)
 			}
@@ -359,6 +409,7 @@ func TestGenerationCheck(t *testing.T) {
 						ProviderCallID: expected.callID,
 						Status:         expected.status,
 						Output:         expected.output,
+						Failure:        expected.failure,
 						Error:          expected.reason,
 						Retention:      retention,
 					}).
@@ -383,6 +434,7 @@ func TestGenerationCheck(t *testing.T) {
 						Purpose:           generation.Purpose,
 						Provider:          lib.ProviderNameOpenAI,
 						Model:             testCase.observe.Model,
+						ReasoningEffort:   &testCase.observe.ReasoningEffort,
 						InputTokens:       testCase.observe.Usage.InputTokens,
 						CachedInputTokens: testCase.observe.Usage.CachedInputTokens,
 						OutputTokens:      testCase.observe.Usage.OutputTokens,

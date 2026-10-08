@@ -12,21 +12,42 @@ import (
 	"github.com/a-novel/service-genai/internal/core"
 	coremocks "github.com/a-novel/service-genai/internal/core/mocks"
 	"github.com/a-novel/service-genai/internal/dao"
+	"github.com/a-novel/service-genai/internal/lib"
 )
 
-func providerRequestWithSize(size int) json.RawMessage {
-	const (
-		prefix = "{\"input\":\""
-		suffix = "\"}"
-	)
+// submitRequest is a valid submission; a case adjusts it.
+func submitRequest(adjust func(request *core.GenerationSubmitRequest)) *core.GenerationSubmitRequest {
+	request := &core.GenerationSubmitRequest{
+		OwnerID:        testOwner,
+		Purpose:        "studio.generation",
+		IdempotencyKey: "key",
+		Tier:           lib.TierBalanced,
+		Instructions:   "Continue.",
+		Input:          json.RawMessage(`{"scene": "a door"}`),
+		OutputSchema:   json.RawMessage(`{"type": "object"}`),
+	}
 
-	return json.RawMessage(prefix + strings.Repeat("x", size-len(prefix)-len(suffix)) + suffix)
+	if adjust != nil {
+		adjust(request)
+	}
+
+	return request
+}
+
+// inputOfSize makes the request's three parts add up to the given number of bytes.
+func inputOfSize(size int) func(request *core.GenerationSubmitRequest) {
+	return func(request *core.GenerationSubmitRequest) {
+		const quotes = 2
+
+		filler := size - len(request.Instructions) - len(request.OutputSchema) - quotes
+		request.Input = json.RawMessage(`"` + strings.Repeat("x", filler) + `"`)
+	}
 }
 
 func TestGenerationSubmit(t *testing.T) {
 	t.Parallel()
 
-	owner := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	const maxAttempts = 2
 
 	type daoMock struct {
 		resp *dao.GenerationSubmitResult
@@ -41,140 +62,110 @@ func TestGenerationSubmit(t *testing.T) {
 		daoMock *daoMock
 		// checkErr is what starting a created generation returns. A replay is never started here.
 		checkErr error
+		usageErr error
 
-		// expectMaxAttempts is what the data access must be asked for, after the default is applied.
-		expectMaxAttempts int16
-		expectCreated     bool
-		expectErr         error
+		expectCreated bool
+		expectErr     error
 	}{
 		{
 			name: "Success",
 
-			request: &core.GenerationSubmitRequest{
-				OwnerID: owner, Purpose: "studio.generation", IdempotencyKey: "key",
-				Request: json.RawMessage(`{"model": "a-model"}`), MaxAttempts: 3,
-			},
-			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{
-				Generation: &dao.Generation{}, Created: true,
-			}},
+			request: submitRequest(nil),
+			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration(), Created: true}},
 
-			expectMaxAttempts: 3,
-			expectCreated:     true,
+			expectCreated: true,
 		},
 		{
-			// One attempt is the right floor for a priced call, so an unset count is not unlimited.
-			name: "Success/DefaultsToOneAttempt",
-
-			request: &core.GenerationSubmitRequest{
-				OwnerID: owner, Purpose: "studio.generation", IdempotencyKey: "key",
-				Request: json.RawMessage(`{"model": "a-model"}`),
-			},
-			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{
-				Generation: &dao.Generation{}, Created: true,
-			}},
-
-			expectMaxAttempts: 1,
-			expectCreated:     true,
-		},
-		{
+			// A resend attaches to the recorded generation; whoever polls it next checks it.
 			name: "Success/Replayed",
 
-			request: &core.GenerationSubmitRequest{
-				OwnerID: owner, Purpose: "studio.generation", IdempotencyKey: "key",
-				Request: json.RawMessage(`{"model": "a-model"}`),
-			},
-			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{
-				Generation: &dao.Generation{}, Created: false,
-			}},
+			request: submitRequest(nil),
+			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration()}},
+		},
+		{
+			name: "Success/AnyJSONInput",
 
-			expectMaxAttempts: 1,
+			request: submitRequest(func(request *core.GenerationSubmitRequest) {
+				request.Input = json.RawMessage(`"a plain string is JSON too"`)
+			}),
+			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration(), Created: true}},
+
+			expectCreated: true,
+		},
+		{
+			name: "Success/RequestAtCeiling",
+
+			request: submitRequest(inputOfSize(core.RequestSizeCeiling)),
+			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration(), Created: true}},
+
+			expectCreated: true,
 		},
 		{
 			name: "Error/NoOwner",
 
-			request: &core.GenerationSubmitRequest{
-				Purpose: "studio.generation", IdempotencyKey: "key",
-				Request: json.RawMessage(`{"model": "a-model"}`),
-			},
+			request: submitRequest(func(request *core.GenerationSubmitRequest) { request.OwnerID = uuid.Nil }),
 
 			expectErr: core.ErrInvalidRequest,
 		},
 		{
 			name: "Error/NoPurpose",
 
-			request: &core.GenerationSubmitRequest{
-				OwnerID: owner, IdempotencyKey: "key",
-				Request: json.RawMessage(`{"model": "a-model"}`),
-			},
-
-			expectErr: core.ErrInvalidRequest,
-		},
-		{
-			// An unkeyed submission of a priced call is a bug the API refuses, not a default it
-			// tolerates.
-			name: "Error/NoIdempotencyKey",
-
-			request: &core.GenerationSubmitRequest{
-				OwnerID: owner, Purpose: "studio.generation",
-				Request: json.RawMessage(`{"model": "a-model"}`),
-			},
+			request: submitRequest(func(request *core.GenerationSubmitRequest) { request.Purpose = "" }),
 
 			expectErr: core.ErrInvalidRequest,
 		},
 		{
 			name: "Error/BlankIdempotencyKey",
 
-			request: &core.GenerationSubmitRequest{
-				OwnerID: owner, Purpose: "studio.generation", IdempotencyKey: "   ",
-				Request: json.RawMessage(`{"model": "a-model"}`),
-			},
+			request: submitRequest(func(request *core.GenerationSubmitRequest) { request.IdempotencyKey = "   " }),
 
 			expectErr: core.ErrInvalidRequest,
 		},
 		{
-			name: "Error/TooManyAttempts",
+			name: "Error/NoTier",
 
-			request: &core.GenerationSubmitRequest{
-				OwnerID: owner, Purpose: "studio.generation", IdempotencyKey: "key",
-				Request: json.RawMessage(`{"model": "a-model"}`), MaxAttempts: 11,
-			},
+			request: submitRequest(func(request *core.GenerationSubmitRequest) { request.Tier = "" }),
 
 			expectErr: core.ErrInvalidRequest,
 		},
 		{
-			name: "Success/RequestAtCeiling",
+			name: "Error/UnknownTier",
 
-			request: &core.GenerationSubmitRequest{
-				OwnerID: owner, Purpose: "studio.generation", IdempotencyKey: "key",
-				Request: providerRequestWithSize(core.RequestSizeCeiling),
-			},
-			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{
-				Generation: &dao.Generation{}, Created: true,
-			}},
+			request: submitRequest(func(request *core.GenerationSubmitRequest) { request.Tier = "gpt-5" }),
 
-			expectMaxAttempts: 1,
-			expectCreated:     true,
+			expectErr: core.ErrInvalidRequest,
+		},
+		{
+			name: "Error/BlankInstructions",
+
+			request: submitRequest(func(request *core.GenerationSubmitRequest) { request.Instructions = " " }),
+
+			expectErr: core.ErrInvalidRequest,
+		},
+		{
+			name: "Error/InputNotJSON",
+
+			request: submitRequest(func(request *core.GenerationSubmitRequest) {
+				request.Input = json.RawMessage(`not json`)
+			}),
+
+			expectErr: core.ErrInvalidRequest,
+		},
+		{
+			// A strict schema's root is always an object; anything else is a caller bug.
+			name: "Error/SchemaNotAnObject",
+
+			request: submitRequest(func(request *core.GenerationSubmitRequest) {
+				request.OutputSchema = json.RawMessage(`["type", "object"]`)
+			}),
+
+			expectErr: core.ErrInvalidRequest,
 		},
 		{
 			// Refused here rather than at the transport, so the caller gets an error it can act on.
 			name: "Error/RequestTooLarge",
 
-			request: &core.GenerationSubmitRequest{
-				OwnerID: owner, Purpose: "studio.generation", IdempotencyKey: "key",
-				Request: providerRequestWithSize(core.RequestSizeCeiling + 1),
-			},
-
-			expectErr: core.ErrInvalidRequest,
-		},
-		{
-			// The adapter merges its two owned fields into the payload, and there is nowhere to
-			// merge them into anything but an object.
-			name: "Error/RequestIsNotAnObject",
-
-			request: &core.GenerationSubmitRequest{
-				OwnerID: owner, Purpose: "studio.generation", IdempotencyKey: "key",
-				Request: json.RawMessage(`"not an object"`),
-			},
+			request: submitRequest(inputOfSize(core.RequestSizeCeiling + 1)),
 
 			expectErr: core.ErrInvalidRequest,
 		},
@@ -182,29 +173,28 @@ func TestGenerationSubmit(t *testing.T) {
 			// The generation is recorded, so a resend finds it; the caller learns the start failed.
 			name: "Error/Start",
 
-			request: &core.GenerationSubmitRequest{
-				OwnerID: owner, Purpose: "studio.generation", IdempotencyKey: "key",
-				Request: json.RawMessage(`{"model": "a-model"}`),
-			},
-			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{
-				Generation: &dao.Generation{}, Created: true,
-			}},
+			request:  submitRequest(nil),
+			daoMock:  &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration(), Created: true}},
 			checkErr: errFoo,
 
-			expectMaxAttempts: 1,
-			expectErr:         errFoo,
+			expectErr: errFoo,
+		},
+		{
+			name: "Error/Usage",
+
+			request:  submitRequest(nil),
+			daoMock:  &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration()}},
+			usageErr: errFoo,
+
+			expectErr: errFoo,
 		},
 		{
 			name: "Error/IdempotencyConflict",
 
-			request: &core.GenerationSubmitRequest{
-				OwnerID: owner, Purpose: "studio.generation", IdempotencyKey: "key",
-				Request: json.RawMessage(`{"model": "a-model"}`),
-			},
+			request: submitRequest(nil),
 			daoMock: &daoMock{err: dao.ErrGenerationSubmitConflict},
 
-			expectMaxAttempts: 1,
-			expectErr:         core.ErrIdempotencyConflict,
+			expectErr: core.ErrIdempotencyConflict,
 		},
 	}
 
@@ -213,14 +203,27 @@ func TestGenerationSubmit(t *testing.T) {
 			t.Parallel()
 
 			submitDao := coremocks.NewMockGenerationSubmitDao(t)
+			usageDao := coremocks.NewMockGenerationSubmitUsageListDao(t)
 			check := coremocks.NewMockGenerationSubmitServiceCheck(t)
 
 			if testCase.daoMock != nil {
 				submitDao.EXPECT().
 					Exec(mock.Anything, mock.MatchedBy(func(request *dao.GenerationSubmitRequest) bool {
-						// The digest is what tells a replay from a reused key, so it must be
+						var stored struct {
+							Tier         lib.Tier        `json:"tier"`
+							Instructions string          `json:"instructions"`
+							Input        json.RawMessage `json:"input"`
+							OutputSchema json.RawMessage `json:"outputSchema"`
+						}
+
+						// The stored request carries the caller's fields as sent, and the digest is
 						// derived rather than left empty.
-						return request.MaxAttempts == testCase.expectMaxAttempts &&
+						return json.Unmarshal(request.Request, &stored) == nil &&
+							stored.Tier == testCase.request.Tier &&
+							stored.Instructions == testCase.request.Instructions &&
+							string(stored.Input) == compact(testCase.request.Input) &&
+							string(stored.OutputSchema) == compact(testCase.request.OutputSchema) &&
+							request.MaxAttempts == maxAttempts &&
 							len(request.RequestFingerprint) == 32 &&
 							request.ID != uuid.Nil
 					})).
@@ -231,19 +234,31 @@ func TestGenerationSubmit(t *testing.T) {
 						Exec(mock.Anything, &core.GenerationCheckRequest{Generation: testCase.daoMock.resp.Generation}).
 						Return(testCase.daoMock.resp.Generation, testCase.checkErr)
 				}
+
+				if testCase.daoMock.resp != nil && testCase.checkErr == nil {
+					usageDao.EXPECT().
+						Exec(mock.Anything, &dao.GenerationUsageListRequest{GenerationID: testGenerationID}).
+						Return([]*dao.GenerationUsage{}, testCase.usageErr)
+				}
 			}
 
-			result, err := core.NewGenerationSubmit(submitDao, check).Exec(t.Context(), testCase.request)
+			service, err := core.NewGenerationSubmit(
+				core.GenerationSubmitConfig{MaxAttempts: maxAttempts}, submitDao, usageDao, check,
+			)
+			require.NoError(t, err)
+
+			result, err := service.Exec(t.Context(), testCase.request)
 			require.ErrorIs(t, err, testCase.expectErr)
 
 			if testCase.expectErr != nil {
 				require.Nil(t, result)
 			} else {
-				require.Equal(t, &core.Generation{}, result.Generation)
+				require.Equal(t, testGenerationID, result.Generation.ID)
 				require.Equal(t, testCase.expectCreated, result.Created)
 			}
 
 			submitDao.AssertExpectations(t)
+			usageDao.AssertExpectations(t)
 			check.AssertExpectations(t)
 		})
 	}
