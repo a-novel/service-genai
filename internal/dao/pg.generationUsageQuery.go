@@ -55,12 +55,6 @@ func (dao *GenerationUsageQuery) Exec(
 	ctx, span := otel.Tracer().Start(ctx, "dao.GenerationUsageQuery")
 	defer span.End()
 
-	span.SetAttributes(
-		attribute.String("usage.owner_id", request.OwnerID.String()),
-		attribute.String("usage.from", request.From.Format(time.RFC3339)),
-		attribute.String("usage.to", request.To.Format(time.RFC3339)),
-	)
-
 	tx, err := postgres.GetContext(ctx)
 	if err != nil {
 		return nil, otel.ReportError(span, fmt.Errorf("get transaction: %w", err))
@@ -78,5 +72,5 @@ func (dao *GenerationUsageQuery) Exec(
 
 	span.SetAttributes(attribute.Int("usage.groups", len(entities)))
 
-	return otel.ReportSuccess(span, entities), nil
+	return entities, nil
 }

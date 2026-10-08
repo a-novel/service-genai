@@ -39,22 +39,16 @@ func (handler *GrpcUsageQuery) UsageQuery(
 
 	ownerID, err := uuid.Parse(request.GetOwnerId())
 	if err != nil {
-		_ = otel.ReportError(span, err)
-
 		return nil, status.Error(codes.InvalidArgument, "invalid owner id")
 	}
 
 	from, err := time.Parse(time.RFC3339, request.GetFrom())
 	if err != nil {
-		_ = otel.ReportError(span, err)
-
 		return nil, status.Error(codes.InvalidArgument, "invalid from")
 	}
 
 	to, err := time.Parse(time.RFC3339, request.GetTo())
 	if err != nil {
-		_ = otel.ReportError(span, err)
-
 		return nil, status.Error(codes.InvalidArgument, "invalid to")
 	}
 
@@ -67,8 +61,6 @@ func (handler *GrpcUsageQuery) UsageQuery(
 	})
 
 	if errors.Is(err, core.ErrInvalidRequest) {
-		_ = otel.ReportError(span, err)
-
 		return nil, status.Error(codes.InvalidArgument, "invalid usage query")
 	}
 
@@ -92,7 +84,7 @@ func (handler *GrpcUsageQuery) UsageQuery(
 		})
 	}
 
-	return otel.ReportSuccess(span, &genaiv0.UsageQueryResponse{
+	return &genaiv0.UsageQueryResponse{
 		Groups: groups,
 		Total: &genaiv0.UsageTotal{
 			InputTokens:       result.Total.InputTokens,
@@ -101,5 +93,5 @@ func (handler *GrpcUsageQuery) UsageQuery(
 			ReasoningTokens:   result.Total.ReasoningTokens,
 			Attempts:          result.Total.Attempts,
 		},
-	}), nil
+	}, nil
 }

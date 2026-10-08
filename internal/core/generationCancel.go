@@ -65,5 +65,5 @@ func (service *GenerationCancel) Exec(
 		return nil, otel.ReportError(span, fmt.Errorf("cancel generation: %w", err))
 	}
 
-	return otel.ReportSuccess(span, newGeneration(generation)), nil
+	return newGeneration(generation), nil
 }

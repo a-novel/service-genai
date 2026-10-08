@@ -60,8 +60,6 @@ func (handler *GrpcGenerationWatch) GenerationWatch(
 
 		if generation.SettledAt != nil {
 			// Terminal. The caller has the final state, so the stream ends rather than idling.
-			otel.ReportSuccessNoContent(span)
-
 			return nil
 		}
 

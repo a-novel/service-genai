@@ -66,8 +66,6 @@ func (dao *GenerationSubmit) Exec(
 
 	span.SetAttributes(
 		attribute.String("generation.id", request.ID.String()),
-		attribute.String("generation.owner_id", request.OwnerID.String()),
-		attribute.String("generation.purpose", request.Purpose),
 		attribute.Int("generation.max_attempts", int(request.MaxAttempts)),
 	)
 
@@ -102,5 +100,5 @@ func (dao *GenerationSubmit) Exec(
 
 	span.SetAttributes(attribute.Bool("generation.created", created))
 
-	return otel.ReportSuccess(span, &GenerationSubmitResult{Generation: entity, Created: created}), nil
+	return &GenerationSubmitResult{Generation: entity, Created: created}, nil
 }

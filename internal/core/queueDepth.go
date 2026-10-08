@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"go.opentelemetry.io/otel/attribute"
-
 	"github.com/a-novel-kit/golib/otel"
 
 	"github.com/a-novel/service-genai/internal/dao"
@@ -44,10 +42,8 @@ func (service *QueueDepth) Exec(ctx context.Context) (*QueueDepthResult, error) 
 		return nil, otel.ReportError(span, fmt.Errorf("read queue depth: %w", err))
 	}
 
-	span.SetAttributes(attribute.Int64("queue.pending", depth.Pending))
-
-	return otel.ReportSuccess(span, &QueueDepthResult{
+	return &QueueDepthResult{
 		Pending:          depth.Pending,
 		OldestPendingAge: time.Duration(depth.OldestPendingAgeSeconds * float64(time.Second)),
-	}), nil
+	}, nil
 }

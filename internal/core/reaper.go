@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"go.opentelemetry.io/otel/attribute"
-
 	"github.com/a-novel-kit/golib/otel"
 
 	"github.com/a-novel/service-genai/internal/dao"
@@ -62,7 +60,5 @@ func (reaper *Reaper) RunOnce(ctx context.Context) (bool, error) {
 		return false, otel.ReportError(span, fmt.Errorf("reap generations: %w", err))
 	}
 
-	span.SetAttributes(attribute.Int("reaper.recovered", len(recovered)))
-
-	return otel.ReportSuccess(span, len(recovered) > 0), nil
+	return len(recovered) > 0, nil
 }

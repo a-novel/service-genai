@@ -36,11 +36,6 @@ func (dao *GenerationReap) Exec(ctx context.Context, request *GenerationReapRequ
 	ctx, span := otel.Tracer().Start(ctx, "dao.GenerationReap")
 	defer span.End()
 
-	span.SetAttributes(
-		attribute.Float64("reap.grace_seconds", request.Grace.Seconds()),
-		attribute.Int("reap.limit", request.Limit),
-	)
-
 	tx, err := postgres.GetContext(ctx)
 	if err != nil {
 		return nil, otel.ReportError(span, fmt.Errorf("get transaction: %w", err))
@@ -57,5 +52,5 @@ func (dao *GenerationReap) Exec(ctx context.Context, request *GenerationReapRequ
 
 	span.SetAttributes(attribute.Int("reap.recovered", len(entities)))
 
-	return otel.ReportSuccess(span, entities), nil
+	return entities, nil
 }

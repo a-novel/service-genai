@@ -41,9 +41,9 @@ func (handler *GrpcGenerationGet) GenerationGet(
 		return nil, err
 	}
 
-	return otel.ReportSuccess(span, &genaiv0.GenerationGetResponse{
+	return &genaiv0.GenerationGetResponse{
 		Generation: NewGrpcGeneration(generation),
-	}), nil
+	}, nil
 }
 
 // read is shared with the watch handler, which needs the same lookup and the same refusals.
@@ -53,15 +53,11 @@ func (handler *GrpcGenerationGet) read(ctx context.Context, id, owner string) (*
 
 	generationID, err := uuid.Parse(id)
 	if err != nil {
-		_ = otel.ReportError(span, err)
-
 		return nil, status.Error(codes.InvalidArgument, "invalid generation id")
 	}
 
 	ownerID, err := uuid.Parse(owner)
 	if err != nil {
-		_ = otel.ReportError(span, err)
-
 		return nil, status.Error(codes.InvalidArgument, "invalid owner id")
 	}
 
@@ -80,5 +76,5 @@ func (handler *GrpcGenerationGet) read(ctx context.Context, id, owner string) (*
 		return nil, status.Error(codes.Internal, "internal error")
 	}
 
-	return otel.ReportSuccess(span, generation), nil
+	return generation, nil
 }

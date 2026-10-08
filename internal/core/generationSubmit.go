@@ -100,15 +100,12 @@ func (service *GenerationSubmit) Exec(
 		return nil, otel.ReportError(span, fmt.Errorf("submit generation: %w", err))
 	}
 
-	span.SetAttributes(
-		attribute.String("generation.id", result.Generation.ID.String()),
-		attribute.Bool("generation.created", result.Created),
-	)
+	span.SetAttributes(attribute.String("generation.id", result.Generation.ID.String()))
 
-	return otel.ReportSuccess(span, &GenerationSubmitResult{
+	return &GenerationSubmitResult{
 		Generation: newGeneration(result.Generation),
 		Created:    result.Created,
-	}), nil
+	}, nil
 }
 
 func validateSubmit(request *GenerationSubmitRequest) error {

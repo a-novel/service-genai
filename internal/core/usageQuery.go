@@ -111,10 +111,7 @@ func (service *UsageQuery) Exec(ctx context.Context, request *UsageQueryRequest)
 		result.Total.Attempts += group.Attempts
 	}
 
-	span.SetAttributes(
-		attribute.Int("usage.groups", len(groups)),
-		attribute.Int64("usage.total_attempts", result.Total.Attempts),
-	)
+	span.SetAttributes(attribute.Int64("usage.total_attempts", result.Total.Attempts))
 
-	return otel.ReportSuccess(span, result), nil
+	return result, nil
 }

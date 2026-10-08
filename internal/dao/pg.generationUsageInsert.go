@@ -54,9 +54,6 @@ func (dao *GenerationUsageInsert) Exec(
 	defer span.End()
 
 	span.SetAttributes(
-		attribute.String("usage.generation_id", request.GenerationID.String()),
-		attribute.Int("usage.attempt", int(request.Attempt)),
-		attribute.String("usage.provider", request.Provider),
 		attribute.String("usage.model", request.Model),
 		attribute.Int64("usage.input_tokens", request.InputTokens),
 		attribute.Int64("usage.output_tokens", request.OutputTokens),
@@ -90,5 +87,5 @@ func (dao *GenerationUsageInsert) Exec(
 		return nil, otel.ReportError(span, fmt.Errorf("execute query: %w", err))
 	}
 
-	return otel.ReportSuccess(span, entity), nil
+	return entity, nil
 }

@@ -58,13 +58,13 @@ func (handler *GrpcStatus) Status(ctx context.Context, _ *genaiv0.StatusRequest)
 		return nil, status.Error(codes.Unavailable, "service dependencies unavailable")
 	}
 
-	return otel.ReportSuccess(span, &genaiv0.StatusResponse{
+	return &genaiv0.StatusResponse{
 		Postgres: NewGrpcHealthStatus(),
 		Queue: &genaiv0.QueueDepth{
 			Pending:                 depth.Pending,
 			OldestPendingAgeSeconds: depth.OldestPendingAge.Seconds(),
 		},
-	}), nil
+	}, nil
 }
 
 func (handler *GrpcStatus) reportPostgres(ctx context.Context) error {
@@ -75,8 +75,6 @@ func (handler *GrpcStatus) reportPostgres(ctx context.Context) error {
 	if err != nil {
 		return otel.ReportError(span, err)
 	}
-
-	otel.ReportSuccessNoContent(span)
 
 	return nil
 }
