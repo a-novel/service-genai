@@ -185,8 +185,7 @@ func TestNewProvider(t *testing.T) {
 	require.NoError(t, err)
 
 	// The schema exercises the strict subset callers rely on: nesting, an array, an enum and a
-	// nullable field. Its property order is not alphabetical, so an output that keeps it proves the
-	// schema reached the provider as written.
+	// nullable field.
 	request := func(tier lib.Tier) *lib.ProviderStartRequest {
 		return &lib.ProviderStartRequest{
 			Tier:         tier,
@@ -251,7 +250,8 @@ func TestNewProvider(t *testing.T) {
 			require.Positive(t, finished.Usage.InputTokens)
 			require.Positive(t, finished.Usage.OutputTokens)
 
-			// Strict mode: every property, nothing else, in the schema's order.
+			// Strict mode: every property and nothing else. The key order is the provider's: background
+			// mode reorders a schema's properties.
 			decoder := json.NewDecoder(bytes.NewReader(finished.Output))
 			decoder.DisallowUnknownFields()
 
@@ -266,11 +266,7 @@ func TestNewProvider(t *testing.T) {
 
 			require.NoError(t, decoder.Decode(&output))
 			require.Contains(t, []string{"calm", "tense"}, output.Mood)
-
-			var compact bytes.Buffer
-
-			require.NoError(t, json.Compact(&compact, finished.Output))
-			require.Regexp(t, `^\{"title":.*"mood":.*"beats":.*"note":`, compact.String())
+			require.Len(t, output.Beats, 2)
 
 			// Re-attach: the sweep reads an unpolled result within one interval, so it must outlive one.
 			time.Sleep(core.SweepIntervalCeiling)
