@@ -77,11 +77,7 @@ func main() {
 	// SERVICES
 	// =================================================================================================================
 
-	tiers := providerTiers(cfg.Provider)
-
-	provider := lo.Must(lib.NewOpenAI(lib.OpenAIConfig{
-		BaseURL: cfg.Provider.BaseURL, APIKey: cfg.Provider.APIKey, Tiers: tiers,
-	}))
+	provider := lo.Must(newProvider(cfg.Provider))
 
 	serviceCheck := lo.Must(core.NewGenerationCheck(
 		core.GenerationCheckConfig{
@@ -122,7 +118,7 @@ func main() {
 		serviceCheck,
 	))
 	serviceQueueDepth := core.NewQueueDepth(dao.NewGenerationQueueDepth())
-	serviceTierList := core.NewTierList(tiers)
+	serviceTierList := core.NewTierList(providerTiers(cfg.Provider))
 
 	sweep := lo.Must(core.NewGenerationSweep(
 		core.GenerationSweepConfig{
@@ -280,6 +276,14 @@ func observeLoop(ctx context.Context, name string, loop func()) (err error) {
 	}
 
 	return otel.ReportError(span, fmt.Errorf("%s: %w", name, errLoopExitedUnexpectedly))
+}
+
+// newProvider builds the adapter the server runs. The conformance check builds it the same way, so
+// what the check proves is what the server runs.
+func newProvider(provider config.Provider) (*lib.OpenAI, error) {
+	return lib.NewOpenAI(lib.OpenAIConfig{
+		BaseURL: provider.BaseURL, APIKey: provider.APIKey, Tiers: providerTiers(provider),
+	})
 }
 
 // providerTiers converts the configured bindings to the adapter's. A name that is not a Tier is
