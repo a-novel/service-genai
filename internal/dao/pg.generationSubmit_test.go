@@ -66,8 +66,9 @@ func settleTo(ctx context.Context, t *testing.T, generation *dao.Generation, sta
 		running := runGeneration(ctx, t, generation.ID)
 
 		_, err := dao.NewGenerationSettle().Exec(ctx, &dao.GenerationSettleRequest{
-			ID: running.ID, Attempt: running.Attempt, ProviderCallID: running.ProviderCallID,
-			Status: dao.GenerationStatusSucceeded, Output: json.RawMessage(`{"text": "done"}`),
+			ID: running.ID, Attempt: running.Attempt, StartRequestedAt: running.StartRequestedAt,
+			ProviderCallID: running.ProviderCallID,
+			Status:         dao.GenerationStatusSucceeded, Output: json.RawMessage(`{"text": "done"}`),
 			Retention: testRetention,
 		})
 		if err != nil {

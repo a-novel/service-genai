@@ -186,6 +186,13 @@ func (service *GenerationCheck) start(ctx context.Context, generation *dao.Gener
 		return settled, nil
 	}
 
+	// From the intent on, the provider may hold paid work. Shutdown or a departing caller must not
+	// cut the start short, or the call could be accepted with its id never recorded.
+	ctx = context.WithoutCancel(ctx)
+
+	// Taken before the intent is recorded, so it can only overstate the intent's age.
+	began := time.Now()
+
 	intent, err := service.daos.BeginStart.Exec(ctx, &dao.GenerationBeginStartRequest{
 		ID: generation.ID, ProviderEpoch: service.config.ProviderEpoch,
 	})
@@ -193,13 +200,7 @@ func (service *GenerationCheck) start(ctx context.Context, generation *dao.Gener
 		return nil, otel.ReportError(span, fmt.Errorf("begin start: %w", err))
 	}
 
-	began := time.Now()
-
 	span.SetAttributes(attribute.Int("generation.attempt", int(intent.Attempt)))
-
-	// From here the provider may hold paid work. Shutdown must not cut the start short, or the call
-	// could be accepted with its id never recorded.
-	ctx = context.WithoutCancel(ctx)
 
 	startCtx, cancelStart := context.WithTimeout(ctx, startTimeout)
 	defer cancelStart()
@@ -207,9 +208,7 @@ func (service *GenerationCheck) start(ctx context.Context, generation *dao.Gener
 	// A process frozen since recording intent may find the attempt already settled as unknown by
 	// another check. Sending it now would pay for a call nothing reads.
 	if time.Since(began) >= startTimeout {
-		released, releaseErr := service.daos.ReleaseStart.Exec(ctx, &dao.GenerationReleaseStartRequest{
-			ID: intent.ID, Attempt: intent.Attempt,
-		})
+		released, releaseErr := service.releaseStart(ctx, intent, 0)
 		if releaseErr != nil {
 			return nil, otel.ReportError(span, fmt.Errorf("release stale start: %w", releaseErr))
 		}
@@ -241,16 +240,58 @@ func (service *GenerationCheck) start(ctx context.Context, generation *dao.Gener
 	recorded, err := service.daos.Record.Exec(recordCtx, &dao.GenerationRecordProviderCallRequest{
 		ID: intent.ID, Attempt: intent.Attempt, ProviderCallID: call.ID,
 	})
-	if errors.Is(err, dao.ErrGenerationChanged) {
-		// The generation settled while the start was in flight. The accepted call belongs to nothing.
-		service.stopOrphan(ctx, intent, call.ID)
-	}
-
 	if err != nil {
+		// The generation settled while the start was in flight, or the write failed and may not have
+		// landed. An accepted call the generation does not carry belongs to nothing.
+		if errors.Is(err, dao.ErrGenerationChanged) || !service.carriesCall(ctx, intent, call.ID) {
+			service.stopOrphan(ctx, intent, call.ID)
+		}
+
 		return nil, otel.ReportError(span, fmt.Errorf("record provider call: %w", err))
 	}
 
 	return recorded, nil
+}
+
+// releaseStart gives back an attempt whose call was never sent. It runs detached, so it carries its
+// own deadline: a stalled database must not hold the process past shutdown.
+func (service *GenerationCheck) releaseStart(
+	ctx context.Context, intent *dao.Generation, delay time.Duration,
+) (*dao.Generation, error) {
+	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(releaseStart)")
+	defer span.End()
+
+	releaseCtx, cancel := context.WithTimeout(ctx, persistenceTimeout)
+	defer cancel()
+
+	released, err := service.daos.ReleaseStart.Exec(releaseCtx, &dao.GenerationReleaseStartRequest{
+		ID: intent.ID, Attempt: intent.Attempt, Delay: delay,
+	})
+	if err != nil {
+		return nil, otel.ReportError(span, err)
+	}
+
+	return released, nil
+}
+
+// carriesCall re-reads a generation whose call id write failed: the write may have landed anyway.
+// A generation that cannot be read counts as carrying the call, so a call it may track is never
+// stopped.
+func (service *GenerationCheck) carriesCall(ctx context.Context, intent *dao.Generation, callID string) bool {
+	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(carriesCall)")
+	defer span.End()
+
+	getCtx, cancel := context.WithTimeout(ctx, persistenceTimeout)
+	defer cancel()
+
+	current, err := service.daos.Get.Exec(getCtx, &dao.GenerationGetRequest{ID: intent.ID, OwnerID: intent.OwnerID})
+	if err != nil {
+		_ = otel.ReportError(span, err)
+
+		return true
+	}
+
+	return lo.FromPtr(current.ProviderCallID) == callID
 }
 
 // failStart decides what a rejected start costs. Only a definitive refusal gives the attempt back.
@@ -261,9 +302,7 @@ func (service *GenerationCheck) failStart(
 	defer span.End()
 
 	if errors.Is(cause, lib.ErrProviderRetryable) {
-		released, err := service.daos.ReleaseStart.Exec(ctx, &dao.GenerationReleaseStartRequest{
-			ID: intent.ID, Attempt: intent.Attempt, Delay: retryDelay,
-		})
+		released, err := service.releaseStart(ctx, intent, retryDelay)
 		if err != nil {
 			return nil, otel.ReportError(span, fmt.Errorf("release start: %w", err))
 		}
@@ -456,14 +495,15 @@ func (service *GenerationCheck) settle(
 		var err error
 
 		settled, err = service.daos.Settle.Exec(ctx, &dao.GenerationSettleRequest{
-			ID:             generation.ID,
-			Attempt:        generation.Attempt,
-			ProviderCallID: generation.ProviderCallID,
-			Status:         status,
-			Output:         call.Output,
-			Failure:        failure,
-			Error:          message,
-			Retention:      service.config.Retention,
+			ID:               generation.ID,
+			Attempt:          generation.Attempt,
+			StartRequestedAt: generation.StartRequestedAt,
+			ProviderCallID:   generation.ProviderCallID,
+			Status:           status,
+			Output:           call.Output,
+			Failure:          failure,
+			Error:            message,
+			Retention:        service.config.Retention,
 		})
 		if err != nil {
 			return fmt.Errorf("settle generation: %w", err)
@@ -490,13 +530,14 @@ func (service *GenerationCheck) settleFailure(
 	defer cancel()
 
 	settled, err := service.daos.Settle.Exec(settleCtx, &dao.GenerationSettleRequest{
-		ID:             generation.ID,
-		Attempt:        generation.Attempt,
-		ProviderCallID: generation.ProviderCallID,
-		Status:         dao.GenerationStatusFailed,
-		Failure:        nonEmpty(string(failure.Kind)),
-		Error:          &failure.Message,
-		Retention:      service.config.Retention,
+		ID:               generation.ID,
+		Attempt:          generation.Attempt,
+		StartRequestedAt: generation.StartRequestedAt,
+		ProviderCallID:   generation.ProviderCallID,
+		Status:           dao.GenerationStatusFailed,
+		Failure:          nonEmpty(string(failure.Kind)),
+		Error:            &failure.Message,
+		Retention:        service.config.Retention,
 	})
 	if err != nil {
 		return nil, otel.ReportError(span, fmt.Errorf("settle failed generation: %w", err))

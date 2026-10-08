@@ -181,7 +181,10 @@ func TestGenerationGet(t *testing.T) {
 			if testCase.electMock != nil {
 				electDao.EXPECT().
 					Exec(mock.Anything, &dao.GenerationElectCheckRequest{
-						ID: testCase.request.ID, OwnerID: testCase.request.OwnerID, Interval: checkInterval,
+						ID:            testCase.request.ID,
+						OwnerID:       testCase.request.OwnerID,
+						Interval:      checkInterval,
+						ProviderEpoch: testEpoch,
 					}).
 					Return(testCase.electMock.resp, testCase.electMock.err)
 			}
@@ -193,7 +196,8 @@ func TestGenerationGet(t *testing.T) {
 			}
 
 			service, err := core.NewGenerationGet(
-				core.GenerationGetConfig{CheckInterval: checkInterval}, getDao, electDao, usageDao, check,
+				core.GenerationGetConfig{CheckInterval: checkInterval, ProviderEpoch: testEpoch},
+				getDao, electDao, usageDao, check,
 			)
 			require.NoError(t, err)
 

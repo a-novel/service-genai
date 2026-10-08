@@ -1,6 +1,7 @@
 package core_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -23,6 +24,7 @@ func TestGenerationSweep(t *testing.T) {
 	type checkMock struct {
 		generation *dao.Generation
 		err        error
+		panics     bool
 	}
 
 	testCases := []struct {
@@ -72,6 +74,19 @@ func TestGenerationSweep(t *testing.T) {
 			expectErr:    errFoo,
 		},
 		{
+			// A panic stays with its generation: the process keeps running and the batch progresses.
+			name: "Success/CheckPanics",
+
+			config: config,
+			swept:  []*dao.Generation{first, second},
+			checkMocks: []checkMock{
+				{generation: first, panics: true},
+				{generation: second},
+			},
+
+			expectWorked: true,
+		},
+		{
 			name: "Error/Sweep",
 
 			config:   config,
@@ -112,10 +127,15 @@ func TestGenerationSweep(t *testing.T) {
 				Return(testCase.swept, testCase.sweepErr)
 
 			for _, checkMock := range testCase.checkMocks {
-				check.EXPECT().
-					Exec(mock.Anything, &core.GenerationCheckRequest{Generation: checkMock.generation}).
-					Return(checkMock.generation, checkMock.err).
-					Once()
+				call := check.EXPECT().Exec(mock.Anything, &core.GenerationCheckRequest{Generation: checkMock.generation})
+
+				if checkMock.panics {
+					call.RunAndReturn(func(context.Context, *core.GenerationCheckRequest) (*dao.Generation, error) {
+						panic("check exploded")
+					}).Once()
+				} else {
+					call.Return(checkMock.generation, checkMock.err).Once()
+				}
 			}
 
 			worked, err := sweep.RunOnce(t.Context())

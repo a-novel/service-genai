@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
@@ -77,6 +78,8 @@ func TestGenerationCheck(t *testing.T) {
 		expectRestart    bool
 		expectUsage      bool
 		expectReread     bool
+		// rereadAs is what the re-read finds, a settled generation unless stated.
+		rereadAs *dao.Generation
 
 		expectStatus dao.GenerationStatus
 		expectErr    error
@@ -369,6 +372,7 @@ func TestGenerationCheck(t *testing.T) {
 			expectErr:     errFoo,
 		},
 		{
+			// The write failed but landed: the generation carries the call, which must keep running.
 			name: "Error/Record",
 
 			generation: pendingGeneration(),
@@ -377,7 +381,23 @@ func TestGenerationCheck(t *testing.T) {
 
 			expectStart:  true,
 			expectRecord: true,
+			expectReread: true,
 			expectErr:    errFoo,
+		},
+		{
+			// The write failed and never landed: nothing tracks the accepted call, so it is stopped.
+			name: "Error/RecordLost",
+
+			generation: pendingGeneration(),
+			start:      providerCall(lib.ProviderCallRunning),
+			recordErr:  errFoo,
+
+			expectStart:      true,
+			expectRecord:     true,
+			expectReread:     true,
+			rereadAs:         startingGeneration(time.Second),
+			expectStopOrphan: true,
+			expectErr:        errFoo,
 		},
 		{
 			name: "Error/Settle",
@@ -461,16 +481,23 @@ func TestGenerationCheck(t *testing.T) {
 			}
 
 			if expected := testCase.expectSettle; expected != nil {
+				// A settle is fenced on the start it read: the fresh intent's once one was taken here.
+				started := generation.StartRequestedAt
+				if testCase.expectStart {
+					started = intent.StartRequestedAt
+				}
+
 				settleDao.EXPECT().
 					Exec(mock.Anything, &dao.GenerationSettleRequest{
-						ID:             generation.ID,
-						Attempt:        expected.attempt,
-						ProviderCallID: expected.callID,
-						Status:         expected.status,
-						Output:         expected.output,
-						Failure:        expected.failure,
-						Error:          expected.reason,
-						Retention:      retention,
+						ID:               generation.ID,
+						Attempt:          expected.attempt,
+						StartRequestedAt: started,
+						ProviderCallID:   expected.callID,
+						Status:           expected.status,
+						Output:           expected.output,
+						Failure:          expected.failure,
+						Error:            expected.reason,
+						Retention:        retention,
 					}).
 					Return(settledGeneration(expected.status), testCase.settleErr)
 			}
@@ -517,7 +544,7 @@ func TestGenerationCheck(t *testing.T) {
 			if testCase.expectReread {
 				get.EXPECT().
 					Exec(mock.Anything, &dao.GenerationGetRequest{ID: generation.ID, OwnerID: generation.OwnerID}).
-					Return(settledGeneration(dao.GenerationStatusSucceeded), nil)
+					Return(lo.CoalesceOrEmpty(testCase.rereadAs, settledGeneration(dao.GenerationStatusSucceeded)), nil)
 			}
 
 			check, err := core.NewGenerationCheck(
