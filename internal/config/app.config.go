@@ -15,6 +15,9 @@ import (
 type Main struct {
 	// Name of the application, as it appears in logs and tracing.
 	Name string `json:"name" yaml:"name"`
+	// DowntimeStart is when a planned downtime starts; nil when none is planned. From then until
+	// it is removed, the service refuses work and leaves its database alone.
+	DowntimeStart *time.Time `json:"downtimeStart" yaml:"downtimeStart"`
 }
 
 // Grpc holds the gRPC server configuration.

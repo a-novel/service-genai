@@ -163,6 +163,12 @@ Database connection pool (server images). The limits are **per process**, so the
 | `POSTGRES_MAX_OPEN_CONNS` | Maximum open connections to the database. | `20`    |
 | `POSTGRES_MAX_IDLE_CONNS` | Maximum connections kept open while idle. | `20`    |
 
+Planned downtime (server images):
+
+| Name             | Description                                                                                                                                                                                                                  | Default |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| `DOWNTIME_START` | When a planned downtime starts, in RFC 3339. From then until it is removed, even past the announced end, the server answers `UNAVAILABLE` except for gRPC health and echo, starts without the database, and the sweep idles. |         |
+
 Logs and tracing — OpenTelemetry supports a stdout and a Google Cloud exporter (all server images):
 
 | Name                | Description                                                                    | Default         |

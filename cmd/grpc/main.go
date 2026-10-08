@@ -24,7 +24,9 @@ import (
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
 
+	"github.com/a-novel-kit/golib/downtime"
 	"github.com/a-novel-kit/golib/grpcf"
+	golibproto "github.com/a-novel-kit/golib/grpcf/proto/gen"
 	"github.com/a-novel-kit/golib/logging"
 	"github.com/a-novel-kit/golib/otel"
 	"github.com/a-novel-kit/golib/postgres"
@@ -61,10 +63,13 @@ func main() {
 		log.SetFlags(log.Flags() &^ (log.Ldate | log.Ltime))
 	}
 
-	ctx = lo.Must(postgres.NewContext(ctx, cfg.Postgres))
+	// A server started during a planned downtime refuses work, so it leaves the database alone.
+	if !downtime.Started(cfg.App.DowntimeStart, time.Now()) {
+		ctx = lo.Must(postgres.NewContext(ctx, cfg.Postgres))
 
-	database := lo.Must(cfg.Postgres.DB(ctx))
-	defer closeDatabase(database)
+		database := lo.Must(cfg.Postgres.DB(ctx))
+		defer closeDatabase(database)
+	}
 
 	// =================================================================================================================
 	// DAO
@@ -147,17 +152,25 @@ func main() {
 		return postgres.TransferContext(ctx, rpCtx)
 	}
 
+	// During a planned downtime, only liveness answers; the logger records the refusals.
+	open := []string{
+		"/" + healthpb.Health_ServiceDesc.ServiceName + "/",
+		"/" + golibproto.EchoService_ServiceDesc.ServiceName + "/",
+	}
+
 	server := grpc.NewServer(
 		cfg.Otel.RpcInterceptor(),
 		grpc.ChainUnaryInterceptor(
 			grpcf.BaseContextUnaryInterceptor(ctxInterceptor),
 			cfg.Logger.UnaryInterceptor(),
 			cfg.Logger.PanicUnaryInterceptor(),
+			downtime.UnaryServerInterceptor(cfg.App.DowntimeStart, open...),
 		),
 		grpc.ChainStreamInterceptor(
 			grpcf.BaseContextStreamInterceptor(ctxInterceptor),
 			cfg.Logger.StreamInterceptor(),
 			cfg.Logger.PanicStreamInterceptor(),
+			downtime.StreamServerInterceptor(cfg.App.DowntimeStart, open...),
 		),
 	)
 
@@ -193,7 +206,10 @@ func main() {
 			return grpcf.Serve(ctx, server, fmt.Sprintf("0.0.0.0:%d", cfg.Grpc.Port), cfg.Grpc.Shutdown)
 		},
 		func(ctx context.Context) error {
-			return runLoop(ctx, cfg.Log, "generation-sweep", cfg.Sweep.Interval, 0, sweep.RunOnce)
+			return runLoop(
+				ctx, cfg.Log, "generation-sweep", cfg.Sweep.Interval, 0,
+				outsideDowntime(cfg.App.DowntimeStart, sweep.RunOnce),
+			)
 		},
 	)
 	if serveErr != nil {
@@ -241,6 +257,20 @@ func closeDatabase(database io.Closer) {
 	err := database.Close()
 	if err != nil {
 		log.Println("Close Postgres: " + err.Error())
+	}
+}
+
+// outsideDowntime idles a loop iteration once a planned downtime has started, since the database
+// it works on is unavailable then.
+func outsideDowntime(
+	start *time.Time, run func(context.Context) (bool, error),
+) func(context.Context) (bool, error) {
+	return func(ctx context.Context) (bool, error) {
+		if downtime.Started(start, time.Now()) {
+			return false, nil
+		}
+
+		return run(ctx)
 	}
 }
 
