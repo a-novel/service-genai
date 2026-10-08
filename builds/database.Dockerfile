@@ -1,47 +1,60 @@
-# A postgres image with the extensions the service needs pre-loaded at build time.
-#
-# It does not run the service's schema migrations; run the migrations target separately.
-FROM docker.io/library/postgres:18.6
+# Assemble signed Wolfi packages with a versioned upstream builder.
+FROM docker.io/library/golang:1.27.1-alpine AS packages
+ENV CGO_ENABLED=0
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    GOBIN=/usr/local/bin go install -trimpath -ldflags="-s -w" chainguard.dev/apko@v1.4.8
+COPY ./builds/database.apko.yaml /database.yaml
+# Let the SDK dependencies select their compatible OpenSSL development package.
+RUN apko build-minirootfs /database.yaml /runtime.tar \
+    && apko build-minirootfs /database.yaml /builder.tar \
+        --package-append build-base,meson,ninja,pkgconf,bzip2-dev,lz4-dev,pc:openssl,postgresql-18-dev,libxml2-dev,zlib-dev,zstd-dev,libssh2-dev \
+    && mkdir /runtime /builder \
+    && tar -xf /runtime.tar -C /runtime --exclude=dev \
+    && tar -xf /builder.tar -C /builder --exclude=dev
+SHELL ["/bin/ash", "-eo", "pipefail", "-c"]
+ARG PGBACKREST_VERSION=2.59.3
+ARG PGBACKREST_SHA256=14037901db002e5536a948bf9f0fc0ff6cde31f4e675d3e9b46f129071bf2e5f
+RUN wget -q -O /pgbackrest.tar.gz "https://github.com/pgbackrest/pgbackrest/releases/download/release/${PGBACKREST_VERSION}/pgbackrest-${PGBACKREST_VERSION}.tar.gz" \
+    && echo "${PGBACKREST_SHA256}  /pgbackrest.tar.gz" | sha256sum -c -
 
-ARG DEBIAN_FRONTEND=noninteractive
+# Wolfi supplies PostgreSQL and pg_cron; only pgBackRest needs its upstream source build.
+FROM scratch AS backup-builder
+COPY --from=packages /builder/ /
+COPY --from=packages /pgbackrest.tar.gz /tmp/pgbackrest.tar.gz
+RUN mkdir /tmp/pgbackrest \
+    && tar -xzf /tmp/pgbackrest.tar.gz -C /tmp/pgbackrest --strip-components=1 \
+    && meson setup /tmp/build /tmp/pgbackrest --buildtype=release \
+    && ninja -C /tmp/build -j 2 \
+    && meson test -C /tmp/build --print-errorlogs
 
-# Require password authentication for local connections; PostgreSQL 18 already defaults host
-# authentication to SCRAM.
-ENV POSTGRES_INITDB_ARGS=--auth=scram-sha-256
-
-# ======================================================================================================================
-# Install pg_cron.
-# ======================================================================================================================
-# pg_cron runs the retention purge (see builds/database.sql). It cannot load without
-# shared_preload_libraries, and its jobs run as background workers because a job's own connection
-# would need a password under SCRAM authentication. Both are set on the conf sample so the
-# init-time server that runs database.sql has them too, not just the running server.
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends postgresql-18-cron=1.6.7-3.pgdg13+1 \
-  && rm -rf /var/lib/apt/lists/* \
-  && printf "shared_preload_libraries = 'pg_cron'\ncron.use_background_workers = on\n" \
-    >> /usr/share/postgresql/postgresql.conf.sample
-
-# ======================================================================================================================
-# Prepare extension scripts.
-# ======================================================================================================================
-# Points cron.database_name at the served database.
-COPY ./builds/database.entrypoint.sh /usr/local/bin/database.entrypoint.sh
-RUN chmod +x /usr/local/bin/database.entrypoint.sh
-
-# Runs once on an empty data directory, to create the extensions.
+FROM scratch
+COPY --from=packages /runtime/ /
+COPY --from=backup-builder /tmp/build/src/pgbackrest /usr/bin/pgbackrest
+ENV PATH=/usr/libexec/postgresql18:/usr/local/bin:/usr/bin:/bin \
+    PG_MAJOR=18 PGDATA=/var/lib/postgresql/18/docker LANG=en_US.utf8 \
+    POSTGRES_INITDB_ARGS=--auth=scram-sha-256
 COPY ./builds/database.sql /docker-entrypoint-initdb.d/init.sql
-
-# ======================================================================================================================
-# Finish setup.
-# ======================================================================================================================
+COPY --chmod=755 ./builds/database.entrypoint.sh /usr/local/bin/database.entrypoint.sh
+# Preserve the service initialization and recovery paths around Wolfi's layout.
+#
+# pg_cron runs the retention purge scheduled by database.sql. It loads only as a preloaded
+# library, and its jobs run as background workers because a job's own connection would need a
+# password under SCRAM authentication. initdb copies the sample, so the server that runs
+# database.sql has both settings.
+RUN mkdir -p /usr/lib/postgresql/18 /usr/local/bin /var/lib/postgres \
+    && ln -s /usr/libexec/postgresql18 /usr/lib/postgresql/18/bin \
+    && ln -s /usr/lib/postgresql18 /usr/lib/postgresql/18/lib \
+    && ln -s /usr/libexec/postgresql18/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh \
+    && ln -s /docker-entrypoint-initdb.d /var/lib/postgres/initdb \
+    && test -f /usr/share/postgresql18/postgresql.conf.sample \
+    && printf "shared_preload_libraries = 'pg_cron'\ncron.use_background_workers = on\n" \
+        >> /usr/share/postgresql18/postgresql.conf.sample \
+    && test "$(gosu postgres id -u)" = 999 \
+    && gosu postgres pgbackrest version \
+    && gosu postgres openssl crl2pkcs7 -nocrl -certfile /etc/ssl/certs/ca-certificates.crt -out /dev/null
 EXPOSE 5432
-
-# Postgres does not provide a healthcheck by default.
-HEALTHCHECK --interval=1s --timeout=5s --retries=10 --start-period=1s \
-  CMD ["pg_isready"]
-
+STOPSIGNAL SIGINT
+HEALTHCHECK --interval=1s --timeout=5s --retries=10 --start-period=1s CMD ["pg_isready"]
 ENTRYPOINT ["/usr/local/bin/database.entrypoint.sh"]
-
-# Restore the original command from the base image.
 CMD ["postgres"]
