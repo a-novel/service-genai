@@ -24,7 +24,7 @@ Callers keep their domain. Prompt assembly stays with them, so instructions, inp
 
 Five things shape the contract:
 
-**Callers never name a model.** They pick a Tier (`FAST`, `BALANCED`, `DEEP`), and the provider configuration binds each Tier to a model and a reasoning effort. A model or provider change edits no caller.
+**Callers never name a model.** They pick a Tier (`FAST`, `BALANCED`, `DEEP`), and the provider configuration binds each Tier to a model and a reasoning effort. `TierList` reports each Tier's input and output token ceilings, so a caller sizes its request without knowing the model. Switching provider is a configuration change that edits no caller, and work in flight restarts on the new provider.
 
 **A resend is a replay.** The service derives each generation's key from the request and its owner, so a caller that lost its connection or crashed sends the same request again and gets the same generation back, running or finished. It keeps no key of its own. A failed or cancelled generation is not served again: resending its request runs it from scratch. To ask for another result of a request that succeeded, send it with the next `variant`.
 
@@ -49,7 +49,7 @@ The service runs as published OCI images plus a PostgreSQL database. All state l
 | `service-genai/database`        | PostgreSQL with `pg_cron` and pgBackRest — or bring your own Postgres.      |
 | `service-genai/standalone-grpc` | Server plus migrations in one image. Local development only.                |
 
-Pin every image to the same release tag — see the [latest release](https://github.com/a-novel/service-genai/releases/latest). A production deployment runs `database`, then the migrations job to completion, then any number of `grpc` replicas. Provide `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DATABASE` and `OPENAI_API_KEY` through the orchestrator; store the password and the API key as secrets.
+Pin every image to the same release tag — see the [latest release](https://github.com/a-novel/service-genai/releases/latest). A production deployment runs `database`, then the migrations job to completion, then any number of `grpc` replicas. Provide `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DATABASE` and `PROVIDER_API_KEY` through the orchestrator; store the password and the API key as secrets.
 
 Callers poll for results, and each poll checks its generation with the provider. The sweep inside the `grpc` process checks the generations nobody polled, so a result is captured before the provider discards it. Give each replica CPU outside of requests (on Cloud Run, CPU always allocated with at least one instance) and outbound access to the provider's API.
 
@@ -93,7 +93,7 @@ services:
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
       POSTGRES_DATABASE: "${POSTGRES_DATABASE}"
       POSTGRES_TLS_ENABLED: "false"
-      OPENAI_API_KEY: "${OPENAI_API_KEY}"
+      PROVIDER_API_KEY: "${PROVIDER_API_KEY}"
     networks: [api]
 
 networks:
@@ -124,16 +124,19 @@ Every variable is read from the process environment. Names can be globally prefi
 | `POSTGRES_DATABASE`    | PostgreSQL database name. **Required when `POSTGRES_HOST` is set.**                                                           | all                       |
 | `POSTGRES_TLS_ENABLED` | Encrypt the PostgreSQL connection. Defaults to `true`; disable only when another trusted boundary protects the database link. | all                       |
 | `POSTGRES_DSN`         | Connection URL, read only when `POSTGRES_HOST` is empty. Local development uses it.                                           | all                       |
-| `OPENAI_API_KEY`       | Provider credential. **Required for generations; inject it as a secret.** No caller holds one.                                | `grpc`, `standalone-grpc` |
+| `PROVIDER_API_KEY`     | Provider credential. **Required; inject it as a secret.** The server refuses to start without it. No caller holds one.        | `grpc`, `standalone-grpc` |
 
 <details>
 <summary>Optional configuration (provider, checks, retention, gRPC, connection pool, OpenTelemetry)</summary>
 
-Provider (images `grpc`, `standalone-grpc`):
+Provider (images `grpc`, `standalone-grpc`). The defaults run on OpenAI; [switching provider](./docs/operations/generation-checks.md#switching-provider) sets every one of them, the key included, and raises the epoch.
 
-| Name              | Description                                                                                 | Default     |
-| ----------------- | ------------------------------------------------------------------------------------------- | ----------- |
-| `OPENAI_BASE_URL` | Provider endpoint. Points the service at an OpenAI-compatible provider or a local stand-in. | SDK default |
+| Name                | Description                                                                                                                                                                                                                                                              | Default                                                |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------ |
+| `PROVIDER_NAME`     | Identifies the provider on usage records. Changed with the account or endpoint, not on key rotation.                                                                                                                                                                     | `openai`                                               |
+| `PROVIDER_EPOCH`    | Orders provider configurations. Raise it on every switch: work started under a lower epoch restarts on this one.                                                                                                                                                         | `1`                                                    |
+| `PROVIDER_BASE_URL` | Responses API endpoint.                                                                                                                                                                                                                                                  | `https://api.openai.com/v1/`                           |
+| `PROVIDER_TIERS`    | JSON object binding each of `fast`, `balanced` and `deep` to `{"model", "reasoningEffort", "maxInputTokens", "maxOutputTokens"}`. The effort is passed as is; `maxInputTokens` is the context window less `maxOutputTokens`. Every Tier needs a model and both ceilings. | [OpenAI bindings](./internal/config/tiers.openai.json) |
 
 Checks and sweep (images `grpc`, `standalone-grpc`). [Generation checks](./docs/operations/generation-checks.md) explains how they move a generation forward.
 

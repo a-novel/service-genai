@@ -24,7 +24,8 @@ services:
     environment:
       POSTGRES_DSN: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-genai:5432/${POSTGRES_DB}?sslmode=disable"
       # A closed port: starts are refused before reaching any provider, so generations stay pending.
-      OPENAI_BASE_URL: "http://127.0.0.1:1/v1"
+      PROVIDER_BASE_URL: "http://127.0.0.1:1/v1"
+      PROVIDER_API_KEY: "test"
     networks:
       - genai-integration-grpc-test
 

@@ -21,6 +21,8 @@ type GenerationSweepRequest struct {
 	Interval time.Duration
 	// Limit caps the batch.
 	Limit int
+	// ProviderEpoch is the sweeping replica's configuration. Newer generations are skipped.
+	ProviderEpoch int32
 }
 
 // GenerationSweep takes the unsettled generations nobody checked within the interval, marking them
@@ -42,7 +44,9 @@ func (dao *GenerationSweep) Exec(ctx context.Context, request *GenerationSweepRe
 
 	entities := make([]*Generation, 0)
 
-	err = tx.NewRaw(generationSweepQuery, request.Interval.Seconds(), request.Limit).Scan(ctx, &entities)
+	err = tx.NewRaw(
+		generationSweepQuery, request.Interval.Seconds(), request.Limit, request.ProviderEpoch,
+	).Scan(ctx, &entities)
 	if err != nil {
 		return nil, otel.ReportError(span, fmt.Errorf("execute query: %w", err))
 	}

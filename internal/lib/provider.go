@@ -26,6 +26,9 @@ type TierBinding struct {
 	// ReasoningEffort is passed to the provider as is: effort values are not portable across providers.
 	// Empty sends none.
 	ReasoningEffort string
+	// MaxInputTokens is the input a caller may send: the model's context window less MaxOutputTokens.
+	// Advertised to callers and not enforced, since an oversized input already fails at no cost.
+	MaxInputTokens int64
 	// MaxOutputTokens caps the output, reasoning included, and with it the spend of one call.
 	MaxOutputTokens int64
 }
@@ -135,7 +138,7 @@ type ProviderStartRequest struct {
 	Attempt      int16
 }
 
-// Provider is the narrow surface a check needs. Keeping it to four operations is what leaves room
+// Provider is the narrow surface a check needs. Keeping it to three operations is what leaves room
 // for a second provider without rewriting the checks.
 type Provider interface {
 	// Start begins an operation and returns as soon as the provider accepts it, without waiting for
@@ -147,6 +150,4 @@ type Provider interface {
 	// Cancel stops an operation. Idempotent — cancelling a terminal operation returns its final
 	// state rather than failing.
 	Cancel(ctx context.Context, id string) (*ProviderCall, error)
-	// Name identifies the provider on the usage record.
-	Name() string
 }

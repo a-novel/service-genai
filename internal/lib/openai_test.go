@@ -3,6 +3,7 @@ package lib_test
 import (
 	"encoding/json"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -46,9 +47,14 @@ func (script *scriptedProvider) serve(t *testing.T) *httptest.Server {
 }
 
 var testTiers = map[lib.Tier]lib.TierBinding{
-	lib.TierFast:     {Model: "gpt-5.6-luna", ReasoningEffort: "low", MaxOutputTokens: 1024},
-	lib.TierBalanced: {Model: "gpt-5.6-terra", ReasoningEffort: "medium", MaxOutputTokens: 2048},
-	lib.TierDeep:     {Model: "gpt-5.6-sol", MaxOutputTokens: 4096},
+	lib.TierFast:     {Model: "gpt-5.6-luna", ReasoningEffort: "low", MaxInputTokens: 8192, MaxOutputTokens: 1024},
+	lib.TierBalanced: {Model: "gpt-5.6-terra", ReasoningEffort: "medium", MaxInputTokens: 8192, MaxOutputTokens: 2048},
+	lib.TierDeep:     {Model: "gpt-5.6-sol", MaxInputTokens: 8192, MaxOutputTokens: 4096},
+}
+
+// testConfig points the adapter at the given endpoint.
+func testConfig(baseURL string) lib.OpenAIConfig {
+	return lib.OpenAIConfig{BaseURL: baseURL, APIKey: "test-key", Tiers: testTiers}
 }
 
 func newTestProvider(t *testing.T, script *scriptedProvider) *lib.OpenAI {
@@ -59,11 +65,7 @@ func newTestProvider(t *testing.T, script *scriptedProvider) *lib.OpenAI {
 	// MaxRetries(0) so a scripted 5xx surfaces as one classified error instead of the SDK's own
 	// retry loop deciding first.
 	provider, err := lib.NewOpenAI(
-		testTiers,
-		option.WithBaseURL(server.URL),
-		option.WithHTTPClient(server.Client()),
-		option.WithAPIKey("test-key"),
-		option.WithMaxRetries(0),
+		testConfig(server.URL), option.WithHTTPClient(server.Client()), option.WithMaxRetries(0),
 	)
 	if err != nil {
 		panic(err)
@@ -390,33 +392,70 @@ func TestOpenAIRequest(t *testing.T) {
 func TestNewOpenAI(t *testing.T) {
 	t.Parallel()
 
+	// withTier replaces one Tier's binding in the valid configuration.
+	withTier := func(tier lib.Tier, binding lib.TierBinding) lib.OpenAIConfig {
+		config := testConfig("https://provider.test/v1")
+		config.Tiers = maps.Clone(testTiers)
+		config.Tiers[tier] = binding
+
+		return config
+	}
+
 	testCases := []struct {
 		name string
 
-		tiers map[lib.Tier]lib.TierBinding
+		config lib.OpenAIConfig
 
 		expectErr error
 	}{
 		{
 			name: "Success",
 
-			tiers: testTiers,
+			config: testConfig("https://provider.test/v1"),
+		},
+		{
+			name: "Error/NoBaseURL",
+
+			config: testConfig(""),
+
+			expectErr: lib.ErrProviderNotConfigured,
+		},
+		{
+			name: "Error/NoAPIKey",
+
+			config: lib.OpenAIConfig{BaseURL: "https://provider.test/v1", Tiers: testTiers},
+
+			expectErr: lib.ErrProviderNotConfigured,
 		},
 		{
 			name: "Error/TierUnbound",
 
-			tiers: map[lib.Tier]lib.TierBinding{lib.TierFast: testTiers[lib.TierFast]},
+			config: lib.OpenAIConfig{
+				BaseURL: "https://provider.test/v1",
+				APIKey:  "test-key",
+				Tiers:   map[lib.Tier]lib.TierBinding{lib.TierFast: testTiers[lib.TierFast]},
+			},
+
+			expectErr: lib.ErrTierNotBound,
+		},
+		{
+			name: "Error/NoModel",
+
+			config: withTier(lib.TierFast, lib.TierBinding{MaxInputTokens: 8192, MaxOutputTokens: 1024}),
+
+			expectErr: lib.ErrTierNotBound,
+		},
+		{
+			name: "Error/NoInputCeiling",
+
+			config: withTier(lib.TierFast, lib.TierBinding{Model: "a-model", MaxOutputTokens: 1024}),
 
 			expectErr: lib.ErrTierNotBound,
 		},
 		{
 			name: "Error/NoOutputCeiling",
 
-			tiers: map[lib.Tier]lib.TierBinding{
-				lib.TierFast:     {Model: "a-model"},
-				lib.TierBalanced: testTiers[lib.TierBalanced],
-				lib.TierDeep:     testTiers[lib.TierDeep],
-			},
+			config: withTier(lib.TierFast, lib.TierBinding{Model: "a-model", MaxInputTokens: 8192}),
 
 			expectErr: lib.ErrTierNotBound,
 		},
@@ -426,7 +465,7 @@ func TestNewOpenAI(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			_, err := lib.NewOpenAI(testCase.tiers)
+			_, err := lib.NewOpenAI(testCase.config)
 			require.ErrorIs(t, err, testCase.expectErr)
 		})
 	}
@@ -563,11 +602,7 @@ func TestOpenAIStartTimeoutIsAmbiguous(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	provider, err := lib.NewOpenAI(
-		testTiers,
-		option.WithBaseURL(server.URL),
-		option.WithHTTPClient(server.Client()),
-		option.WithAPIKey("test-key"),
-		option.WithRequestTimeout(time.Second),
+		testConfig(server.URL), option.WithHTTPClient(server.Client()), option.WithRequestTimeout(time.Second),
 	)
 	require.NoError(t, err)
 
@@ -582,24 +617,11 @@ func TestOpenAITransportFailure(t *testing.T) {
 	t.Parallel()
 
 	// A port nothing listens on.
-	provider, err := lib.NewOpenAI(
-		testTiers,
-		option.WithBaseURL("https://127.0.0.1:1"),
-		option.WithAPIKey("test-key"),
-		option.WithMaxRetries(0),
-	)
+	provider, err := lib.NewOpenAI(testConfig("https://127.0.0.1:1"), option.WithMaxRetries(0))
 	require.NoError(t, err)
 
 	_, err = provider.Start(t.Context(), testStartRequest(lib.TierFast))
 	require.ErrorIs(t, err, lib.ErrProviderRetryable)
-}
-
-func TestOpenAIName(t *testing.T) {
-	t.Parallel()
-
-	provider, err := lib.NewOpenAI(testTiers)
-	require.NoError(t, err)
-	require.Equal(t, lib.ProviderNameOpenAI, provider.Name())
 }
 
 // An unknown status is polled again rather than settled: settling on a state this service does not

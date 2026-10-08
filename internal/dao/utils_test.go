@@ -16,6 +16,8 @@ import (
 const (
 	testCallID    = "resp_1"
 	testRetention = 7 * 24 * time.Hour
+	// testEpoch is the provider configuration seeded attempts start on.
+	testEpoch int32 = 1
 )
 
 var testOwner = uuid.MustParse("00000000-0000-0000-0000-000000000001")
@@ -43,7 +45,9 @@ func seedGeneration(ctx context.Context, t *testing.T, maxAttempts int16) *dao.G
 func startGeneration(ctx context.Context, t *testing.T, id uuid.UUID) *dao.Generation {
 	t.Helper()
 
-	generation, err := dao.NewGenerationBeginStart().Exec(ctx, &dao.GenerationBeginStartRequest{ID: id})
+	generation, err := dao.NewGenerationBeginStart().Exec(ctx, &dao.GenerationBeginStartRequest{
+		ID: id, ProviderEpoch: testEpoch,
+	})
 	if err != nil {
 		panic(err)
 	}

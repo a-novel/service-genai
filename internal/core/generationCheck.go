@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/samber/lo"
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/a-novel-kit/golib/otel"
@@ -38,6 +39,10 @@ type (
 	GenerationCheckSettleDao interface {
 		Exec(ctx context.Context, request *dao.GenerationSettleRequest) (*dao.Generation, error)
 	}
+	// GenerationCheckRestartDao discards an attempt started on an older provider configuration.
+	GenerationCheckRestartDao interface {
+		Exec(ctx context.Context, request *dao.GenerationRestartRequest) (*dao.Generation, error)
+	}
 	// GenerationCheckRequeueDao returns a retryably failed attempt to the queue.
 	GenerationCheckRequeueDao interface {
 		Exec(ctx context.Context, request *dao.GenerationRequeueRequest) (*dao.Generation, error)
@@ -60,6 +65,7 @@ type GenerationCheckDaos struct {
 	Record       GenerationCheckRecordProviderCallDao
 	Settle       GenerationCheckSettleDao
 	Requeue      GenerationCheckRequeueDao
+	Restart      GenerationCheckRestartDao
 	Usage        GenerationCheckUsageInsertDao
 	Get          GenerationCheckGetDao
 }
@@ -68,6 +74,10 @@ type GenerationCheckDaos struct {
 type GenerationCheckConfig struct {
 	// Retention is how long a settled generation's user content survives before the purge.
 	Retention time.Duration `validate:"required"`
+	// ProviderName identifies the configured provider on usage records.
+	ProviderName string `validate:"required"`
+	// ProviderEpoch orders provider configurations. Raised on every provider switch.
+	ProviderEpoch int32 `validate:"required,min=1"`
 }
 
 // GenerationCheckRequest carries the generation to check, as last read.
@@ -80,6 +90,9 @@ type GenerationCheckRequest struct {
 //
 // No process owns a generation. Every transition is a conditional write fenced by what the check
 // read, so concurrent checks are safe and a check interrupted at any point is redone by the next.
+//
+// A generation started on an older provider configuration is restarted on this one. One a newer
+// configuration took over is left alone: during a rollout, replicas of both run side by side.
 type GenerationCheck struct {
 	config     GenerationCheckConfig
 	logger     GenerationCheckLogger
@@ -125,9 +138,13 @@ func (service *GenerationCheck) Exec(
 		err     error
 	)
 
+	epoch := lo.FromPtr(generation.ProviderEpoch)
+
 	switch {
-	case generation.SettledAt != nil:
+	case generation.SettledAt != nil, epoch > service.config.ProviderEpoch:
 		return generation, nil
+	case epoch < service.config.ProviderEpoch && generation.StartRequestedAt != nil:
+		checked, err = service.restart(ctx, generation)
 	case generation.ProviderCallID != nil:
 		checked, err = service.observe(ctx, generation)
 	case generation.StartRequestedAt != nil:
@@ -169,7 +186,9 @@ func (service *GenerationCheck) start(ctx context.Context, generation *dao.Gener
 		return settled, nil
 	}
 
-	intent, err := service.daos.BeginStart.Exec(ctx, &dao.GenerationBeginStartRequest{ID: generation.ID})
+	intent, err := service.daos.BeginStart.Exec(ctx, &dao.GenerationBeginStartRequest{
+		ID: generation.ID, ProviderEpoch: service.config.ProviderEpoch,
+	})
 	if err != nil {
 		return nil, otel.ReportError(span, fmt.Errorf("begin start: %w", err))
 	}
@@ -353,6 +372,32 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 	return settled, nil
 }
 
+// restart discards an attempt that runs on an older provider configuration, so the next check starts
+// it again on this one. The older operation cannot be read or cancelled without its credentials: it
+// runs on unobserved, and its spend goes unrecorded.
+func (service *GenerationCheck) restart(ctx context.Context, generation *dao.Generation) (*dao.Generation, error) {
+	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(restart)")
+	defer span.End()
+
+	service.logger.Err(ctx, fmt.Sprintf(
+		"generation %s attempt %d: provider epoch %d superseded by %d, abandoning provider call %s",
+		generation.ID, generation.Attempt, lo.FromPtr(generation.ProviderEpoch), service.config.ProviderEpoch,
+		lo.FromPtrOr(generation.ProviderCallID, "(none recorded)"),
+	))
+
+	restarted, err := service.daos.Restart.Exec(ctx, &dao.GenerationRestartRequest{
+		ID:             generation.ID,
+		Attempt:        generation.Attempt,
+		ProviderCallID: generation.ProviderCallID,
+		ProviderEpoch:  service.config.ProviderEpoch,
+	})
+	if err != nil {
+		return nil, otel.ReportError(span, fmt.Errorf("restart generation: %w", err))
+	}
+
+	return restarted, nil
+}
+
 // requeue records the failed attempt's usage and authorizes a fresh call, together.
 func (service *GenerationCheck) requeue(
 	ctx context.Context, generation *dao.Generation, call *lib.ProviderCall,
@@ -476,7 +521,7 @@ func (service *GenerationCheck) recordUsage(
 		Attempt:           generation.Attempt,
 		OwnerID:           generation.OwnerID,
 		Purpose:           generation.Purpose,
-		Provider:          service.provider.Name(),
+		Provider:          service.config.ProviderName,
 		Model:             call.Model,
 		ReasoningEffort:   nonEmpty(call.ReasoningEffort),
 		InputTokens:       call.Usage.InputTokens,

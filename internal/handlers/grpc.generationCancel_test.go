@@ -32,7 +32,7 @@ func TestGrpcGenerationCancel(t *testing.T) {
 		expectStatus codes.Code
 	}{
 		{
-			// The request is recorded and the status is unchanged: the worker settles it once the
+			// The request is recorded and the status is unchanged: the next check settles it once the
 			// provider operation has actually stopped, recording what was spent.
 			name: "Success",
 

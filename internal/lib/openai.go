@@ -20,14 +20,23 @@ import (
 	"github.com/a-novel-kit/golib/otel"
 )
 
-// ProviderNameOpenAI identifies this provider on the usage record.
-const ProviderNameOpenAI = "openai"
-
 // responsesPath is the endpoint requests are posted to.
 const responsesPath = "responses"
 
-// ErrTierNotBound is returned when the adapter has no binding for a Tier.
-var ErrTierNotBound = errors.New("tier has no model binding")
+var (
+	// ErrProviderNotConfigured is returned when the adapter has no endpoint or no credentials.
+	ErrProviderNotConfigured = errors.New("provider base URL and API key are required")
+	// ErrTierNotBound is returned when the adapter has no complete binding for a Tier.
+	ErrTierNotBound = errors.New("tier needs a model and both token ceilings")
+)
+
+// OpenAIConfig is the endpoint the adapter calls and what each Tier runs there. Any provider serving
+// the Responses API fits.
+type OpenAIConfig struct {
+	BaseURL string
+	APIKey  string
+	Tiers   map[Tier]TierBinding
+}
 
 // OpenAI talks to the Responses API.
 type OpenAI struct {
@@ -35,20 +44,29 @@ type OpenAI struct {
 	tiers  map[Tier]TierBinding
 }
 
-// NewOpenAI builds an adapter for the given Tier bindings. Options are forwarded to the SDK, so a
-// test points it at a scripted server with option.WithBaseURL.
-func NewOpenAI(tiers map[Tier]TierBinding, opts ...option.RequestOption) (*OpenAI, error) {
+// NewOpenAI refuses an incomplete configuration, so a bad revision fails at startup instead of on
+// its first call. Options are forwarded to the SDK, so a test can swap the HTTP client.
+//
+// The endpoint is always set explicitly: left empty, the SDK would read OPENAI_BASE_URL from the
+// environment behind the configuration's back.
+func NewOpenAI(config OpenAIConfig, opts ...option.RequestOption) (*OpenAI, error) {
+	if config.BaseURL == "" || config.APIKey == "" {
+		return nil, ErrProviderNotConfigured
+	}
+
 	for _, tier := range Tiers {
-		binding, ok := tiers[tier]
-		if !ok || binding.Model == "" || binding.MaxOutputTokens <= 0 {
+		binding := config.Tiers[tier]
+		if binding.Model == "" || binding.MaxInputTokens <= 0 || binding.MaxOutputTokens <= 0 {
 			return nil, fmt.Errorf("%w: %s", ErrTierNotBound, tier)
 		}
 	}
 
-	return &OpenAI{client: openai.NewClient(opts...), tiers: tiers}, nil
-}
+	opts = append([]option.RequestOption{
+		option.WithBaseURL(config.BaseURL), option.WithAPIKey(config.APIKey),
+	}, opts...)
 
-func (provider *OpenAI) Name() string { return ProviderNameOpenAI }
+	return &OpenAI{client: openai.NewClient(opts...), tiers: config.Tiers}, nil
+}
 
 // openAIRequest is the Responses API request this service sends. It is posted as raw JSON rather
 // than through the SDK's typed parameters, which take the schema as a map and would reorder its

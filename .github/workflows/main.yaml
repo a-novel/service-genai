@@ -259,7 +259,8 @@ jobs:
           file: builds/grpc.Dockerfile
           image_name: ${{ github.repository }}/grpc
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          run_args: -e POSTGRES_DSN="${POSTGRES_DSN}"
+          # The server refuses to start without a provider key. The smoke run never calls the provider.
+          run_args: -e POSTGRES_DSN="${POSTGRES_DSN}" -e PROVIDER_API_KEY=smoke-test
 
   build-standalone-grpc:
     runs-on: ubuntu-latest

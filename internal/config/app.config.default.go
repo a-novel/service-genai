@@ -56,9 +56,11 @@ var AppPresetDefault = App{
 	CheckInterval: env.CheckInterval,
 	MaxAttempts:   env.MaxAttempts,
 	Provider: Provider{
-		APIKey:  env.OpenAIAPIKey,
-		BaseURL: env.OpenAIBaseURL,
-		Tiers:   TiersOpenAI,
+		Name:    env.ProviderName,
+		Epoch:   env.ProviderEpoch,
+		APIKey:  env.ProviderAPIKey,
+		BaseURL: env.ProviderBaseURL,
+		Tiers:   tiersOrOpenAI(env.ProviderTiers),
 	},
 	Retention: env.Retention,
 
