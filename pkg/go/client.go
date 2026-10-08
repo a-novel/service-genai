@@ -24,16 +24,12 @@ type (
 	GenerationGetResponse    = genaiv0.GenerationGetResponse
 	GenerationCancelRequest  = genaiv0.GenerationCancelRequest
 	GenerationCancelResponse = genaiv0.GenerationCancelResponse
-	GenerationWatchRequest   = genaiv0.GenerationWatchRequest
-	GenerationWatchResponse  = genaiv0.GenerationWatchResponse
 
-	UsageQueryRequest  = genaiv0.UsageQueryRequest
-	UsageQueryResponse = genaiv0.UsageQueryResponse
-	UsageGroup         = genaiv0.UsageGroup
-	UsageTotal         = genaiv0.UsageTotal
-
-	Generation       = genaiv0.Generation
-	GenerationStatus = genaiv0.GenerationStatus
+	Generation        = genaiv0.Generation
+	GenerationStatus  = genaiv0.GenerationStatus
+	GenerationFailure = genaiv0.GenerationFailure
+	GenerationUsage   = genaiv0.GenerationUsage
+	Tier              = genaiv0.Tier
 )
 
 // Terminal statuses, re-exported so a caller can decide whether to keep waiting without importing
@@ -43,8 +39,22 @@ const (
 	GenerationStatusRunning   = genaiv0.GenerationStatus_GENERATION_STATUS_RUNNING
 	GenerationStatusSucceeded = genaiv0.GenerationStatus_GENERATION_STATUS_SUCCEEDED
 	GenerationStatusFailed    = genaiv0.GenerationStatus_GENERATION_STATUS_FAILED
-	GenerationStatusAbandoned = genaiv0.GenerationStatus_GENERATION_STATUS_ABANDONED
 	GenerationStatusCancelled = genaiv0.GenerationStatus_GENERATION_STATUS_CANCELLED
+)
+
+// Failure kinds a failed generation carries, re-exported so a caller can act on them.
+const (
+	GenerationFailureRefused        = genaiv0.GenerationFailure_GENERATION_FAILURE_REFUSED
+	GenerationFailureIncomplete     = genaiv0.GenerationFailure_GENERATION_FAILURE_INCOMPLETE
+	GenerationFailureInvalidRequest = genaiv0.GenerationFailure_GENERATION_FAILURE_INVALID_REQUEST
+	GenerationFailureFailed         = genaiv0.GenerationFailure_GENERATION_FAILURE_FAILED
+)
+
+// Tiers a caller picks from, re-exported so a caller never imports the generated package.
+const (
+	TierFast     = genaiv0.Tier_TIER_FAST
+	TierBalanced = genaiv0.Tier_TIER_BALANCED
+	TierDeep     = genaiv0.Tier_TIER_DEEP
 )
 
 // A Client issues the service's gRPC calls, one method per RPC. Construct one
@@ -58,13 +68,14 @@ type Client interface {
 	// Callers should set a deadline on ctx.
 	Status(ctx context.Context, req *StatusRequest, opts ...grpc.CallOption) (*StatusResponse, error)
 
-	// GenerationSubmit records a generation. The idempotency key is required: a replay attaches to
-	// the work already in flight rather than paying for a second run, and the response reports
-	// which happened.
+	// GenerationSubmit records a generation and starts it. The idempotency key is required: a replay
+	// attaches to the work already in flight rather than paying for a second run, and the response
+	// reports which happened.
 	GenerationSubmit(
 		ctx context.Context, req *GenerationSubmitRequest, opts ...grpc.CallOption,
 	) (*GenerationSubmitResponse, error)
-	// GenerationGet reads one of an owner's generations. Another owner's reports not-found.
+	// GenerationGet reads one of an owner's generations, checking it with the provider when it is
+	// stale. Poll it until the generation settles. Another owner's reports not-found.
 	GenerationGet(
 		ctx context.Context, req *GenerationGetRequest, opts ...grpc.CallOption,
 	) (*GenerationGetResponse, error)
@@ -72,17 +83,6 @@ type Client interface {
 	GenerationCancel(
 		ctx context.Context, req *GenerationCancelRequest, opts ...grpc.CallOption,
 	) (*GenerationCancelResponse, error)
-	// GenerationWatch streams a generation's state until it is terminal. Resumable: a caller that
-	// reconnects calls it again and is answered from current state.
-	GenerationWatch(
-		ctx context.Context, req *GenerationWatchRequest, opts ...grpc.CallOption,
-	) (grpc.ServerStreamingClient[GenerationWatchResponse], error)
-	// UsageQuery reports what an owner consumed over a window, grouped by purpose and model. It
-	// returns tokens, never money: what a token costs is the caller's decision, which is why the
-	// model that actually billed is on every group.
-	UsageQuery(
-		ctx context.Context, req *UsageQueryRequest, opts ...grpc.CallOption,
-	) (*UsageQueryResponse, error)
 
 	// Close releases the underlying gRPC connection. Call it once the client is
 	// no longer needed.
@@ -95,8 +95,6 @@ type client struct {
 	genaiv0.GenerationSubmitServiceClient
 	genaiv0.GenerationGetServiceClient
 	genaiv0.GenerationCancelServiceClient
-	genaiv0.GenerationWatchServiceClient
-	genaiv0.UsageQueryServiceClient
 
 	conn *grpc.ClientConn
 }
@@ -120,8 +118,6 @@ func NewClient(addr string, opts ...grpc.DialOption) (Client, error) {
 		GenerationSubmitServiceClient: genaiv0.NewGenerationSubmitServiceClient(conn),
 		GenerationGetServiceClient:    genaiv0.NewGenerationGetServiceClient(conn),
 		GenerationCancelServiceClient: genaiv0.NewGenerationCancelServiceClient(conn),
-		GenerationWatchServiceClient:  genaiv0.NewGenerationWatchServiceClient(conn),
-		UsageQueryServiceClient:       genaiv0.NewUsageQueryServiceClient(conn),
 		conn:                          conn,
 	}, nil
 }
