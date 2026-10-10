@@ -12,6 +12,8 @@ gitChecks: false
 linkWorkspacePackages: true
 
 minimumReleaseAgeExclude:
+  - "@a-novel-kit/*"
+  - "@a-novel/*"
   - "@typescript-eslint/types@8.60.1"
   - svelte@5.55.7
   - esbuild@0.28.1
