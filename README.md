@@ -105,7 +105,7 @@ volumes:
 
 ### Database image
 
-The database image packages PostgreSQL, `pg_cron` and pgBackRest on Wolfi. Its [package manifest](./builds/database.apko.yaml) is assembled with apko during the container build; Docker and Podman users need no additional host tools. PostgreSQL keeps its standard `POSTGRES_*` initialization variables and its volume at `/var/lib/postgresql`. On first start it schedules the retention purge in the `POSTGRES_DB` database (see [CONTRIBUTING](./CONTRIBUTING.md#retention-purge)). Backup scheduling and repository credentials remain the operator's responsibility.
+The database image packages PostgreSQL, `pg_cron` and pgBackRest on Wolfi. Its [package manifest](./builds/database.apko.yaml) is assembled with apko during the container build, pinned by its [lock file](./builds/database.apko.lock.json), so an unchanged image rebuilds to the same digest; Docker and Podman users need no additional host tools. PostgreSQL keeps its standard `POSTGRES_*` initialization variables and its volume at `/var/lib/postgresql`. On first start it schedules the retention purge in the `POSTGRES_DB` database (see [CONTRIBUTING](./CONTRIBUTING.md#retention-purge)). Backup scheduling and repository credentials remain the operator's responsibility.
 
 Start the image on a fresh volume. A data directory written by the earlier Debian-based image is not portable: the libc, collation and extension environment changed. To keep its data, take a logical dump and restore it into the new database.
 
@@ -150,10 +150,9 @@ gRPC server:
 | Name                    | Description                                                                                                               | Default |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------- | ------- |
 | `GRPC_PORT`             | Port the server listens on.                                                                                               | `8080`  |
-| `GRPC_PING`             | Refresh interval for the server's internal health check.                                                                  | `5s`    |
 | `GRPC_TIMEOUT_SHUTDOWN` | Graceful shutdown budget. Keep it under the orchestrator's kill delay: Cloud Run sends SIGKILL ten seconds after SIGTERM. | `8s`    |
 
-Database connection pool (server images). The limits are **per process**, so the database's `max_connections` has to cover every replica plus the migration job; the stock `postgres` default is 100.
+Database connection pool (server images). The limits are **per process**: keep `POSTGRES_MAX_OPEN_CONNS` × the maximum replica count × 2, which covers a rollout's overlap, plus the migration job, under the database's `max_connections`. The server's sessions also give up on the database side: a statement after 9 seconds, a lock wait after 5, and a transaction left idle after 30.
 
 | Name                      | Description                               | Default |
 | ------------------------- | ----------------------------------------- | ------- |

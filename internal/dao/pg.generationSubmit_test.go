@@ -2,7 +2,6 @@ package dao_test
 
 import (
 	"context"
-	"encoding/json"
 	"sync"
 	"testing"
 
@@ -36,7 +35,6 @@ func (sub submission) build() *dao.GenerationSubmitRequest {
 		Purpose:     "studio.generation",
 		Provider:    "openai",
 		RequestKey:  []byte("the-request-key"),
-		Payload:     json.RawMessage(`{"model": "a-model", "input": "write & read"}`),
 		MaxAttempts: 1,
 		Traceparent: new("00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"),
 	}
@@ -177,7 +175,6 @@ func TestPgGenerationSubmit(t *testing.T) {
 						require.Equal(t, request.Purpose, result.Generation.Purpose)
 						require.Equal(t, request.Provider, result.Generation.Provider)
 						// Stored as sent: key order and characters reach the provider unchanged.
-						require.Equal(t, string(request.Payload), storedPayload(ctx, t, result.Generation.ID))
 						require.Equal(t, request.Traceparent, result.Generation.Traceparent)
 
 						// The database owns these, and a caller must never supply them.

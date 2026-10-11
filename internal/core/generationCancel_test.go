@@ -32,6 +32,8 @@ func TestGenerationCancel(t *testing.T) {
 		getMock    *daoMock
 		checkMock  *daoMock
 		attemptErr error
+		// unanswered marks a generation whose only attempt is in flight, so no answer is read.
+		unanswered bool
 
 		expectStatus core.GenerationStatus
 		expectErr    error
@@ -49,8 +51,9 @@ func TestGenerationCancel(t *testing.T) {
 			// The start may be accepted at any moment with no id recorded yet. The next check stops it.
 			name: "Success/StartInFlight",
 
-			request: &core.GenerationCancelRequest{ID: testGenerationID, OwnerID: testOwner},
-			daoMock: &daoMock{resp: withCancel(startingGeneration(time.Second))},
+			request:    &core.GenerationCancelRequest{ID: testGenerationID, OwnerID: testOwner},
+			daoMock:    &daoMock{resp: withCancel(startingGeneration(time.Second))},
+			unanswered: true,
 
 			expectStatus: core.GenerationStatusPending,
 		},
@@ -152,7 +155,7 @@ func TestGenerationCancel(t *testing.T) {
 					Return(testCase.checkMock.resp, testCase.checkMock.err)
 			}
 
-			if testCase.expectStatus != "" || testCase.attemptErr != nil {
+			if (testCase.expectStatus != "" || testCase.attemptErr != nil) && !testCase.unanswered {
 				attemptDao.EXPECT().
 					Exec(mock.Anything, &dao.GenerationAttemptListRequest{GenerationID: testGenerationID}).
 					Return(testAttemptRows(), testCase.attemptErr)
@@ -169,7 +172,10 @@ func TestGenerationCancel(t *testing.T) {
 				require.Nil(t, result)
 			} else {
 				require.Equal(t, testCase.expectStatus, result.Status)
-				require.Equal(t, []*core.GenerationAttempt{{Number: 1, Response: testResponse}}, result.Attempts)
+
+				if !testCase.unanswered {
+					require.Equal(t, []*core.GenerationAttempt{{Number: 1, Response: testResponse}}, result.Attempts)
+				}
 			}
 
 			cancelDao.AssertExpectations(t)

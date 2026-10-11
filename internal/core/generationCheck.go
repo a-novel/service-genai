@@ -135,6 +135,12 @@ func (service *GenerationCheck) Exec(
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck", options...)
 	defer span.End()
 
+	// A check outlives the call that triggered it. A poll that elected it already stamped the
+	// generation, so a check cut by the caller's deadline would leave it stale; and from a start's
+	// intent on, the provider may hold paid work whose id must be recorded.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), checkTimeout)
+	defer cancel()
+
 	span.SetAttributes(attribute.String("generation.id", generation.ID.String()))
 
 	var (
@@ -201,10 +207,6 @@ func (service *GenerationCheck) start(ctx context.Context, generation *dao.Gener
 
 		return settled, nil
 	}
-
-	// From the intent on, the provider may hold paid work. Shutdown or a departing caller must not
-	// cut the start short, or the call could be accepted with its id never recorded.
-	ctx = context.WithoutCancel(ctx)
 
 	// Taken before the intent is recorded, so it can only overstate the intent's age.
 	began := time.Now()
@@ -290,10 +292,9 @@ func (service *GenerationCheck) carriesCall(ctx context.Context, intent *dao.Gen
 	getCtx, cancel := context.WithTimeout(ctx, persistenceTimeout)
 	defer cancel()
 
+	// The read's own span carries its failure; here it is a handled outcome.
 	current, err := service.daos.Get.Exec(getCtx, &dao.GenerationGetRequest{ID: intent.ID, OwnerID: intent.OwnerID})
 	if err != nil {
-		_ = otel.ReportError(span, err)
-
 		return true
 	}
 
@@ -686,6 +687,10 @@ const (
 	// startOutcomeUnknownAfter is how old a start intent without an id must be before no start can
 	// still be in flight for it. Well above startTimeout plus persistenceTimeout.
 	startOutcomeUnknownAfter = 30 * time.Second
+	// checkTimeout bounds a whole check, detached from its caller. A start that proceeds takes under
+	// startTimeout to begin, then startTimeout plus persistenceTimeout; a read takes the connector's
+	// ten seconds plus its commit.
+	checkTimeout = 15 * time.Second
 	// retryDelay postpones a fresh call after a rate limit or a retryable provider failure.
 	retryDelay = 15 * time.Second
 	// startRetryCeiling bounds how long a generation keeps retrying a start the provider turns away,

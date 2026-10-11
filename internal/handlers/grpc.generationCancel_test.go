@@ -51,6 +51,15 @@ func TestGrpcGenerationCancel(t *testing.T) {
 			expectStatus: codes.NotFound,
 		},
 		{
+			// A well-formed but nil id is refused by the core layer, not mistaken for a fault.
+			name: "Error/NilGenerationID",
+
+			request:     &genaiv0.GenerationCancelRequest{Id: "00000000-0000-0000-0000-000000000000", OwnerId: testOwnerID},
+			serviceMock: &serviceMock{err: core.ErrInvalidRequest},
+
+			expectStatus: codes.InvalidArgument,
+		},
+		{
 			name: "Error/InvalidGenerationID",
 
 			request: &genaiv0.GenerationCancelRequest{Id: "not-a-uuid", OwnerId: testOwnerID},

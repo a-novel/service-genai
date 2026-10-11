@@ -45,6 +45,11 @@ type GenerationSubmitDaoCountLive interface {
 	Exec(ctx context.Context, request *dao.GenerationCountLiveRequest) (*dao.GenerationLiveCount, error)
 }
 
+// GenerationSubmitDaoPayloadInsert stores the payload of a newly admitted generation.
+type GenerationSubmitDaoPayloadInsert interface {
+	Exec(ctx context.Context, request *dao.GenerationPayloadInsertRequest) (*dao.GenerationPayload, error)
+}
+
 // GenerationSubmitServiceCheck starts a newly recorded generation.
 type GenerationSubmitServiceCheck interface {
 	Exec(ctx context.Context, request *GenerationCheckRequest) (*dao.Generation, error)
@@ -68,7 +73,7 @@ type GenerationSubmitRequest struct {
 	UserTier string `validate:"max=255"`
 	// Provider names the service to run the call on. It must have a connector offering the Async
 	// mode.
-	Provider string `validate:"required"`
+	Provider string `validate:"required,max=255"`
 	// Payload is the provider's own request, built by the caller: a JSON object this service
 	// forwards without reading.
 	Payload json.RawMessage `validate:"required"`
@@ -103,6 +108,7 @@ type GenerationSubmitDaos struct {
 	Attempts GenerationSubmitDaoAttemptList
 	Usage    GenerationSubmitDaoUsageSum
 	Live     GenerationSubmitDaoCountLive
+	Payload  GenerationSubmitDaoPayloadInsert
 }
 
 // NewGenerationSubmit returns a new GenerationSubmit service.
@@ -145,7 +151,10 @@ func (service *GenerationSubmit) Exec(
 	carrier := propagation.MapCarrier{}
 	propagation.TraceContext{}.Inject(ctx, carrier)
 
-	var result *dao.GenerationSubmitResult
+	var (
+		result  *dao.GenerationSubmitResult
+		refusal error
+	)
 
 	// Recording and admission commit together, so a generation is never recorded unless admitted:
 	// nothing can start one that was refused, or left behind by a failure.
@@ -160,7 +169,6 @@ func (service *GenerationSubmit) Exec(
 			Purpose:     request.Purpose,
 			Provider:    request.Provider,
 			RequestKey:  key,
-			Payload:     request.Payload,
 			MaxAttempts: service.config.MaxAttempts,
 			Traceparent: lo.EmptyableToPtr(carrier.Get("traceparent")),
 		})
@@ -172,8 +180,27 @@ func (service *GenerationSubmit) Exec(
 			return nil
 		}
 
-		return service.admit(ctx, request)
+		refusal = service.admit(ctx, request)
+		if refusal != nil {
+			return refusal
+		}
+
+		// Stored only once admitted, so neither a replay nor a refusal sends the payload over.
+		_, err = service.daos.Payload.Exec(ctx, &dao.GenerationPayloadInsertRequest{
+			GenerationID: result.Generation.ID, Payload: request.Payload,
+		})
+		if err != nil {
+			return fmt.Errorf("store payload: %w", err)
+		}
+
+		return nil
 	})
+	// The caller reads a refusal's message to tell its user which limit was reached: it goes out as
+	// admission wrote it, without the transaction's wrapping.
+	if errors.Is(refusal, ErrUsageCapReached) {
+		return nil, otel.ReportError(span, refusal)
+	}
+
 	if err != nil {
 		return nil, otel.ReportError(span, err)
 	}
@@ -189,9 +216,13 @@ func (service *GenerationSubmit) Exec(
 		}
 	}
 
-	attempts, err := service.daos.Attempts.Exec(ctx, &dao.GenerationAttemptListRequest{GenerationID: generation.ID})
-	if err != nil {
-		return nil, otel.ReportError(span, fmt.Errorf("list attempts: %w", err))
+	var attempts []*dao.GenerationAttempt
+
+	if mayHaveAttempts(generation) {
+		attempts, err = service.daos.Attempts.Exec(ctx, &dao.GenerationAttemptListRequest{GenerationID: generation.ID})
+		if err != nil {
+			return nil, otel.ReportError(span, fmt.Errorf("list attempts: %w", err))
+		}
 	}
 
 	return &GenerationSubmitResult{

@@ -30,8 +30,14 @@ func seedGeneration(ctx context.Context, t *testing.T, maxAttempts int16) *dao.G
 		Purpose:     "studio.generation",
 		Provider:    "openai",
 		RequestKey:  []byte(uuid.Must(uuid.NewV7()).String()),
-		Payload:     json.RawMessage(`{"model": "a-model"}`),
 		MaxAttempts: maxAttempts,
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	_, err = dao.NewPgGenerationPayloadInsert().Exec(ctx, &dao.GenerationPayloadInsertRequest{
+		GenerationID: result.Generation.ID, Payload: json.RawMessage(`{"model": "a-model"}`),
 	})
 	if err != nil {
 		panic(err)

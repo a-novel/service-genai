@@ -115,9 +115,13 @@ func (service *GenerationCancel) Exec(
 		}
 	}
 
-	attempts, err := service.daoAttemptList.Exec(ctx, &dao.GenerationAttemptListRequest{GenerationID: generation.ID})
-	if err != nil {
-		return nil, otel.ReportError(span, fmt.Errorf("list attempts: %w", err))
+	var attempts []*dao.GenerationAttempt
+
+	if mayHaveAttempts(generation) {
+		attempts, err = service.daoAttemptList.Exec(ctx, &dao.GenerationAttemptListRequest{GenerationID: generation.ID})
+		if err != nil {
+			return nil, otel.ReportError(span, fmt.Errorf("list attempts: %w", err))
+		}
 	}
 
 	return newGeneration(generation, attempts), nil

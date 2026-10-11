@@ -28,15 +28,19 @@ func TestGenerationGet(t *testing.T) {
 		err  error
 	}
 
+	notDue := &daoMock{err: dao.ErrGenerationCheckNotDue}
+
 	testCases := []struct {
 		name string
 
 		request *core.GenerationGetRequest
 
-		daoMock    *daoMock
-		electMock  *daoMock
-		checkMock  *daoMock
-		attemptErr error
+		electMock *daoMock
+		daoMock   *daoMock
+		checkMock *daoMock
+		// expectAttempts lists the provider's answers: only a generation that can have one is read.
+		expectAttempts bool
+		attemptErr     error
 
 		expect       *core.Generation
 		expectStatus core.GenerationStatus
@@ -45,14 +49,16 @@ func TestGenerationGet(t *testing.T) {
 		{
 			name: "Success",
 
-			request: &core.GenerationGetRequest{ID: testGenerationID, OwnerID: testOwner},
+			request:   &core.GenerationGetRequest{ID: testGenerationID, OwnerID: testOwner},
+			electMock: notDue,
 			daoMock: &daoMock{resp: &dao.Generation{
-				ID: testGenerationID, OwnerID: testOwner, Purpose: testPurpose, Provider: testProvider, Payload: testPayload,
+				ID: testGenerationID, OwnerID: testOwner, Purpose: testPurpose, Provider: testProvider,
 				Error:  &generationError,
 				Status: dao.GenerationStatusFailed, Attempt: 2, MaxAttempts: 3,
 				CreatedAt: createdAt, UpdatedAt: updatedAt, SettledAt: &settledAt,
 				ExpiresAt: &expiresAt,
 			}},
+			expectAttempts: true,
 			// A failure still returns the provider's answers, and with them what each attempt consumed.
 			expect: &core.Generation{
 				ID: testGenerationID, OwnerID: testOwner, Purpose: testPurpose, Provider: testProvider,
@@ -64,11 +70,12 @@ func TestGenerationGet(t *testing.T) {
 			},
 		},
 		{
+			// Its only attempt is in flight, so it has no answer to read.
 			name: "Success/CheckedRecently",
 
 			request:   &core.GenerationGetRequest{ID: testGenerationID, OwnerID: testOwner},
+			electMock: notDue,
 			daoMock:   &daoMock{resp: runningGeneration(1)},
-			electMock: &daoMock{err: dao.ErrGenerationCheckNotDue},
 
 			expectStatus: core.GenerationStatusRunning,
 		},
@@ -76,19 +83,31 @@ func TestGenerationGet(t *testing.T) {
 			// A stale generation is checked before it is returned: polls are what move it forward.
 			name: "Success/Checked",
 
-			request:   &core.GenerationGetRequest{ID: testGenerationID, OwnerID: testOwner},
-			daoMock:   &daoMock{resp: runningGeneration(1)},
-			electMock: &daoMock{resp: runningGeneration(1)},
-			checkMock: &daoMock{resp: settledGeneration(dao.GenerationStatusSucceeded)},
+			request:        &core.GenerationGetRequest{ID: testGenerationID, OwnerID: testOwner},
+			electMock:      &daoMock{resp: runningGeneration(1)},
+			checkMock:      &daoMock{resp: settledGeneration(dao.GenerationStatusSucceeded)},
+			expectAttempts: true,
 
 			expectStatus: core.GenerationStatusSucceeded,
 		},
 		{
+			// The election returns the generation, so an elected poll of a running one reads nothing more.
+			name: "Success/CheckedStillRunning",
+
+			request:   &core.GenerationGetRequest{ID: testGenerationID, OwnerID: testOwner},
+			electMock: &daoMock{resp: runningGeneration(1)},
+			checkMock: &daoMock{resp: runningGeneration(1)},
+
+			expectStatus: core.GenerationStatusRunning,
+		},
+		{
 			name: "Error/Attempts",
 
-			request:    &core.GenerationGetRequest{ID: testGenerationID, OwnerID: testOwner},
-			daoMock:    &daoMock{resp: settledGeneration(dao.GenerationStatusSucceeded)},
-			attemptErr: errFoo,
+			request:        &core.GenerationGetRequest{ID: testGenerationID, OwnerID: testOwner},
+			electMock:      notDue,
+			daoMock:        &daoMock{resp: settledGeneration(dao.GenerationStatusSucceeded)},
+			expectAttempts: true,
+			attemptErr:     errFoo,
 
 			expectErr: errFoo,
 		},
@@ -96,7 +115,6 @@ func TestGenerationGet(t *testing.T) {
 			name: "Error/Elect",
 
 			request:   &core.GenerationGetRequest{ID: testGenerationID, OwnerID: testOwner},
-			daoMock:   &daoMock{resp: runningGeneration(1)},
 			electMock: &daoMock{err: errFoo},
 
 			expectErr: errFoo,
@@ -105,7 +123,6 @@ func TestGenerationGet(t *testing.T) {
 			name: "Error/Check",
 
 			request:   &core.GenerationGetRequest{ID: testGenerationID, OwnerID: testOwner},
-			daoMock:   &daoMock{resp: runningGeneration(1)},
 			electMock: &daoMock{resp: runningGeneration(1)},
 			checkMock: &daoMock{err: errFoo},
 
@@ -116,8 +133,9 @@ func TestGenerationGet(t *testing.T) {
 			// translation must not turn that into anything more specific.
 			name: "Error/NotFound",
 
-			request: &core.GenerationGetRequest{ID: testGenerationID, OwnerID: testOwner},
-			daoMock: &daoMock{err: dao.ErrGenerationGetNotFound},
+			request:   &core.GenerationGetRequest{ID: testGenerationID, OwnerID: testOwner},
+			electMock: notDue,
+			daoMock:   &daoMock{err: dao.ErrGenerationGetNotFound},
 
 			expectErr: core.ErrGenerationNotFound,
 		},
@@ -138,8 +156,9 @@ func TestGenerationGet(t *testing.T) {
 		{
 			name: "Error/Internal",
 
-			request: &core.GenerationGetRequest{ID: testGenerationID, OwnerID: testOwner},
-			daoMock: &daoMock{err: errFoo},
+			request:   &core.GenerationGetRequest{ID: testGenerationID, OwnerID: testOwner},
+			electMock: notDue,
+			daoMock:   &daoMock{err: errFoo},
 
 			expectErr: errFoo,
 		},
@@ -154,20 +173,6 @@ func TestGenerationGet(t *testing.T) {
 			check := coremocks.NewMockGenerationGetServiceCheck(t)
 			attemptDao := coremocks.NewMockGenerationGetDaoAttemptList(t)
 
-			if testCase.expect != nil || testCase.expectStatus != "" || testCase.attemptErr != nil {
-				attemptDao.EXPECT().
-					Exec(mock.Anything, &dao.GenerationAttemptListRequest{GenerationID: testCase.request.ID}).
-					Return(testAttemptRows(), testCase.attemptErr)
-			}
-
-			if testCase.daoMock != nil {
-				getDao.EXPECT().
-					Exec(mock.Anything, &dao.GenerationGetRequest{
-						ID: testCase.request.ID, OwnerID: testCase.request.OwnerID,
-					}).
-					Return(testCase.daoMock.resp, testCase.daoMock.err)
-			}
-
 			if testCase.electMock != nil {
 				electDao.EXPECT().
 					Exec(mock.Anything, &dao.GenerationElectCheckRequest{
@@ -178,10 +183,24 @@ func TestGenerationGet(t *testing.T) {
 					Return(testCase.electMock.resp, testCase.electMock.err)
 			}
 
+			if testCase.daoMock != nil {
+				getDao.EXPECT().
+					Exec(mock.Anything, &dao.GenerationGetRequest{
+						ID: testCase.request.ID, OwnerID: testCase.request.OwnerID,
+					}).
+					Return(testCase.daoMock.resp, testCase.daoMock.err)
+			}
+
 			if testCase.checkMock != nil {
 				check.EXPECT().
 					Exec(mock.Anything, &core.GenerationCheckRequest{Generation: testCase.electMock.resp}).
 					Return(testCase.checkMock.resp, testCase.checkMock.err)
+			}
+
+			if testCase.expectAttempts {
+				attemptDao.EXPECT().
+					Exec(mock.Anything, &dao.GenerationAttemptListRequest{GenerationID: testCase.request.ID}).
+					Return(testAttemptRows(), testCase.attemptErr)
 			}
 
 			service := core.NewGenerationGet(

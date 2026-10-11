@@ -220,4 +220,33 @@ func TestClient(t *testing.T) {
 		})
 		require.Equal(t, codes.NotFound, status.Code(err))
 	})
+
+	// Over a limit, the caller reads which one, in admission's own words.
+	t.Run("UsageCapReached", func(t *testing.T) {
+		t.Parallel()
+
+		client := newClient(t)
+
+		owner := uuid.Must(uuid.NewV7()).String()
+
+		// Starts never reach a provider in this stack, so both generations stay pending: the
+		// purpose's two concurrent slots are taken.
+		for variant := range uint32(2) {
+			request := submitRequest(owner)
+			request.Variant = variant
+
+			_, err := client.GenerationSubmit(t.Context(), request)
+			require.NoError(t, err)
+		}
+
+		over := submitRequest(owner)
+		over.Variant = 2
+
+		_, err := client.GenerationSubmit(t.Context(), over)
+		require.Equal(t, codes.ResourceExhausted, status.Code(err))
+		require.Equal(t,
+			`usage cap reached: purpose "studio.generation" concurrency: 2 generations already pending or running`,
+			status.Convert(err).Message(),
+		)
+	})
 }

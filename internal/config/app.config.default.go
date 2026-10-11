@@ -43,11 +43,7 @@ var AppPresetDefault = App{
 		Name:          env.AppName,
 		DowntimeStart: env.DowntimeStart,
 	},
-	Grpc: Grpc{
-		Port:     env.GrpcPort,
-		Ping:     env.GrpcPing,
-		Shutdown: env.GrpcTimeoutShutdown,
-	},
+	Grpc: env.Grpc,
 
 	Generations: Generations{
 		CheckInterval: env.CheckInterval,
@@ -74,5 +70,5 @@ var AppPresetDefault = App{
 		}),
 	Logger:     lo.Ternary[logging.Log](env.GcloudProjectId == "", LoggerDev, LoggerProd),
 	GrpcLogger: lo.Ternary[logging.RPCConfig](env.GcloudProjectId == "", &LoggerDevGrpc, &LoggerProdGrpc),
-	Postgres:   PostgresPresetDefault,
+	Postgres:   PostgresPresetServer,
 }

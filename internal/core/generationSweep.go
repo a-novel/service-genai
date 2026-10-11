@@ -3,12 +3,16 @@ package core
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/a-novel-kit/golib/otel"
 
 	"github.com/a-novel/service-genai/internal/dao"
 )
+
+// sweepConcurrency bounds the checks one pass runs at once, well under the database pool.
+const sweepConcurrency = 8
 
 // GenerationSweepDao takes the generations nobody checked within the interval.
 type GenerationSweepDao interface {
@@ -70,13 +74,28 @@ func (service *GenerationSweep) Exec(
 		return nil, otel.ReportError(span, fmt.Errorf("sweep generations: %w", err))
 	}
 
+	// Checks of different generations are independent, so a pass runs several at once: a slow
+	// provider then stretches a pass by its latency, not by the batch size times it.
+	var (
+		checks sync.WaitGroup
+		slots  = make(chan struct{}, sweepConcurrency)
+	)
+
 	for _, generation := range generations {
 		if ctx.Err() != nil {
 			break
 		}
 
-		service.checkOne(ctx, generation)
+		slots <- struct{}{}
+
+		checks.Go(func() {
+			defer func() { <-slots }()
+
+			service.checkOne(ctx, generation)
+		})
 	}
+
+	checks.Wait()
 
 	return &GenerationSweepResult{Checked: len(generations)}, nil
 }

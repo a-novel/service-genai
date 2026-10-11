@@ -22,7 +22,6 @@ import (
 
 	"github.com/a-novel-kit/golib/downtime"
 	"github.com/a-novel-kit/golib/grpcf"
-	golibproto "github.com/a-novel-kit/golib/grpcf/proto/gen"
 	"github.com/a-novel-kit/golib/otel"
 	"github.com/a-novel-kit/golib/postgres"
 	"github.com/a-novel-kit/golib/worker"
@@ -77,6 +76,7 @@ func main() {
 	daoCountLive := dao.NewPgGenerationCountLive()
 	daoElectCheck := dao.NewPgGenerationElectCheck()
 	daoGet := dao.NewPgGenerationGet()
+	daoPayloadInsert := dao.NewPgGenerationPayloadInsert()
 	daoQueueDepth := dao.NewPgGenerationQueueDepth()
 	daoRecordProviderCall := dao.NewPgGenerationRecordProviderCall()
 	daoReleaseStart := dao.NewPgGenerationReleaseStart()
@@ -119,6 +119,7 @@ func main() {
 			Attempts: daoAttemptList,
 			Usage:    daoUsageSum,
 			Live:     daoCountLive,
+			Payload:  daoPayloadInsert,
 		},
 		serviceCheck,
 	)
@@ -156,31 +157,16 @@ func main() {
 	// SERVER
 	// =================================================================================================================
 
-	ctxInterceptor := func(rpCtx context.Context) context.Context {
-		return postgres.TransferContext(ctx, rpCtx)
-	}
-
-	// During a planned downtime, only liveness answers; the logger records the refusals.
-	open := []string{
-		"/" + healthpb.Health_ServiceDesc.ServiceName + "/",
-		"/" + golibproto.EchoService_ServiceDesc.ServiceName + "/",
-	}
-
-	server := grpc.NewServer(
-		cfg.Otel.RpcInterceptor(),
-		grpc.ChainUnaryInterceptor(
-			grpcf.BaseContextUnaryInterceptor(ctxInterceptor),
-			cfg.GrpcLogger.UnaryInterceptor(),
-			cfg.GrpcLogger.PanicUnaryInterceptor(),
-			downtime.UnaryServerInterceptor(cfg.App.DowntimeStart, open...),
-		),
-		grpc.ChainStreamInterceptor(
-			grpcf.BaseContextStreamInterceptor(ctxInterceptor),
-			cfg.GrpcLogger.StreamInterceptor(),
-			cfg.GrpcLogger.PanicStreamInterceptor(),
-			downtime.StreamServerInterceptor(cfg.App.DowntimeStart, open...),
-		),
-	)
+	// During a planned downtime, only liveness answers; the logger records the refusals. A stopping
+	// server waits for its handlers, so none still runs once the database closes.
+	server := grpcf.NewServer(grpcf.ServerOptions{
+		Otel:          cfg.Otel,
+		Logger:        cfg.GrpcLogger,
+		DowntimeStart: cfg.App.DowntimeStart,
+		BaseContext: func(rpCtx context.Context) context.Context {
+			return postgres.TransferContext(ctx, rpCtx)
+		},
+	}, grpc.WaitForHandlers(true))
 
 	healthcheck := grpcf.RegisterEchoServers(server)
 	healthcheck.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)

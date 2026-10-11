@@ -87,52 +87,35 @@ func (service *GenerationGet) Exec(ctx context.Context, request *GenerationGetRe
 		return nil, otel.ReportError(span, errors.Join(err, ErrInvalidRequest))
 	}
 
-	generation, err := service.dao.Exec(ctx, &dao.GenerationGetRequest{
-		ID: request.ID, OwnerID: request.OwnerID,
+	// Electing first spares a read: an elected poll gets the generation from the election itself.
+	generation, err := service.daoElectCheck.Exec(ctx, &dao.GenerationElectCheckRequest{
+		ID: request.ID, OwnerID: request.OwnerID, Interval: service.config.CheckInterval,
 	})
-	if err != nil {
-		return nil, otel.ReportError(span, fmt.Errorf("get generation: %w", err))
-	}
 
-	if generation.SettledAt == nil {
-		generation, err = service.checkIfStale(ctx, generation)
+	switch {
+	case err == nil:
+		generation, err = service.serviceCheck.Exec(ctx, &GenerationCheckRequest{Generation: generation})
 		if err != nil {
-			return nil, otel.ReportError(span, err)
+			return nil, otel.ReportError(span, fmt.Errorf("check generation: %w", err))
 		}
-	}
-
-	attempts, err := service.daoAttemptList.Exec(ctx, &dao.GenerationAttemptListRequest{GenerationID: generation.ID})
-	if err != nil {
-		return nil, otel.ReportError(span, fmt.Errorf("list attempts: %w", err))
-	}
-
-	return newGeneration(generation, attempts), nil
-}
-
-// checkIfStale checks the generation when no one checked it within the interval.
-func (service *GenerationGet) checkIfStale(ctx context.Context, generation *dao.Generation) (*dao.Generation, error) {
-	ctx, span := otel.Tracer().Start(ctx, "core.GenerationGet(checkIfStale)")
-	defer span.End()
-
-	elected, err := service.daoElectCheck.Exec(ctx, &dao.GenerationElectCheckRequest{
-		ID:       generation.ID,
-		OwnerID:  generation.OwnerID,
-		Interval: service.config.CheckInterval,
-	})
-
-	// Checked within the interval, by this caller or another: the read is current enough.
-	if errors.Is(err, dao.ErrGenerationCheckNotDue) {
-		return generation, nil
-	}
-
-	if err != nil {
+	case errors.Is(err, dao.ErrGenerationCheckNotDue):
+		// Checked within the interval, settled, or not this owner's: the read answers.
+		generation, err = service.dao.Exec(ctx, &dao.GenerationGetRequest{ID: request.ID, OwnerID: request.OwnerID})
+		if err != nil {
+			return nil, otel.ReportError(span, fmt.Errorf("get generation: %w", err))
+		}
+	default:
 		return nil, otel.ReportError(span, fmt.Errorf("elect check: %w", err))
 	}
 
-	checked, err := service.serviceCheck.Exec(ctx, &GenerationCheckRequest{Generation: elected})
-	if err != nil {
-		return nil, otel.ReportError(span, fmt.Errorf("check generation: %w", err))
+	var attempts []*dao.GenerationAttempt
+
+	if mayHaveAttempts(generation) {
+		attempts, err = service.daoAttemptList.Exec(ctx, &dao.GenerationAttemptListRequest{GenerationID: generation.ID})
+		if err != nil {
+			return nil, otel.ReportError(span, fmt.Errorf("list attempts: %w", err))
+		}
 	}
 
-	return checked, nil
+	return newGeneration(generation, attempts), nil
 }
