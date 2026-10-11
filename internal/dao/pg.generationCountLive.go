@@ -17,6 +17,8 @@ var generationCountLiveQuery string
 // GenerationCountLiveRequest names the owner whose live generations to count.
 type GenerationCountLiveRequest struct {
 	OwnerID uuid.UUID
+	// Purpose restricts the count to one purpose; nil counts every purpose.
+	Purpose *string
 }
 
 // GenerationLiveCount is how many generations an owner has pending or running.
@@ -44,7 +46,7 @@ func (dao *GenerationCountLive) Exec(
 
 	live := &GenerationLiveCount{}
 
-	err = tx.NewRaw(generationCountLiveQuery, request.OwnerID).Scan(ctx, live)
+	err = tx.NewRaw(generationCountLiveQuery, request.OwnerID, request.Purpose).Scan(ctx, live)
 	if err != nil {
 		return nil, otel.ReportError(span, fmt.Errorf("execute query: %w", err))
 	}

@@ -20,7 +20,8 @@ func TestGenerationCountLive(t *testing.T) {
 	testCases := []struct {
 		name string
 
-		owner uuid.UUID
+		owner   uuid.UUID
+		purpose *string
 
 		expect int64
 	}{
@@ -31,6 +32,15 @@ func TestGenerationCountLive(t *testing.T) {
 			owner: testOwner,
 
 			expect: 2,
+		},
+		{
+			// The running generation was submitted for another purpose.
+			name: "Success/OnePurpose",
+
+			owner:   testOwner,
+			purpose: new("studio.generation"),
+
+			expect: 1,
 		},
 		{
 			name: "Success/OtherOwner",
@@ -51,10 +61,13 @@ func TestGenerationCountLive(t *testing.T) {
 				t.Helper()
 
 				seedGeneration(ctx, t, 1)
-				runGeneration(ctx, t, seedGeneration(ctx, t, 1).ID)
+				running := runGeneration(ctx, t, seedGeneration(ctx, t, 1).ID)
+				execute(ctx, t, "UPDATE generations SET purpose = 'studio.analysis' WHERE id = ?0", running.ID)
 				settleGeneration(ctx, t, runGeneration(ctx, t, seedGeneration(ctx, t, 1).ID))
 
-				live, err := daoCountLive.Exec(ctx, &dao.GenerationCountLiveRequest{OwnerID: testCase.owner})
+				live, err := daoCountLive.Exec(ctx, &dao.GenerationCountLiveRequest{
+					OwnerID: testCase.owner, Purpose: testCase.purpose,
+				})
 				require.NoError(t, err)
 				require.Equal(t, testCase.expect, live.Count)
 			})
