@@ -25,21 +25,15 @@ const (
 type GenerationSubmitRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// OwnerID is the user this acts for, formatted as a UUID. Supplied by the calling service, which
-	// verified it against its own credential — this service does not authenticate.
+	// verified it against its own credential: this service does not authenticate.
 	OwnerId string `protobuf:"bytes,1,opt,name=owner_id,json=ownerId,proto3" json:"owner_id,omitempty"`
-	// Purpose labels what the spend is attributed to. Required, at most 255 characters, and otherwise
-	// opaque: the vocabulary belongs to the caller.
-	Purpose string `protobuf:"bytes,2,opt,name=purpose,proto3" json:"purpose,omitempty"`
-	// Tier is the level of model capability wanted. Required.
-	Tier Tier `protobuf:"varint,6,opt,name=tier,proto3,enum=anovel.genai.v0.Tier" json:"tier,omitempty"`
-	// Instructions are the trusted channel: the caller's own directions to the model. Required.
-	Instructions string `protobuf:"bytes,7,opt,name=instructions,proto3" json:"instructions,omitempty"`
-	// Input is the untrusted channel: user content as any JSON value. Required. Input and schema must be
-	// I-JSON (RFC 7493): valid UTF-8, no unpaired surrogates, no duplicate names in an object.
-	Input []byte `protobuf:"bytes,8,opt,name=input,proto3" json:"input,omitempty"`
-	// OutputSchema is the JSON Schema the output must conform to, within OpenAI's strict-mode subset:
-	// a JSON object. Required. Instructions, input and schema together are at most 3,688,000 bytes.
-	OutputSchema []byte `protobuf:"bytes,9,opt,name=output_schema,json=outputSchema,proto3" json:"output_schema,omitempty"`
+	// Provider names the service to run the call on, such as "openai". Required.
+	Provider string `protobuf:"bytes,11,opt,name=provider,proto3" json:"provider,omitempty"`
+	// Payload is the provider's own request body: a JSON object the caller builds, which this service
+	// forwards without reading. Required, at most 3,688,000 bytes, and I-JSON (RFC 7493): valid UTF-8,
+	// no unpaired surrogates, no duplicate names in an object. The provider's adapter sets the fields
+	// the Async mode needs, such as OpenAI's background and stream, over the payload's own values.
+	Payload []byte `protobuf:"bytes,12,opt,name=payload,proto3" json:"payload,omitempty"`
 	// Variant asks for another generation of a request that already succeeded, such as a regenerate.
 	// Zero by default. A caller recovering from a crash counts variants from zero again, and each one
 	// already run returns its stored result.
@@ -85,37 +79,16 @@ func (x *GenerationSubmitRequest) GetOwnerId() string {
 	return ""
 }
 
-func (x *GenerationSubmitRequest) GetPurpose() string {
+func (x *GenerationSubmitRequest) GetProvider() string {
 	if x != nil {
-		return x.Purpose
+		return x.Provider
 	}
 	return ""
 }
 
-func (x *GenerationSubmitRequest) GetTier() Tier {
+func (x *GenerationSubmitRequest) GetPayload() []byte {
 	if x != nil {
-		return x.Tier
-	}
-	return Tier_TIER_UNSPECIFIED
-}
-
-func (x *GenerationSubmitRequest) GetInstructions() string {
-	if x != nil {
-		return x.Instructions
-	}
-	return ""
-}
-
-func (x *GenerationSubmitRequest) GetInput() []byte {
-	if x != nil {
-		return x.Input
-	}
-	return nil
-}
-
-func (x *GenerationSubmitRequest) GetOutputSchema() []byte {
-	if x != nil {
-		return x.OutputSchema
+		return x.Payload
 	}
 	return nil
 }
@@ -130,10 +103,10 @@ func (x *GenerationSubmitRequest) GetVariant() uint32 {
 // GenerationSubmitResponse returns the recorded generation and whether this call created it.
 type GenerationSubmitResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Generation is the recorded generation — the newly created one, or the existing one on a replay.
+	// Generation is the recorded generation: the newly created one, or the existing one on a replay.
 	Generation *Generation `protobuf:"bytes,1,opt,name=generation,proto3" json:"generation,omitempty"`
-	// Created is false when a pending, running or succeeded generation of the same request was returned, so a
-	// caller resending after a lost connection attaches to work already paid for.
+	// Created is false when a pending, running or succeeded generation of the same request was
+	// returned, so a caller resending after a lost connection attaches to work already paid for.
 	Created       bool `protobuf:"varint,2,opt,name=created,proto3" json:"created,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -187,16 +160,14 @@ var File_anovel_genai_v0_generation_submit_proto protoreflect.FileDescriptor
 
 const file_anovel_genai_v0_generation_submit_proto_rawDesc = "" +
 	"\n" +
-	"'anovel/genai/v0/generation_submit.proto\x12\x0fanovel.genai.v0\x1a anovel/genai/v0/generation.proto\"\xac\x02\n" +
+	"'anovel/genai/v0/generation_submit.proto\x12\x0fanovel.genai.v0\x1a anovel/genai/v0/generation.proto\"\x8f\x02\n" +
 	"\x17GenerationSubmitRequest\x12\x19\n" +
-	"\bowner_id\x18\x01 \x01(\tR\aownerId\x12\x18\n" +
-	"\apurpose\x18\x02 \x01(\tR\apurpose\x12)\n" +
-	"\x04tier\x18\x06 \x01(\x0e2\x15.anovel.genai.v0.TierR\x04tier\x12\"\n" +
-	"\finstructions\x18\a \x01(\tR\finstructions\x12\x14\n" +
-	"\x05input\x18\b \x01(\fR\x05input\x12#\n" +
-	"\routput_schema\x18\t \x01(\fR\foutputSchema\x12\x18\n" +
+	"\bowner_id\x18\x01 \x01(\tR\aownerId\x12\x1a\n" +
+	"\bprovider\x18\v \x01(\tR\bprovider\x12\x18\n" +
+	"\apayload\x18\f \x01(\fR\apayload\x12\x18\n" +
 	"\avariant\x18\n" +
-	" \x01(\rR\avariantJ\x04\b\x03\x10\x04J\x04\b\x04\x10\x05J\x04\b\x05\x10\x06R\x0fidempotency_keyR\arequestR\fmax_attempts\"q\n" +
+	" \x01(\rR\avariantJ\x04\b\x02\x10\x03J\x04\b\x03\x10\x04J\x04\b\x04\x10\x05J\x04\b\x05\x10\x06J\x04\b\x06\x10\aJ\x04\b\a\x10\bJ\x04\b\b\x10\tJ\x04\b\t\x10\n" +
+	"R\apurposeR\x0fidempotency_keyR\arequestR\fmax_attemptsR\x04tierR\finstructionsR\x05inputR\routput_schema\"q\n" +
 	"\x18GenerationSubmitResponse\x12;\n" +
 	"\n" +
 	"generation\x18\x01 \x01(\v2\x1b.anovel.genai.v0.GenerationR\n" +
@@ -222,19 +193,17 @@ var file_anovel_genai_v0_generation_submit_proto_msgTypes = make([]protoimpl.Mes
 var file_anovel_genai_v0_generation_submit_proto_goTypes = []any{
 	(*GenerationSubmitRequest)(nil),  // 0: anovel.genai.v0.GenerationSubmitRequest
 	(*GenerationSubmitResponse)(nil), // 1: anovel.genai.v0.GenerationSubmitResponse
-	(Tier)(0),                        // 2: anovel.genai.v0.Tier
-	(*Generation)(nil),               // 3: anovel.genai.v0.Generation
+	(*Generation)(nil),               // 2: anovel.genai.v0.Generation
 }
 var file_anovel_genai_v0_generation_submit_proto_depIdxs = []int32{
-	2, // 0: anovel.genai.v0.GenerationSubmitRequest.tier:type_name -> anovel.genai.v0.Tier
-	3, // 1: anovel.genai.v0.GenerationSubmitResponse.generation:type_name -> anovel.genai.v0.Generation
-	0, // 2: anovel.genai.v0.GenerationSubmitService.GenerationSubmit:input_type -> anovel.genai.v0.GenerationSubmitRequest
-	1, // 3: anovel.genai.v0.GenerationSubmitService.GenerationSubmit:output_type -> anovel.genai.v0.GenerationSubmitResponse
-	3, // [3:4] is the sub-list for method output_type
-	2, // [2:3] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	2, // 0: anovel.genai.v0.GenerationSubmitResponse.generation:type_name -> anovel.genai.v0.Generation
+	0, // 1: anovel.genai.v0.GenerationSubmitService.GenerationSubmit:input_type -> anovel.genai.v0.GenerationSubmitRequest
+	1, // 2: anovel.genai.v0.GenerationSubmitService.GenerationSubmit:output_type -> anovel.genai.v0.GenerationSubmitResponse
+	2, // [2:3] is the sub-list for method output_type
+	1, // [1:2] is the sub-list for method input_type
+	1, // [1:1] is the sub-list for extension type_name
+	1, // [1:1] is the sub-list for extension extendee
+	0, // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_anovel_genai_v0_generation_submit_proto_init() }

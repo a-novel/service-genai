@@ -4,10 +4,11 @@ package anovel.genai.v0;
 
 import "anovel/genai/v0/generation.proto";
 
-// GenerationSubmitService records a generation and starts it. Resending the same request is a
-// replay: it returns the generation already running or succeeded rather than paying again. A request
-// whose generation failed or was cancelled runs again from scratch. An invalid request answers
-// INVALID_ARGUMENT with the reason, naming the field and limit to fix.
+// GenerationSubmitService records a generation and starts it in the Async mode: the call runs on the
+// provider's side while the caller polls GenerationGet. Resending the same request is a replay: it
+// returns the generation already running or succeeded rather than paying again. A request whose
+// generation failed or was cancelled runs again from scratch. An invalid request answers
+// INVALID_ARGUMENT with the reason; a provider without the Async mode answers UNIMPLEMENTED.
 service GenerationSubmitService {
   rpc GenerationSubmit(GenerationSubmitRequest) returns (GenerationSubmitResponse);
 }
@@ -15,38 +16,31 @@ service GenerationSubmitService {
 // GenerationSubmitRequest carries a new generation. The server mints the id and the timestamps.
 message GenerationSubmitRequest {
   // OwnerID is the user this acts for, formatted as a UUID. Supplied by the calling service, which
-  // verified it against its own credential — this service does not authenticate.
+  // verified it against its own credential: this service does not authenticate.
   string owner_id = 1;
-  // Purpose labels what the spend is attributed to. Required, at most 255 characters, and otherwise
-  // opaque: the vocabulary belongs to the caller.
-  string purpose = 2;
-  // Tier is the level of model capability wanted. Required.
-  Tier tier = 6;
-  // Instructions are the trusted channel: the caller's own directions to the model. Required.
-  string instructions = 7;
-  // Input is the untrusted channel: user content as any JSON value. Required. Input and schema must be
-  // I-JSON (RFC 7493): valid UTF-8, no unpaired surrogates, no duplicate names in an object.
-  bytes input = 8;
-  // OutputSchema is the JSON Schema the output must conform to, within OpenAI's strict-mode subset:
-  // a JSON object. Required. Instructions, input and schema together are at most 3,688,000 bytes.
-  bytes output_schema = 9;
-
+  // Provider names the service to run the call on, such as "openai". Required.
+  string provider = 11;
+  // Payload is the provider's own request body: a JSON object the caller builds, which this service
+  // forwards without reading. Required, at most 3,688,000 bytes, and I-JSON (RFC 7493): valid UTF-8,
+  // no unpaired surrogates, no duplicate names in an object. The provider's adapter sets the fields
+  // the Async mode needs, such as OpenAI's background and stream, over the payload's own values.
+  bytes payload = 12;
   // Variant asks for another generation of a request that already succeeded, such as a regenerate.
   // Zero by default. A caller recovering from a crash counts variants from zero again, and each one
   // already run returns its stored result.
   uint32 variant = 10;
 
   // A request is identified by its own content and owner: the caller keeps no key to recover it.
-  // It no longer composes the provider payload, and retries are this service's policy.
-  reserved 3, 4, 5;
-  reserved "idempotency_key", "request", "max_attempts";
+  // Retries are this service's policy, and what runs is the caller's payload.
+  reserved 2, 3, 4, 5, 6, 7, 8, 9;
+  reserved "purpose", "idempotency_key", "request", "max_attempts", "tier", "instructions", "input", "output_schema";
 }
 
 // GenerationSubmitResponse returns the recorded generation and whether this call created it.
 message GenerationSubmitResponse {
-  // Generation is the recorded generation — the newly created one, or the existing one on a replay.
+  // Generation is the recorded generation: the newly created one, or the existing one on a replay.
   Generation generation = 1;
-  // Created is false when a pending, running or succeeded generation of the same request was returned, so a
-  // caller resending after a lost connection attaches to work already paid for.
+  // Created is false when a pending, running or succeeded generation of the same request was
+  // returned, so a caller resending after a lost connection attaches to work already paid for.
   bool created = 2;
 }
