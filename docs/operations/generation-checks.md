@@ -6,17 +6,18 @@ No process holds a generation. A **check** looks at one generation and applies w
 
 - `GenerationSubmit` checks a generation it just created, which starts its provider call.
 - `GenerationGet` checks a generation nobody checked within `CHECK_INTERVAL`. Concurrent polls elect one checker, so a generation reaches the provider at most once per interval however many callers poll it.
+- A provider's notification that a call ended checks the generation running it, through the `rest` server.
 - The sweep checks unsettled generations nobody checked within `SWEEP_INTERVAL`, in batches of `SWEEP_BATCH_SIZE`. Replicas take disjoint batches. It exists for generations whose caller stopped polling: the provider keeps a finished result only for a while when it does not store it.
 
 ## What a check does
 
-| Generation                                        | Transition                                                                                                                                                             |
-| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Its provider has no connector any more            | Settle `failed`: nothing can run or read its calls.                                                                                                                    |
-| Pending, due, not cancelled                       | Record start intent, send the payload through the connector, record the call's id.                                                                                     |
-| Provider call known                               | Ask the provider once (cancel it if requested). Settle with its answer when terminal, or requeue a retryable failure while attempts remain and no cancel is requested. |
-| Start intent without an id, older than 30 seconds | Settle `failed`: the provider may have accepted the call, so its outcome is unknown. Nothing restarts it.                                                              |
-| Pending with cancellation requested               | Settle `cancelled`.                                                                                                                                                    |
+| Generation                                      | Transition                                                                                                                                                             |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Its provider has no connector any more          | Settle `failed`: nothing can run or read its calls.                                                                                                                    |
+| Pending, due, not cancelled                     | Record start intent, send the payload through the connector, record the call's id.                                                                                     |
+| Provider call known                             | Ask the provider once (cancel it if requested). Settle with its answer when terminal, or requeue a retryable failure while attempts remain and no cancel is requested. |
+| Start intent without an id, older than a minute | Settle `failed`: the provider may have accepted the call, so its outcome is unknown. Nothing restarts it.                                                              |
+| Pending with cancellation requested             | Settle `cancelled`.                                                                                                                                                    |
 
 A start that never left, or that was rate-limited, costs nothing: its attempt is given back and the start retried later, for up to ten minutes after the submission. Past that, the generation fails, so a request the provider never accepts cannot hold a concurrency slot. A request the provider rejects, an exhausted quota included, is not retried: the generation fails with the provider's error body for the caller to read. A start whose outcome is ambiguous may have been accepted, so the attempt ends rather than risking a second paid call, and the generation keeps its owner's concurrency slot for 15 minutes: the provider may still run a call nothing tracks or meters. A call accepted after its generation settled is cancelled at the provider. A streamed call the provider still reports queued 5 minutes after its start is cancelled the same way, since a creation stream left early can leave it queued for good. A call still running 2 hours after its start is cancelled too, and the generation fails with what it consumed; if the provider cannot be reached, it fails all the same, so it never holds a slot forever.
 

@@ -1,5 +1,5 @@
-// Command grpc serves the generation API. It is the service's only network
-// entrypoint; cmd/migrations applies the database schema.
+// Command grpc serves the generation API, internal only, and runs the sweep. cmd/rest receives the
+// providers' notifications, and cmd/migrations applies the database schema.
 package main
 
 import (

@@ -91,8 +91,8 @@ func healthCheckedClient() *http.Client {
 // Start posts the caller's payload in the Async mode.
 //
 // background makes crash-safety possible: the call returns an identifier immediately, so a restarted
-// check resumes an operation already paid for. stream is off, because the result is read back by
-// polling.
+// check resumes an operation already paid for. A streamed start holds the creation stream until the
+// provider begins the operation.
 func (provider *OpenAI) Start(ctx context.Context, request *AsyncStartRequest) (*Call, error) {
 	ctx, span := otel.Tracer().Start(ctx, "connectors.OpenAI.Start")
 	defer span.End()
