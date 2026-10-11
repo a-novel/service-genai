@@ -4,6 +4,7 @@ INSERT INTO
   generations (
     id,
     owner_id,
+    purpose,
     provider,
     request_key,
     payload,
@@ -16,6 +17,7 @@ VALUES
   (
     '01999999-0000-7000-8000-000000000001',
     '00000000-0000-0000-0000-000000000001',
+    'studio.generation',
     'openai',
     '\x01'::bytea,
     '{"model": "fixture"}'::json,
@@ -27,6 +29,7 @@ VALUES
   (
     '01999999-0000-7000-8000-000000000002',
     '00000000-0000-0000-0000-000000000001',
+    'studio.generation',
     'openai',
     '\x02'::bytea,
     '{"model": "fixture"}'::json,
@@ -38,6 +41,7 @@ VALUES
   (
     '01999999-0000-7000-8000-000000000003',
     '00000000-0000-0000-0000-000000000001',
+    'studio.generation',
     'openai',
     '\x03'::bytea,
     '{"model": "fixture"}'::json,
@@ -51,6 +55,7 @@ INSERT INTO
   generations (
     id,
     owner_id,
+    purpose,
     provider,
     request_key,
     payload,
@@ -65,6 +70,7 @@ VALUES
   (
     '01999999-0000-7000-8000-000000000004',
     '00000000-0000-0000-0000-000000000001',
+    'studio.generation',
     'openai',
     '\x04'::bytea,
     '{"model": "fixture"}'::json,

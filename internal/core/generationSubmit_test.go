@@ -22,6 +22,7 @@ import (
 func submitRequest(adjust func(request *core.GenerationSubmitRequest)) *core.GenerationSubmitRequest {
 	request := &core.GenerationSubmitRequest{
 		OwnerID:  testOwner,
+		Purpose:  testPurpose,
 		Provider: testProvider,
 		Payload:  json.RawMessage(`{"model": "a-model", "input": "Continue the scene."}`),
 	}
@@ -114,6 +115,21 @@ func TestGenerationSubmit(t *testing.T) {
 			name: "Error/NoOwner",
 
 			request: submitRequest(func(request *core.GenerationSubmitRequest) { request.OwnerID = uuid.Nil }),
+
+			expectErr: core.ErrInvalidRequest,
+		},
+		{
+			name: "Error/NoPurpose",
+
+			request: submitRequest(func(request *core.GenerationSubmitRequest) { request.Purpose = " " }),
+
+			expectErr: core.ErrInvalidRequest,
+		},
+		{
+			// PostgreSQL text cannot hold it.
+			name: "Error/PurposeWithNUL",
+
+			request: submitRequest(func(request *core.GenerationSubmitRequest) { request.Purpose = "studio\x00generation" }),
 
 			expectErr: core.ErrInvalidRequest,
 		},
@@ -236,7 +252,8 @@ func TestGenerationSubmit(t *testing.T) {
 					Exec(mock.Anything, mock.MatchedBy(func(request *dao.GenerationSubmitRequest) bool {
 						// The payload is stored exactly as sent, and the digest is derived rather than
 						// left empty.
-						return request.Provider == testCase.request.Provider &&
+						return request.Purpose == testCase.request.Purpose &&
+							request.Provider == testCase.request.Provider &&
 							string(request.Payload) == string(testCase.request.Payload) &&
 							request.MaxAttempts == maxAttempts &&
 							len(request.RequestKey) == 32 &&
@@ -300,6 +317,7 @@ func TestGenerationSubmit(t *testing.T) {
 			expectSame: true,
 		},
 		{name: "Owner", adjust: func(request *core.GenerationSubmitRequest) { request.OwnerID = uuid.New() }},
+		{name: "Purpose", adjust: func(request *core.GenerationSubmitRequest) { request.Purpose = "studio.analysis" }},
 		{name: "Provider", adjust: func(request *core.GenerationSubmitRequest) { request.Provider = "another" }},
 		{name: "Payload", adjust: func(request *core.GenerationSubmitRequest) {
 			request.Payload = json.RawMessage(`{"model": "a-model", "input": "Stop."}`)

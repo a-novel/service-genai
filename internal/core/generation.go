@@ -46,6 +46,8 @@ type Generation struct {
 	ID uuid.UUID
 	// OwnerID identifies the user who owns the generation.
 	OwnerID uuid.UUID
+	// Purpose is why the caller made the call.
+	Purpose string
 	// Provider names the service the generation runs on.
 	Provider string
 	// Error names the cause of a failure or cancellation in this service's own words.
@@ -75,6 +77,7 @@ func newGeneration(generation *dao.Generation, attempts []*dao.GenerationAttempt
 	result := &Generation{
 		ID:        generation.ID,
 		OwnerID:   generation.OwnerID,
+		Purpose:   generation.Purpose,
 		Provider:  generation.Provider,
 		Error:     generation.Error,
 		Status:    GenerationStatus(generation.Status),

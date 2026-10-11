@@ -27,6 +27,9 @@ type GenerationSubmitRequest struct {
 	// OwnerID is the user this acts for, formatted as a UUID. Supplied by the calling service, which
 	// verified it against its own credential: this service does not authenticate.
 	OwnerId string `protobuf:"bytes,1,opt,name=owner_id,json=ownerId,proto3" json:"owner_id,omitempty"`
+	// Purpose labels why the call is made, such as "studio.generation". Required, at most 255
+	// characters. Each caller names its own purposes.
+	Purpose string `protobuf:"bytes,2,opt,name=purpose,proto3" json:"purpose,omitempty"`
 	// Provider names the service to run the call on, such as "openai". Required.
 	Provider string `protobuf:"bytes,11,opt,name=provider,proto3" json:"provider,omitempty"`
 	// Payload is the provider's own request body: a JSON object the caller builds, which this service
@@ -75,6 +78,13 @@ func (*GenerationSubmitRequest) Descriptor() ([]byte, []int) {
 func (x *GenerationSubmitRequest) GetOwnerId() string {
 	if x != nil {
 		return x.OwnerId
+	}
+	return ""
+}
+
+func (x *GenerationSubmitRequest) GetPurpose() string {
+	if x != nil {
+		return x.Purpose
 	}
 	return ""
 }
@@ -160,14 +170,15 @@ var File_anovel_genai_v0_generation_submit_proto protoreflect.FileDescriptor
 
 const file_anovel_genai_v0_generation_submit_proto_rawDesc = "" +
 	"\n" +
-	"'anovel/genai/v0/generation_submit.proto\x12\x0fanovel.genai.v0\x1a anovel/genai/v0/generation.proto\"\x8f\x02\n" +
+	"'anovel/genai/v0/generation_submit.proto\x12\x0fanovel.genai.v0\x1a anovel/genai/v0/generation.proto\"\x9a\x02\n" +
 	"\x17GenerationSubmitRequest\x12\x19\n" +
-	"\bowner_id\x18\x01 \x01(\tR\aownerId\x12\x1a\n" +
+	"\bowner_id\x18\x01 \x01(\tR\aownerId\x12\x18\n" +
+	"\apurpose\x18\x02 \x01(\tR\apurpose\x12\x1a\n" +
 	"\bprovider\x18\v \x01(\tR\bprovider\x12\x18\n" +
 	"\apayload\x18\f \x01(\fR\apayload\x12\x18\n" +
 	"\avariant\x18\n" +
-	" \x01(\rR\avariantJ\x04\b\x02\x10\x03J\x04\b\x03\x10\x04J\x04\b\x04\x10\x05J\x04\b\x05\x10\x06J\x04\b\x06\x10\aJ\x04\b\a\x10\bJ\x04\b\b\x10\tJ\x04\b\t\x10\n" +
-	"R\apurposeR\x0fidempotency_keyR\arequestR\fmax_attemptsR\x04tierR\finstructionsR\x05inputR\routput_schema\"q\n" +
+	" \x01(\rR\avariantJ\x04\b\x03\x10\x04J\x04\b\x04\x10\x05J\x04\b\x05\x10\x06J\x04\b\x06\x10\aJ\x04\b\a\x10\bJ\x04\b\b\x10\tJ\x04\b\t\x10\n" +
+	"R\x0fidempotency_keyR\arequestR\fmax_attemptsR\x04tierR\finstructionsR\x05inputR\routput_schema\"q\n" +
 	"\x18GenerationSubmitResponse\x12;\n" +
 	"\n" +
 	"generation\x18\x01 \x01(\v2\x1b.anovel.genai.v0.GenerationR\n" +

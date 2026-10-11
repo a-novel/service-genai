@@ -18,6 +18,9 @@ message GenerationSubmitRequest {
   // OwnerID is the user this acts for, formatted as a UUID. Supplied by the calling service, which
   // verified it against its own credential: this service does not authenticate.
   string owner_id = 1;
+  // Purpose labels why the call is made, such as "studio.generation". Required, at most 255
+  // characters. Each caller names its own purposes.
+  string purpose = 2;
   // Provider names the service to run the call on, such as "openai". Required.
   string provider = 11;
   // Payload is the provider's own request body: a JSON object the caller builds, which this service
@@ -32,8 +35,8 @@ message GenerationSubmitRequest {
 
   // A request is identified by its own content and owner: the caller keeps no key to recover it.
   // Retries are this service's policy, and what runs is the caller's payload.
-  reserved 2, 3, 4, 5, 6, 7, 8, 9;
-  reserved "purpose", "idempotency_key", "request", "max_attempts", "tier", "instructions", "input", "output_schema";
+  reserved 3, 4, 5, 6, 7, 8, 9;
+  reserved "idempotency_key", "request", "max_attempts", "tier", "instructions", "input", "output_schema";
 }
 
 // GenerationSubmitResponse returns the recorded generation and whether this call created it.

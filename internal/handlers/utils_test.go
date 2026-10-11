@@ -21,6 +21,7 @@ func testGeneration() *core.Generation {
 	return &core.Generation{
 		ID:        uuid.MustParse(testGenerationID),
 		OwnerID:   uuid.MustParse(testOwnerID),
+		Purpose:   "studio.generation",
 		Provider:  "openai",
 		Status:    core.GenerationStatusPending,
 		CreatedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),

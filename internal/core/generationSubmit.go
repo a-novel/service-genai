@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/attribute"
@@ -44,6 +45,8 @@ type GenerationSubmitConfig struct {
 type GenerationSubmitRequest struct {
 	// OwnerID is the user the generation acts for, supplied by a caller that already verified it.
 	OwnerID uuid.UUID `validate:"required"`
+	// Purpose is why the caller makes the call, up to 255 characters, in the caller's own vocabulary.
+	Purpose string `validate:"required,notblank,max=255"`
 	// Provider names the service to run the call on. It must have an adapter offering the Async
 	// mode.
 	Provider string `validate:"required"`
@@ -100,6 +103,7 @@ func (service *GenerationSubmit) Exec(
 
 	span.SetAttributes(
 		attribute.String("generation.owner_id", request.OwnerID.String()),
+		attribute.String("generation.purpose", request.Purpose),
 		attribute.String("generation.provider", request.Provider),
 		attribute.Int("generation.payload_bytes", len(request.Payload)),
 	)
@@ -119,6 +123,7 @@ func (service *GenerationSubmit) Exec(
 		// round-trip. uuidv7 keeps the table's index locality under insert churn.
 		ID:          uuid.Must(uuid.NewV7()),
 		OwnerID:     request.OwnerID,
+		Purpose:     request.Purpose,
 		Provider:    request.Provider,
 		RequestKey:  key,
 		Payload:     request.Payload,
@@ -156,6 +161,11 @@ func (service *GenerationSubmit) validateRequest(request *GenerationSubmitReques
 	err := validate.Struct(request)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalidRequest, err)
+	}
+
+	// A NUL byte cannot be stored in a PostgreSQL text column.
+	if strings.ContainsRune(request.Purpose, 0) {
+		return fmt.Errorf("%w: purpose contains a NUL character", ErrInvalidRequest)
 	}
 
 	if size := len(request.Payload); size > PayloadSizeCeiling {
@@ -207,6 +217,7 @@ func requestKey(request *GenerationSubmitRequest) ([]byte, error) {
 	for _, field := range [][]byte{
 		[]byte(requestKeyTag),
 		request.OwnerID[:],
+		[]byte(request.Purpose),
 		[]byte(request.Provider),
 		[]byte(asyncMode),
 		payload,

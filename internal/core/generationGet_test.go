@@ -50,7 +50,7 @@ func TestGenerationGet(t *testing.T) {
 
 			request: &core.GenerationGetRequest{ID: generationID, OwnerID: owner},
 			daoMock: &daoMock{resp: &dao.Generation{
-				ID: generationID, OwnerID: owner, Provider: testProvider, Payload: testPayload,
+				ID: generationID, OwnerID: owner, Purpose: testPurpose, Provider: testProvider, Payload: testPayload,
 				Error:  &generationError,
 				Status: dao.GenerationStatusFailed, Attempt: 2, MaxAttempts: 3,
 				CreatedAt: createdAt, UpdatedAt: updatedAt, SettledAt: &settledAt,
@@ -58,7 +58,7 @@ func TestGenerationGet(t *testing.T) {
 			}},
 			// A failure still returns the provider's answers, and with them what each attempt consumed.
 			expect: &core.Generation{
-				ID: generationID, OwnerID: owner, Provider: testProvider,
+				ID: generationID, OwnerID: owner, Purpose: testPurpose, Provider: testProvider,
 				Error:     &generationError,
 				Status:    core.GenerationStatusFailed,
 				Attempts:  []*core.GenerationAttempt{{Number: 1, Response: testResponse}},

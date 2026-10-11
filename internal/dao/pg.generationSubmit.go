@@ -23,6 +23,8 @@ type GenerationSubmitRequest struct {
 	ID uuid.UUID
 	// OwnerID is the user the generation acts for.
 	OwnerID uuid.UUID
+	// Purpose is why the caller makes the call, in its own vocabulary.
+	Purpose string
 	// Provider names the service the payload is built for.
 	Provider string
 	// RequestKey identifies the request: another submission with the same key is a replay while its
@@ -72,6 +74,7 @@ func (dao *GenerationSubmit) Exec(
 		generationSubmitQuery,
 		request.ID,
 		request.OwnerID,
+		request.Purpose,
 		request.Provider,
 		request.RequestKey,
 		request.Payload,

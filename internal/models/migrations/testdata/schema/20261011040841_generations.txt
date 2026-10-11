@@ -1,4 +1,4 @@
-migration-history	sha256:f99b99029d050e4c327e9259feb9ca1e38156583aac39209af96b5ab6ec47e6d
+migration-history	sha256:9faaee4cf186be15f4e86c4920efa4f971beac70001fe249336922062227db11
 column	generation_attempts.attempt	smallint NOT NULL
 column	generation_attempts.created_at	timestamp with time zone NOT NULL DEFAULT clock_timestamp()
 column	generation_attempts.generation_id	uuid NOT NULL
@@ -15,6 +15,7 @@ column	generations.owner_id	uuid NOT NULL
 column	generations.payload	json NOT NULL
 column	generations.provider	text NOT NULL
 column	generations.provider_call_id	text
+column	generations.purpose	text NOT NULL
 column	generations.request_key	bytea NOT NULL
 column	generations.run_at	timestamp with time zone NOT NULL DEFAULT clock_timestamp()
 column	generations.settled_at	timestamp with time zone
@@ -45,6 +46,8 @@ constraint	generations.generations_pkey	PRIMARY KEY (id)
 constraint	generations.generations_provider_call_id_check	CHECK (((provider_call_id IS NULL) OR (provider_call_id <> ''::text)))
 constraint	generations.generations_provider_check	CHECK ((provider <> ''::text))
 constraint	generations.generations_provider_not_null	NOT NULL provider
+constraint	generations.generations_purpose_check	CHECK ((purpose <> ''::text))
+constraint	generations.generations_purpose_not_null	NOT NULL purpose
 constraint	generations.generations_request_key_not_null	NOT NULL request_key
 constraint	generations.generations_run_at_not_null	NOT NULL run_at
 constraint	generations.generations_status_not_null	NOT NULL status

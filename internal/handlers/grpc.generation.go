@@ -27,6 +27,7 @@ func NewGrpcGeneration(generation *core.Generation) *genaiv0.Generation {
 	message := &genaiv0.Generation{
 		Id:        generation.ID.String(),
 		OwnerId:   generation.OwnerID.String(),
+		Purpose:   generation.Purpose,
 		Provider:  generation.Provider,
 		Status:    generationStatuses[generation.Status],
 		Attempts:  make([]*genaiv0.GenerationAttempt, len(generation.Attempts)),

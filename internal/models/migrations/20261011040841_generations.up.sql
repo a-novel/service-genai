@@ -19,10 +19,12 @@ CREATE TABLE generations (
   /* The user this acts for. Reads are scoped by it inside the statement, so a caller that omits it
   scans nothing rather than another owner's row. */
   owner_id uuid NOT NULL,
+  /* Why the caller makes the call, in the caller's own vocabulary. */
+  purpose text NOT NULL CHECK (purpose <> ''),
   /* The service the payload is built for. Every attempt runs on it. */
   provider text NOT NULL CHECK (provider <> ''),
-  /* Digest of the owner, the provider, the mode, the payload and the variant, computed by the
-  service, so a caller recovers a generation by resending its request. */
+  /* Digest of the owner, the purpose, the provider, the mode, the payload and the variant, computed
+  by the service, so a caller recovers a generation by resending its request. */
   request_key bytea NOT NULL,
   /* The provider's own request, built by the caller. json keeps it as sent, where jsonb would
   reorder its keys before it reaches the provider. */

@@ -27,6 +27,7 @@ func seedGeneration(ctx context.Context, t *testing.T, maxAttempts int16) *dao.G
 	result, err := dao.NewGenerationSubmit().Exec(ctx, &dao.GenerationSubmitRequest{
 		ID:          uuid.Must(uuid.NewV7()),
 		OwnerID:     testOwner,
+		Purpose:     "studio.generation",
 		Provider:    "openai",
 		RequestKey:  []byte(uuid.Must(uuid.NewV7()).String()),
 		Payload:     json.RawMessage(`{"model": "a-model"}`),

@@ -35,6 +35,8 @@ type Generation struct {
 
 	ID      uuid.UUID `bun:"id,pk,type:uuid"`
 	OwnerID uuid.UUID `bun:"owner_id,type:uuid"`
+	// Purpose is why the caller makes the call, in its own vocabulary.
+	Purpose string `bun:"purpose"`
 	// Provider names the service the payload is built for.
 	Provider string `bun:"provider"`
 	// RequestKey identifies the request among live and succeeded generations.

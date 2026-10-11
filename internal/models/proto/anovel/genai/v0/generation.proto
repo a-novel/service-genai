@@ -11,6 +11,8 @@ message Generation {
   string id = 1;
   // OwnerID is the user this acts for, formatted as a UUID. Supplied by the calling service.
   string owner_id = 2;
+  // Purpose labels why the call was made, as submitted.
+  string purpose = 3;
   // Status is where the generation sits in its lifecycle.
   GenerationStatus status = 4;
   // Error names why the generation failed or was cancelled, in this service's own words. Empty
@@ -30,10 +32,9 @@ message Generation {
   // as well as the last. The output and the usage are in their responses.
   repeated GenerationAttempt attempts = 17;
 
-  // The caller reads the purpose, the output, the failure kind and the usage off its own request and
-  // the provider's responses.
-  reserved 3, 7, 14, 15;
-  reserved "purpose", "output", "failure", "usage";
+  // The caller reads the output, the failure kind and the usage off the provider's responses.
+  reserved 7, 14, 15;
+  reserved "output", "failure", "usage";
   // Attempts are an execution policy of this service; each answered one is listed in attempts.
   reserved 5, 6;
   reserved "attempt", "max_attempts";

@@ -18,6 +18,7 @@ const (
 	testCallID = "resp_1"
 	// testProvider is the provider the generations under test run on.
 	testProvider = "openai"
+	testPurpose  = "studio.generation"
 )
 
 var (
@@ -44,6 +45,7 @@ func pendingGeneration() *dao.Generation {
 	return &dao.Generation{
 		ID:          testGenerationID,
 		OwnerID:     testOwner,
+		Purpose:     testPurpose,
 		Provider:    testProvider,
 		Payload:     testPayload,
 		Status:      dao.GenerationStatusPending,

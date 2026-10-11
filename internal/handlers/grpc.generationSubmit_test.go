@@ -22,7 +22,7 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 
 	// Every request field reaches the request key: it is how a resend finds its generation. A new
 	// field must be mapped below and added to the key, or two different requests would share one.
-	keyFields := []string{"owner_id", "provider", "payload", "variant"}
+	keyFields := []string{"owner_id", "purpose", "provider", "payload", "variant"}
 
 	fields := (&genaiv0.GenerationSubmitRequest{}).ProtoReflect().Descriptor().Fields()
 	for index := range fields.Len() {
@@ -52,7 +52,7 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 			name: "Success",
 
 			request: &genaiv0.GenerationSubmitRequest{
-				OwnerId: testOwnerID, Provider: "openai", Payload: payload, Variant: 2,
+				OwnerId: testOwnerID, Purpose: "studio.generation", Provider: "openai", Payload: payload, Variant: 2,
 			},
 			serviceMock: &serviceMock{resp: &core.GenerationSubmitResult{
 				Generation: testGeneration(), Created: true,
@@ -65,7 +65,9 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 			// flight, and is told that is what happened.
 			name: "Success/Replayed",
 
-			request: &genaiv0.GenerationSubmitRequest{OwnerId: testOwnerID, Provider: "openai", Payload: payload},
+			request: &genaiv0.GenerationSubmitRequest{
+				OwnerId: testOwnerID, Purpose: "studio.generation", Provider: "openai", Payload: payload,
+			},
 			serviceMock: &serviceMock{resp: &core.GenerationSubmitResult{
 				Generation: testGeneration(), Created: false,
 			}},
@@ -73,14 +75,18 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 		{
 			name: "Error/InvalidOwnerID",
 
-			request: &genaiv0.GenerationSubmitRequest{OwnerId: "not-a-uuid", Provider: "openai", Payload: payload},
+			request: &genaiv0.GenerationSubmitRequest{
+				OwnerId: "not-a-uuid", Purpose: "studio.generation", Provider: "openai", Payload: payload,
+			},
 
 			expectStatus: codes.InvalidArgument,
 		},
 		{
 			name: "Error/InvalidRequest",
 
-			request:     &genaiv0.GenerationSubmitRequest{OwnerId: testOwnerID, Provider: "unknown", Payload: payload},
+			request: &genaiv0.GenerationSubmitRequest{
+				OwnerId: testOwnerID, Purpose: "studio.generation", Provider: "unknown", Payload: payload,
+			},
 			serviceMock: &serviceMock{err: fmt.Errorf("%w: unknown provider", core.ErrInvalidRequest)},
 
 			expectStatus:  codes.InvalidArgument,
@@ -89,7 +95,9 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 		{
 			name: "Error/ModeUnsupported",
 
-			request:     &genaiv0.GenerationSubmitRequest{OwnerId: testOwnerID, Provider: "sync-only", Payload: payload},
+			request: &genaiv0.GenerationSubmitRequest{
+				OwnerId: testOwnerID, Purpose: "studio.generation", Provider: "sync-only", Payload: payload,
+			},
 			serviceMock: &serviceMock{err: fmt.Errorf("provider: %w", lib.ErrModeUnsupported)},
 
 			expectStatus:  codes.Unimplemented,
@@ -98,7 +106,9 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 		{
 			name: "Error/Internal",
 
-			request:     &genaiv0.GenerationSubmitRequest{OwnerId: testOwnerID, Provider: "openai", Payload: payload},
+			request: &genaiv0.GenerationSubmitRequest{
+				OwnerId: testOwnerID, Purpose: "studio.generation", Provider: "openai", Payload: payload,
+			},
 			serviceMock: &serviceMock{err: errFoo},
 
 			expectStatus: codes.Internal,
@@ -115,6 +125,7 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 				service.EXPECT().
 					Exec(mock.Anything, mock.MatchedBy(func(request *core.GenerationSubmitRequest) bool {
 						return request.OwnerID == uuid.MustParse(testCase.request.GetOwnerId()) &&
+							request.Purpose == testCase.request.GetPurpose() &&
 							request.Provider == testCase.request.GetProvider() &&
 							string(request.Payload) == string(testCase.request.GetPayload()) &&
 							request.Variant == testCase.request.GetVariant()

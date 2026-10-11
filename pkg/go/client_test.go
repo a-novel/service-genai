@@ -34,7 +34,7 @@ func newClient(t *testing.T) servicegenai.Client {
 // submitRequest is a valid submission for the owner.
 func submitRequest(owner string) *servicegenai.GenerationSubmitRequest {
 	return &servicegenai.GenerationSubmitRequest{
-		OwnerId: owner, Provider: "openai",
+		OwnerId: owner, Purpose: "studio.generation", Provider: "openai",
 		Payload: []byte(`{"model": "a-model", "input": "Continue the scene."}`),
 	}
 }

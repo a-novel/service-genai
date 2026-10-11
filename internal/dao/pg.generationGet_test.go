@@ -27,6 +27,7 @@ func TestGenerationGet(t *testing.T) {
 		return &dao.Generation{
 			ID:          id,
 			OwnerID:     ownerID,
+			Purpose:     "studio.generation",
 			Provider:    "openai",
 			RequestKey:  []byte("key-" + id.String()),
 			Payload:     json.RawMessage(`{"model": "a-model"}`),

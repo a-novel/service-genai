@@ -35,12 +35,13 @@ func TestNewGrpcGeneration(t *testing.T) {
 			name: "Success/Pending",
 
 			generation: &core.Generation{
-				ID: uuid.MustParse(testGenerationID), OwnerID: uuid.MustParse(testOwnerID), Provider: "openai",
+				ID: uuid.MustParse(testGenerationID), OwnerID: uuid.MustParse(testOwnerID),
+				Purpose: "studio.generation", Provider: "openai",
 				Status: core.GenerationStatusPending, CreatedAt: createdAt, UpdatedAt: createdAt,
 			},
 
 			expect: &genaiv0.Generation{
-				Id: testGenerationID, OwnerId: testOwnerID, Provider: "openai",
+				Id: testGenerationID, OwnerId: testOwnerID, Purpose: "studio.generation", Provider: "openai",
 				Status:    genaiv0.GenerationStatus_GENERATION_STATUS_PENDING,
 				Attempts:  []*genaiv0.GenerationAttempt{},
 				CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: "2026-01-01T00:00:00Z",
@@ -51,7 +52,8 @@ func TestNewGrpcGeneration(t *testing.T) {
 			name: "Success/FailedWithAttempts",
 
 			generation: &core.Generation{
-				ID: uuid.MustParse(testGenerationID), OwnerID: uuid.MustParse(testOwnerID), Provider: "openai",
+				ID: uuid.MustParse(testGenerationID), OwnerID: uuid.MustParse(testOwnerID),
+				Purpose: "studio.generation", Provider: "openai",
 				Status: core.GenerationStatusFailed, Error: &message,
 				Attempts: []*core.GenerationAttempt{
 					{Number: 1, Response: json.RawMessage(failedResponse)},
@@ -61,7 +63,7 @@ func TestNewGrpcGeneration(t *testing.T) {
 			},
 
 			expect: &genaiv0.Generation{
-				Id: testGenerationID, OwnerId: testOwnerID, Provider: "openai",
+				Id: testGenerationID, OwnerId: testOwnerID, Purpose: "studio.generation", Provider: "openai",
 				Status: genaiv0.GenerationStatus_GENERATION_STATUS_FAILED, Error: message,
 				Attempts: []*genaiv0.GenerationAttempt{
 					{Number: 1, Response: []byte(failedResponse)},
@@ -75,14 +77,15 @@ func TestNewGrpcGeneration(t *testing.T) {
 			name: "Success/Succeeded",
 
 			generation: &core.Generation{
-				ID: uuid.MustParse(testGenerationID), OwnerID: uuid.MustParse(testOwnerID), Provider: "openai",
+				ID: uuid.MustParse(testGenerationID), OwnerID: uuid.MustParse(testOwnerID),
+				Purpose: "studio.generation", Provider: "openai",
 				Status:    core.GenerationStatusSucceeded,
 				Attempts:  []*core.GenerationAttempt{{Number: 1, Response: json.RawMessage(finishedResponse)}},
 				CreatedAt: createdAt, UpdatedAt: settledAt, SettledAt: &settledAt, ExpiresAt: &expiresAt,
 			},
 
 			expect: &genaiv0.Generation{
-				Id: testGenerationID, OwnerId: testOwnerID, Provider: "openai",
+				Id: testGenerationID, OwnerId: testOwnerID, Purpose: "studio.generation", Provider: "openai",
 				Status:    genaiv0.GenerationStatus_GENERATION_STATUS_SUCCEEDED,
 				Attempts:  []*genaiv0.GenerationAttempt{{Number: 1, Response: []byte(finishedResponse)}},
 				CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: "2026-01-01T00:01:00Z",

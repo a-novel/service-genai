@@ -100,6 +100,8 @@ type Generation struct {
 	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	// OwnerID is the user this acts for, formatted as a UUID. Supplied by the calling service.
 	OwnerId string `protobuf:"bytes,2,opt,name=owner_id,json=ownerId,proto3" json:"owner_id,omitempty"`
+	// Purpose labels why the call was made, as submitted.
+	Purpose string `protobuf:"bytes,3,opt,name=purpose,proto3" json:"purpose,omitempty"`
 	// Status is where the generation sits in its lifecycle.
 	Status GenerationStatus `protobuf:"varint,4,opt,name=status,proto3,enum=anovel.genai.v0.GenerationStatus" json:"status,omitempty"`
 	// Error names why the generation failed or was cancelled, in this service's own words. Empty
@@ -162,6 +164,13 @@ func (x *Generation) GetId() string {
 func (x *Generation) GetOwnerId() string {
 	if x != nil {
 		return x.OwnerId
+	}
+	return ""
+}
+
+func (x *Generation) GetPurpose() string {
+	if x != nil {
+		return x.Purpose
 	}
 	return ""
 }
@@ -282,11 +291,12 @@ var File_anovel_genai_v0_generation_proto protoreflect.FileDescriptor
 
 const file_anovel_genai_v0_generation_proto_rawDesc = "" +
 	"\n" +
-	" anovel/genai/v0/generation.proto\x12\x0fanovel.genai.v0\"\xd4\x03\n" +
+	" anovel/genai/v0/generation.proto\x12\x0fanovel.genai.v0\"\xdf\x03\n" +
 	"\n" +
 	"Generation\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x19\n" +
-	"\bowner_id\x18\x02 \x01(\tR\aownerId\x129\n" +
+	"\bowner_id\x18\x02 \x01(\tR\aownerId\x12\x18\n" +
+	"\apurpose\x18\x03 \x01(\tR\apurpose\x129\n" +
 	"\x06status\x18\x04 \x01(\x0e2!.anovel.genai.v0.GenerationStatusR\x06status\x12\x14\n" +
 	"\x05error\x18\b \x01(\tR\x05error\x12\x1d\n" +
 	"\n" +
@@ -299,7 +309,7 @@ const file_anovel_genai_v0_generation_proto_rawDesc = "" +
 	"\n" +
 	"expires_at\x18\f \x01(\tR\texpiresAt\x12\x1a\n" +
 	"\bprovider\x18\x10 \x01(\tR\bprovider\x12>\n" +
-	"\battempts\x18\x11 \x03(\v2\".anovel.genai.v0.GenerationAttemptR\battemptsJ\x04\b\x03\x10\x04J\x04\b\a\x10\bJ\x04\b\x0e\x10\x0fJ\x04\b\x0f\x10\x10J\x04\b\x05\x10\x06J\x04\b\x06\x10\aJ\x04\b\r\x10\x0eR\apurposeR\x06outputR\afailureR\x05usageR\aattemptR\fmax_attemptsR\x10provider_call_id\"G\n" +
+	"\battempts\x18\x11 \x03(\v2\".anovel.genai.v0.GenerationAttemptR\battemptsJ\x04\b\a\x10\bJ\x04\b\x0e\x10\x0fJ\x04\b\x0f\x10\x10J\x04\b\x05\x10\x06J\x04\b\x06\x10\aJ\x04\b\r\x10\x0eR\x06outputR\afailureR\x05usageR\aattemptR\fmax_attemptsR\x10provider_call_id\"G\n" +
 	"\x11GenerationAttempt\x12\x16\n" +
 	"\x06number\x18\x01 \x01(\x05R\x06number\x12\x1a\n" +
 	"\bresponse\x18\x02 \x01(\fR\bresponse*\xf6\x01\n" +

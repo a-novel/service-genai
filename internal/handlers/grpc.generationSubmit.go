@@ -44,6 +44,7 @@ func (handler *GrpcGenerationSubmit) GenerationSubmit(
 
 	result, err := handler.service.Exec(ctx, &core.GenerationSubmitRequest{
 		OwnerID:  ownerID,
+		Purpose:  request.GetPurpose(),
 		Provider: request.GetProvider(),
 		Payload:  request.GetPayload(),
 		Variant:  request.GetVariant(),
