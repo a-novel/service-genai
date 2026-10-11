@@ -57,8 +57,9 @@ func TestGenerationSweep(t *testing.T) {
 			expect: &core.GenerationSweepResult{},
 		},
 		{
-			// One generation's failure must not strand the rest of the batch.
-			name: "Error/CheckContinuesBatch",
+			// One generation's failure stays with it: the rest of the batch progresses, and the pass
+			// reports work found, so a backlog keeps draining.
+			name: "Success/CheckFails",
 
 			swept: []*dao.Generation{first, second},
 			checkMocks: []checkMock{
@@ -66,7 +67,7 @@ func TestGenerationSweep(t *testing.T) {
 				{generation: second},
 			},
 
-			expectErr: errFoo,
+			expect: &core.GenerationSweepResult{Checked: 2},
 		},
 		{
 			// A panic stays with its generation: the process keeps running and the batch progresses.

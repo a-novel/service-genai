@@ -9,10 +9,11 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- migration calling cron.schedule would fail every data-access test. The cost is that a
 -- bring-your-own-Postgres deployment must schedule it itself — see CONTRIBUTING.md.
 --
--- The job name is service-scoped because pg_cron names are global to the instance.
+-- The job name is service-scoped because pg_cron names are global to the instance. The cutoff uses
+-- now(), which is stable, so the retention index bounds the delete.
 SELECT
   cron.schedule (
     'service-genai-purge-settled',
     '*/10 * * * *',
-    $$DELETE FROM generations WHERE expires_at IS NOT NULL AND expires_at < clock_timestamp()$$
+    $$DELETE FROM generations WHERE expires_at IS NOT NULL AND expires_at < now()$$
   );

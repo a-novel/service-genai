@@ -84,6 +84,25 @@ func setRunAt(ctx context.Context, t *testing.T, id uuid.UUID, offset time.Durat
 		id, offset.Seconds())
 }
 
+// storedPayload reads the payload recorded for a generation.
+func storedPayload(ctx context.Context, t *testing.T, id uuid.UUID) string {
+	t.Helper()
+
+	db, err := postgres.GetContext(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	var payload string
+
+	err = db.NewRaw("SELECT payload FROM generation_payloads WHERE generation_id = ?", id).Scan(ctx, &payload)
+	if err != nil {
+		panic(err)
+	}
+
+	return payload
+}
+
 func execute(ctx context.Context, t *testing.T, query string, args ...any) {
 	t.Helper()
 

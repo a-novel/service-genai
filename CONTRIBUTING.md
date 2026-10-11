@@ -69,7 +69,7 @@ grpcurl -plaintext -d "{\"id\":\"$GENERATION_ID\",\"owner_id\":\"$OWNER_ID\"}" \
 
 ### Retention purge
 
-The `database` image schedules the [retention](./README.md#configuration) purge as a `pg_cron` job in its init SQL, [`builds/database.sql`](./builds/database.sql). It deletes settled generations once `expires_at` has passed, and their attempts with them. The Usage Records stay: they hold no content and no key to the purged rows.
+The `database` image schedules the [retention](./README.md#configuration) purge as a `pg_cron` job in its init SQL, [`builds/database.sql`](./builds/database.sql). It deletes settled generations once `expires_at` has passed, and their payloads and attempts with them. The Usage Records stay: they hold no content and no key to the purged rows.
 
 The job lives in the init SQL because `postgrestest.RunDBTest` clones a database with no `cron` schema, where a migration calling `cron.schedule` fails every data-access test.
 

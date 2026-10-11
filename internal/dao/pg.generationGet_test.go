@@ -106,7 +106,8 @@ func TestPgGenerationGet(t *testing.T) {
 				require.Equal(t, testCase.request.OwnerID, result.OwnerID)
 				require.Equal(t, dao.GenerationStatusPending, result.Status)
 				require.Equal(t, "openai", result.Provider)
-				require.JSONEq(t, `{"model": "a-model"}`, string(result.Payload))
+				// Polls read the generation often; only a start needs its payload.
+				require.Nil(t, result.Payload)
 			})
 		})
 	}

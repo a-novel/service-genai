@@ -13,6 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/a-novel-kit/golib/transaction/transactiontest"
+
 	"github.com/a-novel/service-genai/internal/config"
 	"github.com/a-novel/service-genai/internal/core"
 	coremocks "github.com/a-novel/service-genai/internal/core/mocks"
@@ -126,9 +128,9 @@ func TestGenerationSubmit(t *testing.T) {
 		live []liveMock
 		// usage lists the window sums admission reads, in order. Only a created generation is admitted.
 		usage []usageMock
-		// expectRefusal settles the created generation as failed for a reached cap.
+		// expectRefusal refuses the created generation for a reached limit: its transaction rolls it
+		// back, so nothing ever starts it.
 		expectRefusal bool
-		settleErr     error
 		// checkErr is what starting a created generation returns. A replay is never started here.
 		checkErr   error
 		attemptErr error
@@ -284,22 +286,6 @@ func TestGenerationSubmit(t *testing.T) {
 			expectErr: errFoo,
 		},
 		{
-			// The refused generation stays pending, and the next check would start it: the caller
-			// must not read this as a refusal.
-			name: "Error/RefusalSettle",
-
-			request: submitRequest(nil),
-			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration(), Created: true}},
-			live:    []liveMock{{purpose: true, count: 1}},
-			usage: []usageMock{
-				{purpose: true, window: 5 * time.Hour, used: dao.GenerationUsageTotals{InputTokens: 1000}},
-			},
-			expectRefusal: true,
-			settleErr:     errFoo,
-
-			expectErr: errFoo,
-		},
-		{
 			name: "Error/NoOwner",
 
 			request: submitRequest(func(request *core.GenerationSubmitRequest) { request.OwnerID = uuid.Nil }),
@@ -428,7 +414,6 @@ func TestGenerationSubmit(t *testing.T) {
 			attemptDao := coremocks.NewMockGenerationSubmitDaoAttemptList(t)
 			usageDao := coremocks.NewMockGenerationSubmitDaoUsageSum(t)
 			liveDao := coremocks.NewMockGenerationSubmitDaoCountLive(t)
-			settleDao := coremocks.NewMockGenerationSubmitDaoSettle(t)
 			check := coremocks.NewMockGenerationSubmitServiceCheck(t)
 
 			admitted := !testCase.expectRefusal
@@ -463,18 +448,6 @@ func TestGenerationSubmit(t *testing.T) {
 				admitted = admitted && usage.err == nil
 			}
 
-			if testCase.expectRefusal {
-				settleDao.EXPECT().
-					Exec(mock.Anything, mock.MatchedBy(func(request *dao.GenerationSettleRequest) bool {
-						// Settled before any start, naming the cap, so no later check starts it.
-						return request.ID == testGenerationID && request.Attempt == 0 &&
-							request.StartRequestedAt == nil && request.ProviderCallID == nil &&
-							request.Status == dao.GenerationStatusFailed &&
-							strings.HasPrefix(*request.Error, "usage cap reached: ")
-					})).
-					Return(&dao.Generation{}, testCase.settleErr)
-			}
-
 			if testCase.daoMock != nil {
 				submitDao.EXPECT().
 					Exec(mock.Anything, mock.MatchedBy(func(request *dao.GenerationSubmitRequest) bool {
@@ -506,10 +479,11 @@ func TestGenerationSubmit(t *testing.T) {
 			}
 
 			service := core.NewGenerationSubmit(
-				core.GenerationSubmitConfig{MaxAttempts: maxAttempts, Retention: time.Hour, Caps: testCaps},
+				core.GenerationSubmitConfig{MaxAttempts: maxAttempts, Caps: testCaps},
 				testConnectors(t),
+				transactiontest.NewTransactor(),
 				core.GenerationSubmitDaos{
-					Submit: submitDao, Attempts: attemptDao, Usage: usageDao, Live: liveDao, Settle: settleDao,
+					Submit: submitDao, Attempts: attemptDao, Usage: usageDao, Live: liveDao,
 				},
 				check,
 			)
@@ -528,7 +502,6 @@ func TestGenerationSubmit(t *testing.T) {
 			attemptDao.AssertExpectations(t)
 			usageDao.AssertExpectations(t)
 			liveDao.AssertExpectations(t)
-			settleDao.AssertExpectations(t)
 			check.AssertExpectations(t)
 		})
 	}
@@ -596,8 +569,9 @@ func submittedKey(t *testing.T, request *core.GenerationSubmitRequest) []byte {
 		})
 
 	service := core.NewGenerationSubmit(
-		core.GenerationSubmitConfig{MaxAttempts: 1, Retention: time.Hour, Caps: testCaps},
+		core.GenerationSubmitConfig{MaxAttempts: 1, Caps: testCaps},
 		testConnectors(t),
+		transactiontest.NewTransactor(),
 		core.GenerationSubmitDaos{Submit: submitDao},
 		coremocks.NewMockGenerationSubmitServiceCheck(t),
 	)

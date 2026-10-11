@@ -307,7 +307,7 @@ func (service *GenerationCheck) failStart(
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(failStart)")
 	defer span.End()
 
-	if errors.Is(cause, connectors.ErrRetryable) {
+	if errors.Is(cause, connectors.ErrRetryable) && intent.StartRequestedAt.Sub(intent.CreatedAt) < startRetryCeiling {
 		released, err := service.releaseStart(ctx, intent, retryDelay)
 		if err != nil {
 			return nil, otel.ReportError(span, fmt.Errorf("release start: %w", err))
@@ -410,7 +410,8 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 		return generation, nil
 	}
 
-	if call.State == connectors.CallFailed && call.Retryable && generation.Attempt < generation.MaxAttempts {
+	if call.State == connectors.CallFailed && call.Retryable && generation.Attempt < generation.MaxAttempts &&
+		generation.CancelRequestedAt == nil {
 		requeued, requeueErr := service.requeue(ctx, generation, call)
 		if requeueErr != nil {
 			return nil, otel.ReportError(span, requeueErr)
@@ -465,11 +466,7 @@ func (service *GenerationCheck) requeue(
 	return requeued, nil
 }
 
-// settle records the outcome, the provider's answer and what the call consumed, together.
-//
-// One transaction, because a terminal transition without its usage is a billed call nothing counts.
-// The provider call happened before and outside it: a transaction held open across a call would pin
-// a pooled connection for its whole duration.
+// settle records a terminal provider state as the generation's outcome.
 func (service *GenerationCheck) settle(
 	ctx context.Context, generation *dao.Generation, call *connectors.Call,
 ) (*dao.Generation, error) {
@@ -483,6 +480,48 @@ func (service *GenerationCheck) settle(
 	if status == dao.GenerationStatusFailed {
 		service.logFailure(ctx, generation, call.Reason)
 	}
+
+	settled, err := service.commit(ctx, generation, status, message, call)
+	if err != nil {
+		return nil, otel.ReportError(span, err)
+	}
+
+	return settled, nil
+}
+
+// settleFailure records a terminal failure in this service's words, with the provider's answer when
+// it gave one. It runs detached, with its own deadline, so a departing caller cannot leave the
+// generation half-settled.
+func (service *GenerationCheck) settleFailure(
+	ctx context.Context, generation *dao.Generation, message string, response json.RawMessage,
+) (*dao.Generation, error) {
+	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(settleFailure)")
+	defer span.End()
+
+	settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), persistenceTimeout)
+	defer cancel()
+
+	settled, err := service.commit(
+		settleCtx, generation, dao.GenerationStatusFailed, &message, &connectors.Call{Response: response},
+	)
+	if err != nil {
+		return nil, otel.ReportError(span, err)
+	}
+
+	return settled, nil
+}
+
+// commit settles the generation with the provider's answer and what the call consumed, together.
+//
+// One transaction, because a terminal transition without its usage is a billed call nothing counts.
+// The provider call happened before and outside it: a transaction held open across a call would pin
+// a pooled connection for its whole duration.
+func (service *GenerationCheck) commit(
+	ctx context.Context, generation *dao.Generation, status dao.GenerationStatus, message *string,
+	call *connectors.Call,
+) (*dao.Generation, error) {
+	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(commit)")
+	defer span.End()
 
 	var settled *dao.Generation
 
@@ -508,45 +547,6 @@ func (service *GenerationCheck) settle(
 		}
 
 		return service.recordUsage(ctx, generation, call)
-	})
-	if err != nil {
-		return nil, otel.ReportError(span, err)
-	}
-
-	return settled, nil
-}
-
-// settleFailure records a terminal failure in this service's words, with the provider's answer when
-// it gave one. It runs detached, with its own deadline, so a departing caller cannot leave the
-// generation half-settled.
-func (service *GenerationCheck) settleFailure(
-	ctx context.Context, generation *dao.Generation, message string, response json.RawMessage,
-) (*dao.Generation, error) {
-	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(settleFailure)")
-	defer span.End()
-
-	settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), persistenceTimeout)
-	defer cancel()
-
-	var settled *dao.Generation
-
-	err := service.transactor.WithinTx(settleCtx, func(ctx context.Context) error {
-		var err error
-
-		settled, err = service.daos.Settle.Exec(ctx, &dao.GenerationSettleRequest{
-			ID:               generation.ID,
-			Attempt:          generation.Attempt,
-			StartRequestedAt: generation.StartRequestedAt,
-			ProviderCallID:   generation.ProviderCallID,
-			Status:           dao.GenerationStatusFailed,
-			Error:            &message,
-			Retention:        service.config.Retention,
-		})
-		if err != nil {
-			return fmt.Errorf("settle failed generation: %w", err)
-		}
-
-		return service.recordAttempt(ctx, generation, response)
 	})
 	if err != nil {
 		return nil, otel.ReportError(span, err)
@@ -619,8 +619,8 @@ func (service *GenerationCheck) recordAttempt(
 	return nil
 }
 
-// stopOrphan cancels an accepted call whose generation settled first. Best effort: a failure is
-// logged, and the call runs to completion unread.
+// stopOrphan cancels an accepted call whose generation settled first, and records what it consumed.
+// Best effort: a failure is logged, and the call runs to completion unread.
 func (service *GenerationCheck) stopOrphan(
 	ctx context.Context, connector connectors.Async, generation *dao.Generation, callID string,
 ) {
@@ -630,7 +630,12 @@ func (service *GenerationCheck) stopOrphan(
 	cancelCtx, cancel := context.WithTimeout(ctx, persistenceTimeout)
 	defer cancel()
 
-	_, err := connector.Cancel(cancelCtx, callID)
+	call, err := connector.Cancel(cancelCtx, callID)
+	if err == nil {
+		// The orphan ran on the provider's side: what it consumed still counts against the caps.
+		err = service.recordUsage(cancelCtx, generation, call)
+	}
+
 	if err != nil {
 		service.logger.Err(ctx, fmt.Sprintf(
 			"generation %s attempt %d: stop orphaned provider call %s: %v",
@@ -683,6 +688,10 @@ const (
 	startOutcomeUnknownAfter = 30 * time.Second
 	// retryDelay postpones a fresh call after a rate limit or a retryable provider failure.
 	retryDelay = 15 * time.Second
+	// startRetryCeiling bounds how long a generation keeps retrying a start the provider turns away,
+	// measured from its submission. Past it the generation fails, so a request the provider never
+	// accepts cannot hold a concurrency slot forever.
+	startRetryCeiling = 10 * time.Minute
 )
 
 // What a caller reads about a generation that did not succeed. The provider's own account of a

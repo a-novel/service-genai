@@ -107,6 +107,20 @@ windows:
 			expectErr: config.ErrCapWindow,
 		},
 		{
+			// One duration written twice: keeping either would silently drop the other's limit.
+			name: "Error/RepeatedWindow",
+
+			document: `
+windows:
+  1h:
+    inputTokens: 100
+  60m:
+    outputTokens: 10
+`,
+
+			expectErr: config.ErrCapWindow,
+		},
+		{
 			// A misspelled limit must fail rather than leave the window unlimited.
 			name: "Error/UnknownLimit",
 

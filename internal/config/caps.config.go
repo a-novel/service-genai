@@ -14,8 +14,8 @@ const DefaultTier = "default"
 var (
 	// ErrCapScalar reports a tier set to a number other than -1 or 0.
 	ErrCapScalar = errors.New("a cap set to a number must be -1 (unlimited) or 0 (none)")
-	// ErrCapWindow reports a window that is not a positive duration.
-	ErrCapWindow = errors.New("a cap window must be a positive duration, such as 5h or 720h")
+	// ErrCapWindow reports a window that is not a positive duration, or that repeats another.
+	ErrCapWindow = errors.New("a cap window must be a distinct positive duration, such as 5h or 720h")
 )
 
 // Caps is the usage policy every submit answers to.
@@ -152,6 +152,11 @@ func (capOfTier *Cap) UnmarshalYAML(unmarshal func(any) error) error {
 		window, err := time.ParseDuration(name)
 		if err != nil || window <= 0 {
 			return fmt.Errorf("%w: got %q", ErrCapWindow, name)
+		}
+
+		// 1h and 60m are one window: keeping either would silently drop the other's limits.
+		if _, repeated := capOfTier.Windows[window]; repeated {
+			return fmt.Errorf("%w: %q repeats another window", ErrCapWindow, name)
 		}
 
 		capOfTier.Windows[window] = limit
