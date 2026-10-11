@@ -127,7 +127,9 @@ func seedUsage(
 	t.Helper()
 
 	execute(ctx, t, `INSERT INTO generation_usage
-		(generation_id, attempt, owner_id, purpose, provider, input_tokens, output_tokens, created_at)
-		VALUES (?0, 1, ?1, ?2, 'openai', ?3, ?4, clock_timestamp() + make_interval(secs => ?5))`,
+		(generation_id, attempt, owner_id, purpose, provider, model, class, input_tokens, output_tokens,
+			started_at, created_at)
+		VALUES (?0, 1, ?1, ?2, 'openai', 'a-model', 'high', ?3, ?4,
+			clock_timestamp() + make_interval(secs => ?5), clock_timestamp() + make_interval(secs => ?5))`,
 		uuid.Must(uuid.NewV7()), owner, purpose, input, output, offset.Seconds())
 }
