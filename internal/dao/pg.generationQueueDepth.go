@@ -44,7 +44,7 @@ func (dao *PgGenerationQueueDepth) Exec(
 		return nil, otel.ReportError(span, fmt.Errorf("get transaction: %w", err))
 	}
 
-	entity := new(GenerationQueueDepth)
+	entity := &GenerationQueueDepth{}
 
 	err = tx.NewRaw(generationQueueDepthQuery).Scan(ctx, entity)
 	if err != nil {

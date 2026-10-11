@@ -83,7 +83,14 @@ func TestPgGenerationAttemptInsert(t *testing.T) {
 				}
 
 				require.Equal(t, running.Attempt, attempt.Attempt)
-				require.Equal(t, string(testCase.response), string(attempt.Response))
+
+				// Stored as sent: the caller reads the provider's own bytes back.
+				stored, err := dao.NewPgGenerationAttemptList().Exec(ctx, &dao.GenerationAttemptListRequest{
+					GenerationID: generation.ID,
+				})
+				require.NoError(t, err)
+				require.Len(t, stored, 1)
+				require.Equal(t, string(testCase.response), string(stored[0].Response))
 
 				if !testCase.purgeParent {
 					return

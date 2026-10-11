@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/a-novel-kit/golib/otel"
 	"github.com/a-novel-kit/golib/postgres"
@@ -44,8 +43,6 @@ func (dao *PgGenerationUsageSum) Exec(
 ) (*GenerationUsageTotals, error) {
 	ctx, span := otel.Tracer().Start(ctx, "dao.PgGenerationUsageSum")
 	defer span.End()
-
-	span.SetAttributes(attribute.String("usage.window", request.Window.String()))
 
 	tx, err := postgres.GetContext(ctx)
 	if err != nil {

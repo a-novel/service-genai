@@ -46,7 +46,7 @@ func (dao *PgGenerationGet) Exec(ctx context.Context, request *GenerationGetRequ
 		return nil, otel.ReportError(span, fmt.Errorf("get transaction: %w", err))
 	}
 
-	entity := new(Generation)
+	entity := &Generation{}
 
 	err = tx.NewRaw(generationGetQuery, request.ID, request.OwnerID).Scan(ctx, entity)
 	if err != nil {
