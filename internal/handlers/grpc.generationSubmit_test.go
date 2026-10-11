@@ -23,10 +23,12 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 	// Every request field reaches the request key: it is how a resend finds its generation. A new
 	// field must be mapped below and added to the key, or two different requests would share one.
 	keyFields := []string{"owner_id", "purpose", "provider", "payload", "variant"}
+	// user_tier selects the caps a submit answers to, and changes nothing about the call.
+	notKeyed := []string{"user_tier"}
 
 	fields := (&genaiv0.GenerationSubmitRequest{}).ProtoReflect().Descriptor().Fields()
 	for index := range fields.Len() {
-		require.Contains(t, keyFields, string(fields.Get(index).Name()))
+		require.Contains(t, append(keyFields, notKeyed...), string(fields.Get(index).Name()))
 	}
 
 	type serviceMock struct {
@@ -93,6 +95,19 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 			expectMessage: "unknown provider",
 		},
 		{
+			// The message names the cap, so the caller can tell its user which limit was reached.
+			name: "Error/UsageCapReached",
+
+			request: &genaiv0.GenerationSubmitRequest{
+				OwnerId: testOwnerID, Purpose: "studio.generation", UserTier: "premium", Provider: "openai",
+				Payload: payload,
+			},
+			serviceMock: &serviceMock{err: fmt.Errorf("%w: global over 720h0m0s", core.ErrUsageCapReached)},
+
+			expectStatus:  codes.ResourceExhausted,
+			expectMessage: "global over 720h0m0s",
+		},
+		{
 			name: "Error/ModeUnsupported",
 
 			request: &genaiv0.GenerationSubmitRequest{
@@ -126,6 +141,7 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 					Exec(mock.Anything, mock.MatchedBy(func(request *core.GenerationSubmitRequest) bool {
 						return request.OwnerID == uuid.MustParse(testCase.request.GetOwnerId()) &&
 							request.Purpose == testCase.request.GetPurpose() &&
+							request.UserTier == testCase.request.GetUserTier() &&
 							request.Provider == testCase.request.GetProvider() &&
 							string(request.Payload) == string(testCase.request.GetPayload()) &&
 							request.Variant == testCase.request.GetVariant()

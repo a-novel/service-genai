@@ -45,6 +45,7 @@ func (handler *GrpcGenerationSubmit) GenerationSubmit(
 	result, err := handler.service.Exec(ctx, &core.GenerationSubmitRequest{
 		OwnerID:  ownerID,
 		Purpose:  request.GetPurpose(),
+		UserTier: request.GetUserTier(),
 		Provider: request.GetProvider(),
 		Payload:  request.GetPayload(),
 		Variant:  request.GetVariant(),
@@ -53,6 +54,11 @@ func (handler *GrpcGenerationSubmit) GenerationSubmit(
 	// The reason names the caller's own fields and limits, so it tells the caller what to fix.
 	if errors.Is(err, core.ErrInvalidRequest) {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	// The message names the cap, so the caller can tell its user which limit was reached.
+	if errors.Is(err, core.ErrUsageCapReached) {
+		return nil, status.Error(codes.ResourceExhausted, err.Error())
 	}
 
 	if errors.Is(err, lib.ErrModeUnsupported) {
