@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/samber/lo"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/propagation"
 
 	"github.com/a-novel-kit/golib/otel"
 
@@ -151,6 +152,10 @@ func (service *GenerationSubmit) Exec(
 		return nil, otel.ReportError(span, fmt.Errorf("derive request key: %w", err))
 	}
 
+	// A check may run the generation later, outside this request; it links back through this.
+	carrier := propagation.MapCarrier{}
+	propagation.TraceContext{}.Inject(ctx, carrier)
+
 	result, err := service.daos.Submit.Exec(ctx, &dao.GenerationSubmitRequest{
 		// Minted here so the created and replayed cases can be told apart without a second
 		// round-trip. uuidv7 keeps the table's index locality under insert churn.
@@ -161,6 +166,7 @@ func (service *GenerationSubmit) Exec(
 		RequestKey:  key,
 		Payload:     request.Payload,
 		MaxAttempts: service.config.MaxAttempts,
+		Traceparent: lo.EmptyableToPtr(carrier.Get("traceparent")),
 	})
 	if err != nil {
 		return nil, otel.ReportError(span, fmt.Errorf("submit generation: %w", err))

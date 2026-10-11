@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/a-novel/service-genai/internal/dao"
 	"github.com/a-novel/service-genai/internal/lib/connectors"
@@ -35,6 +36,10 @@ var (
 	testGenerationID = uuid.MustParse("01999999-0000-7000-8000-000000000001")
 	// testNow stands in for the database clock as the generation was last read.
 	testNow = time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	// testCaller is the span of the request a test acts for.
+	testCaller = trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: trace.TraceID{1}, SpanID: trace.SpanID{1}, TraceFlags: trace.FlagsSampled,
+	})
 )
 
 // discardLogger drops what checks log: provider details stay server-side, out of assertions.

@@ -40,6 +40,7 @@ func (sub submission) build() *dao.GenerationSubmitRequest {
 		RequestKey:  []byte("the-request-key"),
 		Payload:     json.RawMessage(`{"model": "a-model", "input": "write & read"}`),
 		MaxAttempts: 1,
+		Traceparent: new("00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"),
 	}
 
 	if sub.key != nil {
@@ -179,6 +180,7 @@ func TestGenerationSubmit(t *testing.T) {
 						require.Equal(t, request.Provider, result.Generation.Provider)
 						// Stored as sent: key order and characters reach the provider unchanged.
 						require.Equal(t, string(request.Payload), string(result.Generation.Payload))
+						require.Equal(t, request.Traceparent, result.Generation.Traceparent)
 
 						// The database owns these, and a caller must never supply them.
 						require.False(t, result.Generation.CreatedAt.IsZero())
