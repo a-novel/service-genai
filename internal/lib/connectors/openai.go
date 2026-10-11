@@ -44,11 +44,16 @@ var ErrNotConfigured = errors.New("provider base URL and API key are required")
 type OpenAIConfig struct {
 	BaseURL string
 	APIKey  string
+	// WebhookSecret is the signing secret of the webhook endpoint OpenAI notifies. Empty, the
+	// connector does not read notifications.
+	WebhookSecret string
 }
 
-// OpenAI runs calls on the Responses API. It offers the Async mode.
+// OpenAI runs calls on the Responses API. It offers the Async and Streaming modes, and reads
+// OpenAI's webhook notifications once given their signing secret.
 type OpenAI struct {
-	client openai.Client
+	client        openai.Client
+	webhookSecret string
 }
 
 // NewOpenAI refuses an incomplete configuration, so a bad revision fails at startup instead of on
@@ -65,7 +70,7 @@ func NewOpenAI(config OpenAIConfig, opts ...option.RequestOption) (*OpenAI, erro
 		option.WithBaseURL(config.BaseURL), option.WithAPIKey(config.APIKey), option.WithHTTPClient(healthCheckedClient()),
 	}, opts...)
 
-	return &OpenAI{client: openai.NewClient(opts...)}, nil
+	return &OpenAI{client: openai.NewClient(opts...), webhookSecret: config.WebhookSecret}, nil
 }
 
 // healthCheckedClient pings a connection the provider has gone quiet on, and drops it when the ping
@@ -175,6 +180,14 @@ func (provider *OpenAI) Stream(ctx context.Context, request *StreamRequest) iter
 	}
 }
 
+// endedEvents are the webhook events that report a response ended, whichever way.
+var endedEvents = map[string]bool{
+	"response.completed":  true,
+	"response.failed":     true,
+	"response.cancelled":  true,
+	"response.incomplete": true,
+}
+
 // terminalEvents end an operation's stream. A cancelled operation has none: its stream just ends.
 var terminalEvents = map[string]bool{
 	"response.completed":  true,
@@ -244,6 +257,32 @@ func (provider *OpenAI) Cancel(ctx context.Context, id string) (*Call, error) {
 	}
 
 	return providerCallOf(response), nil
+}
+
+// Notification verifies one of OpenAI's webhook events with the endpoint's signing secret, and names
+// the response it reports ended.
+func (provider *OpenAI) Notification(ctx context.Context, request *NotificationRequest) (*Notification, error) {
+	_, span := otel.Tracer().Start(ctx, "connectors.OpenAI.Notification")
+	defer span.End()
+
+	if provider.webhookSecret == "" {
+		return nil, otel.ReportError(span, fmt.Errorf("%w: no webhook signing secret", ErrModeUnsupported))
+	}
+
+	event, err := provider.client.Webhooks.Unwrap(
+		request.Body, http.Header(request.Header), option.WithWebhookSecret(provider.webhookSecret),
+	)
+	if err != nil {
+		return nil, otel.ReportError(span, fmt.Errorf("%w: %w", ErrNotificationInvalid, err))
+	}
+
+	span.SetAttributes(attribute.String("notification.type", event.Type))
+
+	if !endedEvents[event.Type] {
+		return nil, otel.ReportError(span, fmt.Errorf("%w: %s", ErrNotificationIgnored, event.Type))
+	}
+
+	return &Notification{CallID: event.Data.ID}, nil
 }
 
 // holdStream creates the operation in streaming mode and reads its stream until the provider begins
