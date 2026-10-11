@@ -127,3 +127,14 @@ func TestTierCaps(t *testing.T) {
 	require.Equal(t, config.Cap{Forbidden: true}, caps.For("premium"))
 	require.Equal(t, config.Cap{Forbidden: true}, caps.For(""))
 }
+
+func TestCaps(t *testing.T) {
+	t.Parallel()
+
+	caps := config.Caps{Concurrency: map[string]int{config.DefaultTier: 4, "admin": -1}}
+
+	require.Equal(t, -1, caps.ConcurrencyFor("admin"))
+	// An unrecognized or absent tier runs as many as the default tier.
+	require.Equal(t, 4, caps.ConcurrencyFor("premium"))
+	require.Equal(t, 4, caps.ConcurrencyFor(""))
+}

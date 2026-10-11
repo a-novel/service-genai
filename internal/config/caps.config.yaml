@@ -16,3 +16,7 @@ global: # One user's usage across every purpose, with the same tiers and windows
       inputTokens: 100000000
       outputTokens: 10000000
   admin: -1
+
+concurrency: # Generations one user may have pending or running at once; bounds overshooting the caps.
+  default: 4
+  admin: -1 # -1 lifts the limit.

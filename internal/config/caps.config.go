@@ -22,6 +22,20 @@ type Caps struct {
 	Purposes map[string]TierCaps `json:"purposes" yaml:"purposes"`
 	// Global caps one user's usage across every purpose.
 	Global TierCaps `json:"global" yaml:"global"`
+	// Concurrency maps each user tier to how many generations one user may have pending or running
+	// at once; -1 lifts the limit.
+	Concurrency map[string]int `json:"concurrency" yaml:"concurrency"`
+}
+
+// ConcurrencyFor returns how many live generations a user tier allows, the default tier's when the
+// tier is not declared.
+func (caps Caps) ConcurrencyFor(tier string) int {
+	limit, ok := caps.Concurrency[tier]
+	if !ok {
+		return caps.Concurrency[DefaultTier]
+	}
+
+	return limit
 }
 
 // TierCaps maps each user tier to its cap.
