@@ -34,10 +34,8 @@ func newClient(t *testing.T) servicegenai.Client {
 // submitRequest is a valid submission for the owner.
 func submitRequest(owner string) *servicegenai.GenerationSubmitRequest {
 	return &servicegenai.GenerationSubmitRequest{
-		OwnerId: owner, Purpose: "studio.generation",
-		Tier: servicegenai.TierBalanced, Instructions: "Continue the scene.",
-		Input:        []byte(`{"scene": "a door"}`),
-		OutputSchema: []byte(`{"type": "object", "properties": {}, "required": [], "additionalProperties": false}`),
+		OwnerId: owner, Provider: "openai",
+		Payload: []byte(`{"model": "a-model", "input": "Continue the scene."}`),
 	}
 }
 
@@ -104,10 +102,16 @@ func TestClientGenerationSubmit(t *testing.T) {
 	require.True(t, rerun.GetCreated())
 	require.NotEqual(t, created.GetGeneration().GetId(), rerun.GetGeneration().GetId())
 
-	// A request without a Tier names no model to run.
-	untiered := submitRequest(owner)
-	untiered.Tier = servicegenai.Tier(0)
-	_, err = client.GenerationSubmit(t.Context(), untiered)
+	// A provider no adapter serves cannot run anything.
+	unknown := submitRequest(owner)
+	unknown.Provider = "unknown"
+	_, err = client.GenerationSubmit(t.Context(), unknown)
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+
+	// A provider request is always a JSON object.
+	notAnObject := submitRequest(owner)
+	notAnObject.Payload = []byte(`["model", "a-model"]`)
+	_, err = client.GenerationSubmit(t.Context(), notAnObject)
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
 }
 
@@ -126,6 +130,7 @@ func TestClientGenerationGet(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, generation.GetId(), read.GetGeneration().GetId())
+	require.Equal(t, "openai", read.GetGeneration().GetProvider())
 
 	_, err = client.GenerationGet(t.Context(), &servicegenai.GenerationGetRequest{
 		Id: generation.GetId(), OwnerId: uuid.Must(uuid.NewV7()).String(),
@@ -160,25 +165,4 @@ func TestClientGenerationCancel(t *testing.T) {
 		Id: generation.GetId(), OwnerId: uuid.Must(uuid.NewV7()).String(),
 	})
 	require.Equal(t, codes.NotFound, status.Code(err))
-}
-
-// Every Tier is listed in order, each with ceilings a caller can size its request against.
-func TestClientTierList(t *testing.T) {
-	t.Parallel()
-
-	client := newClient(t)
-
-	response, err := client.TierList(t.Context(), &servicegenai.TierListRequest{})
-	require.NoError(t, err)
-
-	tiers := make([]servicegenai.Tier, 0, len(response.GetTiers()))
-
-	for _, ceilings := range response.GetTiers() {
-		tiers = append(tiers, ceilings.GetTier())
-
-		require.Positive(t, ceilings.GetMaxInputTokens())
-		require.Positive(t, ceilings.GetMaxOutputTokens())
-	}
-
-	require.Equal(t, []servicegenai.Tier{servicegenai.TierFast, servicegenai.TierBalanced, servicegenai.TierDeep}, tiers)
 }
