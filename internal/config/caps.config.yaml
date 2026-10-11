@@ -1,19 +1,18 @@
-# Usage caps. Every purpose a caller submits is declared here, with the caps each user tier answers
-# to; the global caps bound one user's usage across every purpose.
-#
-# A tier maps rolling windows to token limits, or is set to -1 (unlimited) or 0 (no usage). Every cap
-# declares a "default" tier, which applies to a user whose tier is absent or unrecognized. Windows are
-# Go durations, such as 5h or 720h.
-#
-# These are starting values: set them from measured usage and the product's plans.
-purposes:
+# Starting values, to be set from measured usage when narrative-engine adopts the service.
+purposes: # Every purpose a caller may submit; any other is refused.
   studio.generation:
-    default:
-      5h: { inputTokens: 2000000, outputTokens: 200000 }
-      720h: { inputTokens: 50000000, outputTokens: 5000000 }
-    admin: -1
+    default: # Required: users whose tier is absent or unknown.
+      5h: # A rolling window, as a Go duration.
+        inputTokens: 2000000 # A limit left out does not apply.
+        outputTokens: 200000
+      720h:
+        inputTokens: 50000000
+        outputTokens: 5000000
+    admin: -1 # -1 lifts every limit; 0 allows no usage.
 
-global:
+global: # One user's usage across every purpose, with the same tiers and windows.
   default:
-    720h: { inputTokens: 100000000, outputTokens: 10000000 }
+    720h:
+      inputTokens: 100000000
+      outputTokens: 10000000
   admin: -1

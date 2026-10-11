@@ -42,7 +42,13 @@ func TestCap(t *testing.T) {
 		{
 			name: "Success/Windows",
 
-			document: `{ 5h: { inputTokens: 100, outputTokens: 10 }, 720h: { outputTokens: 10 } }`,
+			document: `
+5h:
+  inputTokens: 100
+  outputTokens: 10
+720h:
+  outputTokens: 10
+`,
 
 			expect: config.Cap{Windows: map[time.Duration]config.Limit{
 				5 * time.Hour:   {InputTokens: &inputLimit, OutputTokens: &outputLimit},
@@ -60,14 +66,20 @@ func TestCap(t *testing.T) {
 			// Go durations stop at hours: a day is 24h.
 			name: "Error/NotADuration",
 
-			document: `{ 1d: { inputTokens: 100 } }`,
+			document: `
+1d:
+  inputTokens: 100
+`,
 
 			expectErr: config.ErrCapWindow,
 		},
 		{
 			name: "Error/NegativeWindow",
 
-			document: `{ -5h: { inputTokens: 100 } }`,
+			document: `
+-5h:
+  inputTokens: 100
+`,
 
 			expectErr: config.ErrCapWindow,
 		},
@@ -75,7 +87,10 @@ func TestCap(t *testing.T) {
 			// A misspelled limit must fail rather than leave the window unlimited.
 			name: "Error/UnknownLimit",
 
-			document: `{ 5h: { inputToken: 100 } }`,
+			document: `
+5h:
+  inputToken: 100
+`,
 
 			expectFailure: true,
 		},

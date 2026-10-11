@@ -6,8 +6,7 @@ import (
 	"time"
 )
 
-// DefaultTier is the user tier every cap must declare. It applies to a user whose tier is absent or
-// unrecognized.
+// DefaultTier is the user tier every cap must declare, applied when a user's tier is absent or unknown.
 const DefaultTier = "default"
 
 var (
@@ -17,11 +16,12 @@ var (
 	ErrCapWindow = errors.New("a cap window must be a positive duration, such as 5h or 720h")
 )
 
-// Caps is the usage policy: the caps of every declared purpose, and the global caps one user's
-// usage across every purpose answers to. A purpose missing from it cannot be submitted.
+// Caps is the usage policy every submit answers to.
 type Caps struct {
+	// Purposes holds the caps of every purpose a caller may submit; any other is refused.
 	Purposes map[string]TierCaps `json:"purposes" yaml:"purposes"`
-	Global   TierCaps            `json:"global"   yaml:"global"`
+	// Global caps one user's usage across every purpose.
+	Global TierCaps `json:"global" yaml:"global"`
 }
 
 // TierCaps maps each user tier to its cap.
@@ -37,19 +37,20 @@ func (caps TierCaps) For(tier string) Cap {
 	return capOfTier
 }
 
-// Cap is one user tier's limits: rolling windows mapped to token limits. In the file, the number -1
-// lifts every limit and 0 allows no usage.
+// Cap is one user tier's limits.
 type Cap struct {
+	// Unlimited lifts every limit, written -1 in the file.
 	Unlimited bool
+	// Forbidden allows no usage, written 0 in the file.
 	Forbidden bool
 	// Windows maps a rolling duration to the usage it allows.
 	Windows map[time.Duration]Limit
 }
 
-// Limit is the usage one window allows. A limit left out does not apply.
+// Limit is the usage one window allows.
 type Limit struct {
-	InputTokens  *int64 `json:"inputTokens"  yaml:"inputTokens"`
-	OutputTokens *int64 `json:"outputTokens" yaml:"outputTokens"`
+	InputTokens  *int64 `json:"inputTokens"  yaml:"inputTokens"`  // Nil when the window does not limit input.
+	OutputTokens *int64 `json:"outputTokens" yaml:"outputTokens"` // Nil when the window does not limit output.
 }
 
 // UnmarshalYAML reads a cap written as -1, as 0, or as a map from durations to limits.
