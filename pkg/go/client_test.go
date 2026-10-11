@@ -108,6 +108,12 @@ func TestClientGenerationSubmit(t *testing.T) {
 	_, err = client.GenerationSubmit(t.Context(), unknown)
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
 
+	// A purpose the caps do not declare cannot be spent on.
+	undeclared := submitRequest(owner)
+	undeclared.Purpose = "studio.undeclared"
+	_, err = client.GenerationSubmit(t.Context(), undeclared)
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+
 	// A provider request is always a JSON object.
 	notAnObject := submitRequest(owner)
 	notAnObject.Payload = []byte(`["model", "a-model"]`)
