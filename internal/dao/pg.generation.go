@@ -57,6 +57,8 @@ type Generation struct {
 	CancelRequestedAt *time.Time `bun:"cancel_requested_at,nullzero"`
 	// CheckedAt is when a check last looked at the generation, by the database clock.
 	CheckedAt time.Time `bun:"checked_at"`
+	// Traceparent is the W3C trace context of the request that submitted the generation.
+	Traceparent *string `bun:"traceparent,nullzero"`
 
 	CreatedAt time.Time  `bun:"created_at"`
 	UpdatedAt time.Time  `bun:"updated_at"`

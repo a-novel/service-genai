@@ -33,6 +33,8 @@ type GenerationSubmitRequest struct {
 	// Payload is the provider's own request, stored as sent.
 	Payload     json.RawMessage
 	MaxAttempts int16
+	// Traceparent is the W3C trace context of the submitting request, if it runs in a trace.
+	Traceparent *string
 }
 
 // GenerationSubmitResult reports the stored generation and how it got there.
@@ -79,6 +81,7 @@ func (dao *GenerationSubmit) Exec(
 		request.RequestKey,
 		request.Payload,
 		request.MaxAttempts,
+		request.Traceparent,
 	).Scan(ctx, entity)
 	if err != nil {
 		return nil, otel.ReportError(span, fmt.Errorf("execute query: %w", err))
