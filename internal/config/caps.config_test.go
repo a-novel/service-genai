@@ -13,7 +13,7 @@ import (
 func TestCap(t *testing.T) {
 	t.Parallel()
 
-	inputLimit, outputLimit := int64(100), int64(10)
+	inputLimit, outputLimit, concurrency := int64(100), int64(10), 2
 
 	testCases := []struct {
 		name string
@@ -43,17 +43,38 @@ func TestCap(t *testing.T) {
 			name: "Success/Windows",
 
 			document: `
-5h:
-  inputTokens: 100
-  outputTokens: 10
-720h:
-  outputTokens: 10
+concurrency: 2
+windows:
+  5h:
+    inputTokens: 100
+    outputTokens: 10
+  720h:
+    outputTokens: 10
 `,
 
-			expect: config.Cap{Windows: map[time.Duration]config.Limit{
+			expect: config.Cap{Concurrency: &concurrency, Windows: map[time.Duration]config.Limit{
 				5 * time.Hour:   {InputTokens: &inputLimit, OutputTokens: &outputLimit},
 				720 * time.Hour: {OutputTokens: &outputLimit},
 			}},
+		},
+		{
+			// A cap may bound only how many generations run at once.
+			name: "Success/ConcurrencyOnly",
+
+			document: `concurrency: 2`,
+
+			expect: config.Cap{Concurrency: &concurrency, Windows: map[time.Duration]config.Limit{}},
+		},
+		{
+			// Windows written straight under the tier, as before, are unknown keys rather than limits.
+			name: "Error/WindowsNotNested",
+
+			document: `
+5h:
+  inputTokens: 100
+`,
+
+			expectFailure: true,
 		},
 		{
 			name: "Error/OtherNumber",
@@ -67,8 +88,9 @@ func TestCap(t *testing.T) {
 			name: "Error/NotADuration",
 
 			document: `
-1d:
-  inputTokens: 100
+windows:
+  1d:
+    inputTokens: 100
 `,
 
 			expectErr: config.ErrCapWindow,
@@ -77,8 +99,9 @@ func TestCap(t *testing.T) {
 			name: "Error/NegativeWindow",
 
 			document: `
--5h:
-  inputTokens: 100
+windows:
+  -5h:
+    inputTokens: 100
 `,
 
 			expectErr: config.ErrCapWindow,
@@ -88,8 +111,9 @@ func TestCap(t *testing.T) {
 			name: "Error/UnknownLimit",
 
 			document: `
-5h:
-  inputToken: 100
+windows:
+  5h:
+    inputToken: 100
 `,
 
 			expectFailure: true,
@@ -126,15 +150,4 @@ func TestTierCaps(t *testing.T) {
 	// An unrecognized or absent tier answers to the default caps.
 	require.Equal(t, config.Cap{Forbidden: true}, caps.For("premium"))
 	require.Equal(t, config.Cap{Forbidden: true}, caps.For(""))
-}
-
-func TestCaps(t *testing.T) {
-	t.Parallel()
-
-	caps := config.Caps{Concurrency: map[string]int{config.DefaultTier: 4, "admin": -1}}
-
-	require.Equal(t, -1, caps.ConcurrencyFor("admin"))
-	// An unrecognized or absent tier runs as many as the default tier.
-	require.Equal(t, 4, caps.ConcurrencyFor("premium"))
-	require.Equal(t, 4, caps.ConcurrencyFor(""))
 }

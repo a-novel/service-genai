@@ -56,21 +56,42 @@ func testConnectors(t *testing.T) connectors.Registry {
 	}
 }
 
-// testCaps declare the test purpose, capped over 5h for the default tier, and a global cap over 720h.
+// testCaps declare the test purpose, limited to 2 live generations and capped over 5h for the default
+// tier, and a global limit of 3 live generations and cap over 720h.
 var testCaps = config.Caps{
 	Purposes: map[string]config.TierCaps{
 		testPurpose: {
-			config.DefaultTier: {Windows: map[time.Duration]config.Limit{5 * time.Hour: {InputTokens: new(int64(1000))}}},
-			"unlimited":        {Unlimited: true},
-			"forbidden":        {Forbidden: true},
+			config.DefaultTier: {
+				Concurrency: new(2),
+				Windows:     map[time.Duration]config.Limit{5 * time.Hour: {InputTokens: new(int64(1000))}},
+			},
+			"unthrottled": {
+				Concurrency: new(-1),
+				Windows:     map[time.Duration]config.Limit{5 * time.Hour: {InputTokens: new(int64(1000))}},
+			},
+			"unlimited": {Unlimited: true},
+			"forbidden": {Forbidden: true},
 		},
 		"studio.analysis": {config.DefaultTier: {Unlimited: true}},
 	},
 	Global: config.TierCaps{
-		config.DefaultTier: {Windows: map[time.Duration]config.Limit{720 * time.Hour: {OutputTokens: new(int64(500))}}},
+		config.DefaultTier: {
+			Concurrency: new(3),
+			Windows:     map[time.Duration]config.Limit{720 * time.Hour: {OutputTokens: new(int64(500))}},
+		},
 	},
-	Concurrency: map[string]int{config.DefaultTier: 2, "unlimited": -1},
 }
+
+// liveMock is one count of live generations admission reads, and what it finds. The count includes
+// the generation the submit just created.
+type liveMock struct {
+	purpose bool
+	count   int64
+	err     error
+}
+
+// alone is the admission of a default-tier user whose only live generation is the one just created.
+var alone = []liveMock{{purpose: true, count: 1}, {count: 1}}
 
 // usageMock is one window sum admission reads, and what it finds.
 type usageMock struct {
@@ -99,10 +120,9 @@ func TestGenerationSubmit(t *testing.T) {
 		request *core.GenerationSubmitRequest
 
 		daoMock *daoMock
-		// live is how many generations the user has pending or running, the created one included:
-		// one when left zero. An unlimited tier is never counted.
-		live    int64
-		liveErr error
+		// live lists the counts of live generations admission reads. Only a created generation is
+		// admitted.
+		live []liveMock
 		// usage lists the window sums admission reads, in order. Only a created generation is admitted.
 		usage []usageMock
 		// expectRefusal settles the created generation as failed for a reached cap.
@@ -120,6 +140,7 @@ func TestGenerationSubmit(t *testing.T) {
 
 			request: submitRequest(nil),
 			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration(), Created: true}},
+			live:    alone,
 			usage:   underCaps,
 
 			expectCreated: true,
@@ -139,6 +160,7 @@ func TestGenerationSubmit(t *testing.T) {
 				request.Payload = json.RawMessage(`{"input": "Tom & Jerry <3>"}`)
 			}),
 			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration(), Created: true}},
+			live:    alone,
 			usage:   underCaps,
 
 			expectCreated: true,
@@ -148,38 +170,64 @@ func TestGenerationSubmit(t *testing.T) {
 
 			request: submitRequest(payloadOfSize(core.PayloadSizeCeiling)),
 			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration(), Created: true}},
+			live:    alone,
 			usage:   underCaps,
 
 			expectCreated: true,
 		},
 		{
-			// The purpose cap is lifted for this tier; the global one still applies.
+			// The purpose's limits are lifted for this tier; the global ones still apply.
 			name: "Success/UnlimitedTier",
 
 			request: submitRequest(func(request *core.GenerationSubmitRequest) { request.UserTier = "unlimited" }),
 			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration(), Created: true}},
+			live:    []liveMock{{count: 1}},
 			usage:   []usageMock{{window: 720 * time.Hour}},
 
 			expectCreated: true,
 		},
 		{
-			// The created generation is the second one running: exactly the limit.
+			// -1 lifts the purpose's concurrency alone: its windows and the global limits still apply.
+			name: "Success/ConcurrencyLifted",
+
+			request: submitRequest(func(request *core.GenerationSubmitRequest) { request.UserTier = "unthrottled" }),
+			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration(), Created: true}},
+			live:    []liveMock{{count: 1}},
+			usage:   underCaps,
+
+			expectCreated: true,
+		},
+		{
+			// The created generation is the second of its purpose and the third overall: exactly both
+			// limits.
 			name: "Success/AtConcurrencyLimit",
 
 			request: submitRequest(nil),
 			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration(), Created: true}},
-			live:    2,
+			live:    []liveMock{{purpose: true, count: 2}, {count: 3}},
 			usage:   underCaps,
 
 			expectCreated: true,
 		},
 		{
 			// Refused before any usage is read.
-			name: "Error/ConcurrencyReached",
+			name: "Error/PurposeConcurrencyReached",
 
 			request:       submitRequest(nil),
 			daoMock:       &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration(), Created: true}},
-			live:          3,
+			live:          []liveMock{{purpose: true, count: 3}},
+			expectRefusal: true,
+
+			expectErr: core.ErrUsageCapReached,
+		},
+		{
+			// Room left in the purpose, but not across every purpose.
+			name: "Error/GlobalConcurrencyReached",
+
+			request:       submitRequest(nil),
+			daoMock:       &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration(), Created: true}},
+			live:          []liveMock{{purpose: true, count: 1}, {count: 4}},
+			usage:         []usageMock{{purpose: true, window: 5 * time.Hour}},
 			expectRefusal: true,
 
 			expectErr: core.ErrUsageCapReached,
@@ -189,7 +237,7 @@ func TestGenerationSubmit(t *testing.T) {
 
 			request: submitRequest(nil),
 			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration(), Created: true}},
-			liveErr: errFoo,
+			live:    []liveMock{{purpose: true, err: errFoo}},
 
 			expectErr: errFoo,
 		},
@@ -199,6 +247,7 @@ func TestGenerationSubmit(t *testing.T) {
 
 			request: submitRequest(func(request *core.GenerationSubmitRequest) { request.UserTier = "premium" }),
 			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration(), Created: true}},
+			live:    alone,
 			usage:   underCaps,
 
 			expectCreated: true,
@@ -208,6 +257,7 @@ func TestGenerationSubmit(t *testing.T) {
 
 			request: submitRequest(nil),
 			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration(), Created: true}},
+			live:    []liveMock{{purpose: true, count: 1}},
 			usage: []usageMock{
 				{purpose: true, window: 5 * time.Hour, used: dao.GenerationUsageTotals{InputTokens: 1000}},
 			},
@@ -220,6 +270,7 @@ func TestGenerationSubmit(t *testing.T) {
 
 			request: submitRequest(nil),
 			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration(), Created: true}},
+			live:    alone,
 			usage: []usageMock{
 				{purpose: true, window: 5 * time.Hour, used: dao.GenerationUsageTotals{InputTokens: 999}},
 				{window: 720 * time.Hour, used: dao.GenerationUsageTotals{OutputTokens: 500}},
@@ -229,7 +280,7 @@ func TestGenerationSubmit(t *testing.T) {
 			expectErr: core.ErrUsageCapReached,
 		},
 		{
-			// Refused before any usage is read.
+			// Refused before anything is counted.
 			name: "Error/ForbiddenTier",
 
 			request:       submitRequest(func(request *core.GenerationSubmitRequest) { request.UserTier = "forbidden" }),
@@ -250,6 +301,7 @@ func TestGenerationSubmit(t *testing.T) {
 
 			request: submitRequest(nil),
 			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration(), Created: true}},
+			live:    []liveMock{{purpose: true, count: 1}},
 			usage:   []usageMock{{purpose: true, window: 5 * time.Hour, err: errFoo}},
 
 			expectErr: errFoo,
@@ -261,6 +313,7 @@ func TestGenerationSubmit(t *testing.T) {
 
 			request: submitRequest(nil),
 			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration(), Created: true}},
+			live:    []liveMock{{purpose: true, count: 1}},
 			usage: []usageMock{
 				{purpose: true, window: 5 * time.Hour, used: dao.GenerationUsageTotals{InputTokens: 1000}},
 			},
@@ -374,6 +427,7 @@ func TestGenerationSubmit(t *testing.T) {
 
 			request:  submitRequest(nil),
 			daoMock:  &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration(), Created: true}},
+			live:     alone,
 			usage:    underCaps,
 			checkErr: errFoo,
 
@@ -409,24 +463,32 @@ func TestGenerationSubmit(t *testing.T) {
 			settleDao := coremocks.NewMockGenerationSubmitSettleDao(t)
 			check := coremocks.NewMockGenerationSubmitServiceCheck(t)
 
-			admitted := !testCase.expectRefusal && testCase.liveErr == nil
+			admitted := !testCase.expectRefusal
 			created := testCase.daoMock != nil && testCase.daoMock.resp != nil && testCase.daoMock.resp.Created
 
-			if created && testCase.request.UserTier != "unlimited" {
+			// A purpose scope reads the request's purpose; the global one reads every purpose.
+			scope := func(purpose bool) *string {
+				if purpose {
+					return &testCase.request.Purpose
+				}
+
+				return nil
+			}
+
+			for _, live := range testCase.live {
 				liveDao.EXPECT().
-					Exec(mock.Anything, &dao.GenerationCountLiveRequest{OwnerID: testCase.request.OwnerID}).
-					Return(&dao.GenerationLiveCount{Count: max(testCase.live, 1)}, testCase.liveErr)
+					Exec(mock.Anything, &dao.GenerationCountLiveRequest{
+						OwnerID: testCase.request.OwnerID, Purpose: scope(live.purpose),
+					}).
+					Return(&dao.GenerationLiveCount{Count: live.count}, live.err)
+
+				admitted = admitted && live.err == nil
 			}
 
 			for _, usage := range testCase.usage {
-				var purpose *string
-				if usage.purpose {
-					purpose = &testCase.request.Purpose
-				}
-
 				usageDao.EXPECT().
 					Exec(mock.Anything, &dao.GenerationUsageSumRequest{
-						OwnerID: testCase.request.OwnerID, Purpose: purpose, Window: usage.window,
+						OwnerID: testCase.request.OwnerID, Purpose: scope(usage.purpose), Window: usage.window,
 					}).
 					Return(&usage.used, usage.err)
 
@@ -585,8 +647,8 @@ func TestNewGenerationSubmit(t *testing.T) {
 	t.Parallel()
 
 	someLimit := map[time.Duration]config.Limit{time.Hour: {InputTokens: new(int64(1))}}
-	someConcurrency := map[string]int{config.DefaultTier: 1}
 	someTiers := map[string]config.TierCaps{testPurpose: {config.DefaultTier: {Windows: someLimit}}}
+	someGlobal := config.TierCaps{config.DefaultTier: {Concurrency: new(1), Windows: someLimit}}
 
 	testCases := []struct {
 		name string
@@ -602,12 +664,25 @@ func TestNewGenerationSubmit(t *testing.T) {
 			caps: config.CapsDefault,
 		},
 		{
+			name: "Success/ConcurrencyOnly",
+
+			caps: config.Caps{
+				Purposes: map[string]config.TierCaps{testPurpose: {config.DefaultTier: {Concurrency: new(1)}}},
+				Global:   config.TierCaps{config.DefaultTier: {Concurrency: new(-1)}},
+			},
+		},
+		{
+			// Lifting every global limit for an unknown tier is a deliberate policy, not an omission.
+			name: "Success/GlobalDefaultUnlimited",
+
+			caps: config.Caps{Purposes: someTiers, Global: config.TierCaps{config.DefaultTier: {Unlimited: true}}},
+		},
+		{
 			name: "Error/PurposeWithoutDefault",
 
 			caps: config.Caps{
-				Purposes:    map[string]config.TierCaps{testPurpose: {"admin": {Unlimited: true}}},
-				Global:      config.TierCaps{config.DefaultTier: {Windows: someLimit}},
-				Concurrency: someConcurrency,
+				Purposes: map[string]config.TierCaps{testPurpose: {"admin": {Unlimited: true}}},
+				Global:   someGlobal,
 			},
 
 			expectErr: core.ErrInvalidRequest,
@@ -615,21 +690,25 @@ func TestNewGenerationSubmit(t *testing.T) {
 		{
 			name: "Error/GlobalWithoutDefault",
 
-			caps: config.Caps{
-				Purposes:    map[string]config.TierCaps{testPurpose: {config.DefaultTier: {Windows: someLimit}}},
-				Concurrency: someConcurrency,
-			},
+			caps: config.Caps{Purposes: someTiers},
+
+			expectErr: core.ErrInvalidRequest,
+		},
+		{
+			// An unknown tier would run as many generations at once as it likes.
+			name: "Error/GlobalDefaultWithoutConcurrency",
+
+			caps: config.Caps{Purposes: someTiers, Global: config.TierCaps{config.DefaultTier: {Windows: someLimit}}},
 
 			expectErr: core.ErrInvalidRequest,
 		},
 		{
 			// An empty map is neither unlimited nor forbidden: a typo, not a policy.
-			name: "Error/NoWindow",
+			name: "Error/NeitherWindowNorConcurrency",
 
 			caps: config.Caps{
-				Purposes:    map[string]config.TierCaps{testPurpose: {config.DefaultTier: {}}},
-				Global:      config.TierCaps{config.DefaultTier: {Windows: someLimit}},
-				Concurrency: someConcurrency,
+				Purposes: map[string]config.TierCaps{testPurpose: {config.DefaultTier: {}}},
+				Global:   someGlobal,
 			},
 
 			expectErr: core.ErrInvalidRequest,
@@ -641,8 +720,7 @@ func TestNewGenerationSubmit(t *testing.T) {
 				Purposes: map[string]config.TierCaps{testPurpose: {config.DefaultTier: {
 					Windows: map[time.Duration]config.Limit{time.Hour: {}},
 				}}},
-				Global:      config.TierCaps{config.DefaultTier: {Windows: someLimit}},
-				Concurrency: someConcurrency,
+				Global: someGlobal,
 			},
 
 			expectErr: core.ErrInvalidRequest,
@@ -654,19 +732,7 @@ func TestNewGenerationSubmit(t *testing.T) {
 				Purposes: map[string]config.TierCaps{testPurpose: {config.DefaultTier: {
 					Windows: map[time.Duration]config.Limit{time.Hour: {OutputTokens: new(int64(-1))}},
 				}}},
-				Global:      config.TierCaps{config.DefaultTier: {Windows: someLimit}},
-				Concurrency: someConcurrency,
-			},
-
-			expectErr: core.ErrInvalidRequest,
-		},
-		{
-			name: "Error/ConcurrencyWithoutDefault",
-
-			caps: config.Caps{
-				Purposes:    someTiers,
-				Global:      config.TierCaps{config.DefaultTier: {Windows: someLimit}},
-				Concurrency: map[string]int{"admin": -1},
+				Global: someGlobal,
 			},
 
 			expectErr: core.ErrInvalidRequest,
@@ -675,9 +741,8 @@ func TestNewGenerationSubmit(t *testing.T) {
 			name: "Error/ConcurrencyBelowUnlimited",
 
 			caps: config.Caps{
-				Purposes:    someTiers,
-				Global:      config.TierCaps{config.DefaultTier: {Windows: someLimit}},
-				Concurrency: map[string]int{config.DefaultTier: -2},
+				Purposes: map[string]config.TierCaps{testPurpose: {config.DefaultTier: {Concurrency: new(-2)}}},
+				Global:   someGlobal,
 			},
 
 			expectErr: core.ErrInvalidRequest,
