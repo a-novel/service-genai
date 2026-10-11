@@ -38,27 +38,12 @@ type Sweep struct {
 	BatchSize int `json:"batchSize" yaml:"batchSize"`
 }
 
-// TierBinding is what a Tier runs on the provider.
-type TierBinding struct {
-	Model           string `json:"model"           yaml:"model"`
-	ReasoningEffort string `json:"reasoningEffort" yaml:"reasoningEffort"`
-	MaxInputTokens  int64  `json:"maxInputTokens"  yaml:"maxInputTokens"`
-	MaxOutputTokens int64  `json:"maxOutputTokens" yaml:"maxOutputTokens"`
-}
-
-// Provider holds the generative AI provider's settings. Switching provider changes these and nothing
-// else.
-type Provider struct {
-	// Name identifies the provider on usage records.
-	Name string `json:"name" yaml:"name"`
-	// Epoch orders provider configurations; work started under a lower one restarts on this one.
-	Epoch int32 `json:"epoch" yaml:"epoch"`
-	// APIKey authenticates against the provider. The only credential this service holds.
+// OpenAI holds how the OpenAI adapter reaches the Responses API.
+type OpenAI struct {
+	// APIKey authenticates against OpenAI. The only credential this service holds.
 	APIKey string `json:"-" yaml:"-"`
 	// BaseURL is the Responses API endpoint.
 	BaseURL string `json:"baseURL" yaml:"baseURL"`
-	// Tiers binds each Tier, by name, to what it runs.
-	Tiers map[string]TierBinding `json:"tiers" yaml:"tiers"`
 }
 
 // App is the complete configuration consumed by the service at startup, grouping
@@ -67,8 +52,8 @@ type App struct {
 	App  Main `json:"app"  yaml:"app"`
 	Grpc Grpc `json:"grpc" yaml:"grpc"`
 
-	Sweep    Sweep    `json:"sweep"    yaml:"sweep"`
-	Provider Provider `json:"provider" yaml:"provider"`
+	Sweep  Sweep  `json:"sweep"  yaml:"sweep"`
+	OpenAI OpenAI `json:"openAi" yaml:"openAi"`
 	// CheckInterval is how long a check stays fresh: a polled generation reaches the provider at most
 	// once per interval.
 	CheckInterval time.Duration `json:"checkInterval" yaml:"checkInterval"`
