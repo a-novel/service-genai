@@ -119,3 +119,15 @@ func settleGeneration(ctx context.Context, t *testing.T, generation *dao.Generat
 
 	return settled
 }
+
+// seedUsage records one answered attempt's usage for the owner, recorded the given offset from now.
+func seedUsage(
+	ctx context.Context, t *testing.T, owner uuid.UUID, purpose string, input, output int64, offset time.Duration,
+) {
+	t.Helper()
+
+	execute(ctx, t, `INSERT INTO generation_usage
+		(generation_id, attempt, owner_id, purpose, provider, input_tokens, output_tokens, created_at)
+		VALUES (?0, 1, ?1, ?2, 'openai', ?3, ?4, clock_timestamp() + make_interval(secs => ?5))`,
+		uuid.Must(uuid.NewV7()), owner, purpose, input, output, offset.Seconds())
+}
