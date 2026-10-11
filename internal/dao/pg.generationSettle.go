@@ -17,7 +17,7 @@ import (
 //go:embed pg.generationSettle.sql
 var generationSettleQuery string
 
-// GenerationSettleRequest is the input to [GenerationSettle.Exec].
+// GenerationSettleRequest is the input to [PgGenerationSettle.Exec].
 type GenerationSettleRequest struct {
 	ID uuid.UUID
 	// Attempt, StartRequestedAt and ProviderCallID are what the caller observed. A generation that
@@ -33,18 +33,19 @@ type GenerationSettleRequest struct {
 	Retention time.Duration
 }
 
-// GenerationSettle records a terminal outcome.
+// PgGenerationSettle records a terminal outcome.
 //
 // It does not record the attempt's answer. A transition without it loses what the attempt consumed,
-// so the caller wraps both in one transaction. See [GenerationAttemptInsert].
-type GenerationSettle struct{}
+// so the caller wraps both in one transaction. See [PgGenerationAttemptInsert].
+type PgGenerationSettle struct{}
 
-func NewGenerationSettle() *GenerationSettle {
-	return &GenerationSettle{}
+// NewPgGenerationSettle returns a new PgGenerationSettle dao.
+func NewPgGenerationSettle() *PgGenerationSettle {
+	return &PgGenerationSettle{}
 }
 
-func (dao *GenerationSettle) Exec(ctx context.Context, request *GenerationSettleRequest) (*Generation, error) {
-	ctx, span := otel.Tracer().Start(ctx, "dao.GenerationSettle")
+func (dao *PgGenerationSettle) Exec(ctx context.Context, request *GenerationSettleRequest) (*Generation, error) {
+	ctx, span := otel.Tracer().Start(ctx, "dao.PgGenerationSettle")
 	defer span.End()
 
 	tx, err := postgres.GetContext(ctx)

@@ -27,6 +27,7 @@ type GrpcGenerationSubmit struct {
 	service GrpcGenerationSubmitService
 }
 
+// NewGrpcGenerationSubmit returns a new GrpcGenerationSubmit handler backed by the given service.
 func NewGrpcGenerationSubmit(service GrpcGenerationSubmitService) *GrpcGenerationSubmit {
 	return &GrpcGenerationSubmit{service: service}
 }

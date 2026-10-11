@@ -31,17 +31,18 @@ type GenerationUsageTotals struct {
 	OutputTokens int64 `bun:"output_tokens"`
 }
 
-// GenerationUsageSum adds up an owner's Usage Records over a rolling window.
-type GenerationUsageSum struct{}
+// PgGenerationUsageSum adds up an owner's Usage Records over a rolling window.
+type PgGenerationUsageSum struct{}
 
-func NewGenerationUsageSum() *GenerationUsageSum {
-	return &GenerationUsageSum{}
+// NewPgGenerationUsageSum returns a new PgGenerationUsageSum dao.
+func NewPgGenerationUsageSum() *PgGenerationUsageSum {
+	return &PgGenerationUsageSum{}
 }
 
-func (dao *GenerationUsageSum) Exec(
+func (dao *PgGenerationUsageSum) Exec(
 	ctx context.Context, request *GenerationUsageSumRequest,
 ) (*GenerationUsageTotals, error) {
-	ctx, span := otel.Tracer().Start(ctx, "dao.GenerationUsageSum")
+	ctx, span := otel.Tracer().Start(ctx, "dao.PgGenerationUsageSum")
 	defer span.End()
 
 	span.SetAttributes(attribute.String("usage.window", request.Window.String()))

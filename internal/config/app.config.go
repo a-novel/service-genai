@@ -1,15 +1,22 @@
-// Package config assembles the runtime configuration for the service: the typed
-// structs the application reads, and the default preset that populates them from
-// the environment.
 package config
 
 import (
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/a-novel-kit/golib/logging"
 	"github.com/a-novel-kit/golib/otel"
 	"github.com/a-novel-kit/golib/postgres"
 )
+
+// ErrInvalidConfig reports a configuration the service cannot run with.
+var ErrInvalidConfig = errors.New("invalid configuration")
+
+// SweepIntervalCeiling bounds how long an unpolled generation goes unchecked. A finished background
+// response stays retrievable for only a limited time when it is not stored, so the sweep must reach it
+// well inside that window.
+const SweepIntervalCeiling = 5 * time.Minute
 
 // Main holds the top-level application settings.
 type Main struct {
@@ -38,6 +45,17 @@ type Sweep struct {
 	BatchSize int `json:"batchSize" yaml:"batchSize"`
 }
 
+// Generations holds how generations are run and kept.
+type Generations struct {
+	// CheckInterval is how long a check stays fresh: a polled generation reaches the provider at most
+	// once per interval.
+	CheckInterval time.Duration `json:"checkInterval" yaml:"checkInterval"`
+	// MaxAttempts caps the provider calls a generation gets when a call fails retryably.
+	MaxAttempts int16 `json:"maxAttempts" yaml:"maxAttempts"`
+	// Retention is how long a settled generation's user content survives before the purge.
+	Retention time.Duration `json:"retention" yaml:"retention"`
+}
+
 // OpenAI holds how the OpenAI connector reaches the Responses API.
 type OpenAI struct {
 	// APIKey authenticates against OpenAI. The only credential this service holds.
@@ -46,28 +64,49 @@ type OpenAI struct {
 	BaseURL string `json:"baseURL" yaml:"baseURL"`
 }
 
-// App is the complete configuration consumed by the service at startup, grouping
-// the server, observability, logging, and database settings.
+// App is the complete configuration consumed by the service at startup.
 type App struct {
-	App  Main `json:"app"  yaml:"app"`
+	// App holds the core application identity.
+	App Main `json:"app" yaml:"app"`
+	// Grpc holds the gRPC server configuration.
 	Grpc Grpc `json:"grpc" yaml:"grpc"`
-
-	Sweep  Sweep  `json:"sweep"  yaml:"sweep"`
+	// Generations holds how generations are run and kept.
+	Generations Generations `json:"generations" yaml:"generations"`
+	// Sweep configures the loop that checks generations nobody polled.
+	Sweep Sweep `json:"sweep" yaml:"sweep"`
+	// OpenAI configures the OpenAI connector.
 	OpenAI OpenAI `json:"openAi" yaml:"openAi"`
-	// CheckInterval is how long a check stays fresh: a polled generation reaches the provider at most
-	// once per interval.
-	CheckInterval time.Duration `json:"checkInterval" yaml:"checkInterval"`
-	// MaxAttempts caps the provider calls a generation gets when a call fails retryably.
-	MaxAttempts int16 `json:"maxAttempts" yaml:"maxAttempts"`
-	// Retention is how long a settled generation's user content survives before the purge.
-	Retention time.Duration `json:"retention" yaml:"retention"`
 	// Caps is the usage policy every submit answers to.
 	Caps Caps `json:"caps" yaml:"caps"`
-
-	Otel   otel.Config       `json:"otel"   yaml:"otel"`
-	Logger logging.RPCConfig `json:"logger" yaml:"logger"`
-	// Log is what checks and the sweep write to. The gRPC Logger above is an interceptor chain and
-	// has no plain logging surface, which is what worker.Poll takes.
-	Log      logging.Log     `json:"log"      yaml:"log"`
+	// Otel configures the OpenTelemetry exporter for traces and metrics.
+	Otel otel.Config `json:"otel" yaml:"otel"`
+	// Logger is the base application logger, which checks and the sweep write to.
+	Logger logging.Log `json:"logger" yaml:"logger"`
+	// GrpcLogger configures the gRPC request logging middleware.
+	GrpcLogger logging.RPCConfig `json:"grpclogger" yaml:"grpclogger"`
+	// Postgres configures the PostgreSQL connection.
 	Postgres postgres.Config `json:"postgres" yaml:"postgres"`
+}
+
+// Validate refuses a configuration the service could not run with, so a bad value fails startup.
+func (app App) Validate() error {
+	switch {
+	case app.Generations.CheckInterval <= 0:
+		return fmt.Errorf("%w: the check interval must be positive", ErrInvalidConfig)
+	case app.Generations.MaxAttempts < 1 || app.Generations.MaxAttempts > 10:
+		return fmt.Errorf("%w: max attempts must be between 1 and 10", ErrInvalidConfig)
+	case app.Generations.Retention <= 0:
+		return fmt.Errorf("%w: the retention must be positive", ErrInvalidConfig)
+	case app.Sweep.Interval <= 0 || app.Sweep.Interval > SweepIntervalCeiling:
+		return fmt.Errorf("%w: the sweep interval must be positive and at most %s", ErrInvalidConfig, SweepIntervalCeiling)
+	case app.Sweep.BatchSize < 1 || app.Sweep.BatchSize > 100:
+		return fmt.Errorf("%w: the sweep batch size must be between 1 and 100", ErrInvalidConfig)
+	}
+
+	err := app.Caps.Validate()
+	if err != nil {
+		return fmt.Errorf("caps: %w", err)
+	}
+
+	return nil
 }

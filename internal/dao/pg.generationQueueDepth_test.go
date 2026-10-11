@@ -13,7 +13,7 @@ import (
 	"github.com/a-novel/service-genai/internal/models/migrations"
 )
 
-func TestGenerationQueueDepth(t *testing.T) {
+func TestPgGenerationQueueDepth(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
@@ -47,7 +47,7 @@ func TestGenerationQueueDepth(t *testing.T) {
 		},
 	}
 
-	daoQueueDepth := dao.NewGenerationQueueDepth()
+	daoQueueDepth := dao.NewPgGenerationQueueDepth()
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -64,7 +64,7 @@ func TestGenerationQueueDepth(t *testing.T) {
 					}
 				}
 
-				depth, err := daoQueueDepth.Exec(ctx)
+				depth, err := daoQueueDepth.Exec(ctx, &dao.GenerationQueueDepthRequest{})
 				require.NoError(t, err)
 				require.Equal(t, int64(testCase.expectPending), depth.Pending)
 

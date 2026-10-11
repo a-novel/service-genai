@@ -22,7 +22,7 @@ var generationUsageInsertQuery string
 // lands twice must not count it twice.
 var ErrGenerationUsageExists = errors.New("usage already recorded for this attempt")
 
-// GenerationUsageInsertRequest is the input to [GenerationUsageInsert.Exec].
+// GenerationUsageInsertRequest is the input to [PgGenerationUsageInsert.Exec].
 type GenerationUsageInsertRequest struct {
 	GenerationID uuid.UUID
 	Attempt      int16
@@ -44,24 +44,24 @@ type GenerationUsageInsertRequest struct {
 	CompletedAt *time.Time
 }
 
-// GenerationUsageInsert records what one answered attempt consumed.
+// PgGenerationUsageInsert records what one answered attempt consumed.
 //
 // Call it in the same transaction as the settle or requeue it belongs to: a transition without its
 // usage is a billed call nothing counts.
-type GenerationUsageInsert struct{}
+type PgGenerationUsageInsert struct{}
 
-func NewGenerationUsageInsert() *GenerationUsageInsert {
-	return &GenerationUsageInsert{}
+// NewPgGenerationUsageInsert returns a new PgGenerationUsageInsert dao.
+func NewPgGenerationUsageInsert() *PgGenerationUsageInsert {
+	return &PgGenerationUsageInsert{}
 }
 
-func (dao *GenerationUsageInsert) Exec(
+func (dao *PgGenerationUsageInsert) Exec(
 	ctx context.Context, request *GenerationUsageInsertRequest,
 ) (*GenerationUsage, error) {
-	ctx, span := otel.Tracer().Start(ctx, "dao.GenerationUsageInsert")
+	ctx, span := otel.Tracer().Start(ctx, "dao.PgGenerationUsageInsert")
 	defer span.End()
 
 	span.SetAttributes(
-		attribute.String("generation.id", request.GenerationID.String()),
 		attribute.Int("generation.attempt", int(request.Attempt)),
 		attribute.Int64("usage.input_tokens", request.InputTokens),
 		attribute.Int64("usage.output_tokens", request.OutputTokens),

@@ -1,85 +1,89 @@
 # Contributing to service-genai
 
-This file covers only what is specific to **service-genai**. For service-level contribution shared across every service — the architecture, the layers, the conventions — start with the [service & architecture concepts](https://github.com/a-novel/.github/blob/master/CONTRIBUTING.md). Platform setup and day-to-day commands are in the [developer onboarding guide](https://github.com/a-novel-kit/.github/blob/master/README.md).
+The shared architecture, layers, and conventions live in the [service & architecture concepts](https://github.com/a-novel/.github/blob/master/CONTRIBUTING.md); this file covers only what's specific to the GenAI service. Platform setup and day-to-day commands are in the [developer onboarding guide](https://github.com/a-novel-kit/.github/blob/master/README.md).
+
+Read the [README](./README.md) first — it covers what the service does and how operators run it.
 
 ---
 
-## The boundary
+## Quick local interactions
 
-**The one rule that must not erode: this service never learns a caller's domain.** It receives finished text and an output schema, and returns structured output and a cost. A concept like a story, a step or an engine appearing anywhere in this repository means the boundary has moved and the service is on its way to being the thing it replaced.
+Once the service is up (`a-novel run start service-genai/grpc`), the gRPC server listens on `${SERVICE_GENAI_GRPC_PORT}`. The port is allocated by the `a-novel` daemon; inject it into your shell with `eval "$(a-novel run env service-genai)"`. The server registers gRPC reflection, so `grpcurl` needs no proto files; the contracts are documented in [`internal/models/proto/anovel/genai/v0/`](./internal/models/proto/anovel/genai/v0/).
 
----
-
-## Running it locally
-
-Start the server and load its ports into your shell:
+### Health
 
 ```bash
-a-novel run start service-genai/grpc
-eval "$(a-novel run env service-genai)"
-```
+# Liveness
+grpcurl -plaintext localhost:${SERVICE_GENAI_GRPC_PORT} grpc.health.v1.Health/Check
 
-Check it is alive:
-
-```bash
+# Dependency check (Postgres and queue inspection)
 grpcurl -plaintext localhost:${SERVICE_GENAI_GRPC_PORT} anovel.genai.v0.StatusService/Status
 ```
 
-There is no REST surface: callers are other services on the internal network, so a second transport would be a second contract to keep in step with no consumer asking for it.
+### Generations
 
----
+The payload and each attempt's response are `bytes` fields, so `grpcurl` takes and prints them base64-encoded. The local stack reads `OPENAI_API_KEY` from the environment it starts in, with a placeholder when it is unset (see [`builds/podman-compose.yaml`](./builds/podman-compose.yaml)); with the placeholder, every generation fails with OpenAI's authentication error as its response.
 
-## Retention purge
+```bash
+# Any UUID: the calling service supplies the owner, and this service trusts it.
+OWNER_ID=$(uuidgen)
 
-The `database` image schedules a `pg_cron` job that deletes settled generations once `expires_at` has passed. Their attempts go with them: callers keep what they need of the provider's responses. The Usage Records stay: they hold no content and no key to the purged rows, and are kept for good.
+# The provider's own request, built by the caller.
+PAYLOAD=$(printf '%s' '{"model":"<model>","input":"Say hello.","store":false}' | base64 | tr -d '\n')
 
-It is scheduled in the image's init SQL rather than in a migration: `postgres.RunDBTest` clones a database with no `cron` schema, so a migration calling `cron.schedule` would fail every data-access test.
-
-Its jobs run as background workers inside PostgreSQL. Under SCRAM authentication, a job that opens its own connection fails without a password.
-
-**A bring-your-own-Postgres deployment must schedule it itself** — the statement is in [`builds/database.sql`](./builds/database.sql). Preload `pg_cron`, point `cron.database_name` at the service's database, and set `cron.use_background_workers = on`, as the image does.
-
----
-
-## Provider retention
-
-`store` asks the provider to keep the response after the call ends. OpenAI holds a stored response for about thirty days: it can be read back with `GET /v1/responses/{id}`, and a later request can reference it through `previous_response_id` to continue a conversation without resending its history.
-
-`store` is part of the caller's payload, like every field the execution does not need: this service forwards it as sent. A caller keeping user prose away from the provider sends `store: false`; the answers it needs are kept here for the retention window, in `generation_attempts`.
-
-Re-attach does not depend on it: a finished background response stays retrievable for a while, which `store` does not govern. OpenAI documents about ten minutes; on 2026-10-08 a response was still readable three hours after it finished. The sweep reaches every unpolled generation within a minute, and a check re-attaches as soon as a poll or the sweep reaches it. **Revisit this** if a re-attach starts failing with a not-found on an operation that should still be running — that window has moved. A 404 settles the generation as failed, so being wrong costs one result, not a second paid call.
-
----
-
-## Transactions
-
-Two or more writes that must land together are wrapped in a `transaction.Transactor`, taken as a constructor dependency by the service that needs one and injected in `cmd`. It names no database, so business code says "these writes are one unit" without knowing what stores them:
-
-```go
-// internal/core
-type SomeService struct {
-	dao        SomeServiceDao
-	transactor transaction.Transactor
-}
-
-err := service.transactor.WithinTx(ctx, func(ctx context.Context) error {
-	// every data-access call made with this ctx is part of one transaction
-})
-
-// cmd
-service := core.NewSomeService(daoSomething, postgres.NewTransactor(nil))
+# The purpose must be declared in internal/config/caps.config.yaml.
+GENERATION_ID=$(
+  grpcurl -plaintext \
+    -d "{\"owner_id\":\"$OWNER_ID\",\"purpose\":\"studio.generation\",\"provider\":\"openai\",\"payload\":\"$PAYLOAD\"}" \
+    localhost:${SERVICE_GENAI_GRPC_PORT} \
+    anovel.genai.v0.GenerationSubmitService/GenerationSubmit |
+    jq -r '.generation.id'
+)
 ```
 
-A check uses one where a settle or requeue records the attempt's answer and the generation together. A single write needs no transaction.
+```bash
+# Poll until the status settles.
+grpcurl -plaintext -d "{\"id\":\"$GENERATION_ID\",\"owner_id\":\"$OWNER_ID\"}" \
+  localhost:${SERVICE_GENAI_GRPC_PORT} \
+  anovel.genai.v0.GenerationGetService/GenerationGet
 
-**Pass the callback's `ctx` down, not the outer one.** Data-access objects resolve their database handle from the context, and the transaction is installed on the context the callback receives. An inner call given the outer context runs on the connection pool and commits on its own, while the surrounding block still reports success. That is not hypothetical: it is what a sibling service did in four operations for months, with a green build the whole time.
+# Decode the last attempt's response once it has settled.
+grpcurl -plaintext -d "{\"id\":\"$GENERATION_ID\",\"owner_id\":\"$OWNER_ID\"}" \
+  localhost:${SERVICE_GENAI_GRPC_PORT} \
+  anovel.genai.v0.GenerationGetService/GenerationGet |
+  jq -r '.generation.attempts[-1].response' | base64 -d | jq
 
-Two rules follow, and the shared library's documentation is the contract for both:
+# Stop it.
+grpcurl -plaintext -d "{\"id\":\"$GENERATION_ID\",\"owner_id\":\"$OWNER_ID\"}" \
+  localhost:${SERVICE_GENAI_GRPC_PORT} \
+  anovel.genai.v0.GenerationCancelService/GenerationCancel
+```
 
-- **Never call an external service inside `WithinTx`.** An open transaction holds a pooled connection for its whole lifetime; pinning one for the length of a third-party call exhausts the pool and blocks vacuuming. Persist what the call needs, close the transaction, make the call, then open a new transaction to record the result. `postgres.InTx(ctx)` reports whether a transaction is open, so a data-access object that makes an outbound call can refuse rather than rely on the convention holding.
-- **A nested `WithinTx` joins the transaction in progress**, so a rollback anywhere discards the whole outermost unit of work — including work the outer caller believed was already safe. Nesting is legal; it should be deliberate. A nested call also never sees its own `sql.TxOptions`, so an operation needing a specific isolation level has to be the outermost transaction.
+---
 
-Unit-test a service that takes a transactor with `transactiontest.NewTransactor`, which runs the callback inline, or `NewFailingTransactor` to cover the path where the unit of work never opens — asserting the dependencies are never reached is how a test proves the writes are inside the scope rather than merely near it. A test that needs a real rollback needs a real database: use `postgres.RunDBTest`, never `RunTransactionalTest`, whose passthrough transaction cannot tell a working transactor from a broken one.
+## Service-specific concepts
+
+### The boundary
+
+**This service never learns a caller's domain.** It executes an opaque provider payload for an owner, a purpose and a user tier, and keeps the provider's raw answers and the usage read off them. Building the request and reading the output belong to the caller. A concept like a story, a step or an engine appearing anywhere in this repository means the boundary has moved.
+
+### Retention purge
+
+The `database` image schedules the [retention](./README.md#configuration) purge as a `pg_cron` job in its init SQL, [`builds/database.sql`](./builds/database.sql). It deletes settled generations once `expires_at` has passed, and their attempts with them. The Usage Records stay: they hold no content and no key to the purged rows.
+
+The job lives in the init SQL because `postgrestest.RunDBTest` clones a database with no `cron` schema, where a migration calling `cron.schedule` fails every data-access test.
+
+**A bring-your-own-Postgres deployment must schedule it itself**, with the statement in [`builds/database.sql`](./builds/database.sql). Preload `pg_cron`, point `cron.database_name` at the service's database, and set `cron.use_background_workers = on`, as the image does: under SCRAM authentication, a job that opens its own connection fails without a password.
+
+### Provider retention
+
+`store` asks the provider to keep the response after the call ends. OpenAI holds a stored response for about thirty days: it can be read back with `GET /v1/responses/{id}`, and a later request can reference it through `previous_response_id` to continue a conversation without resending its history. The field belongs to the caller's payload, [like the rest of the request](./README.md#what-it-does). With `store: false`, the answers a caller needs are kept only here, in `generation_attempts`, for the retention window.
+
+Re-attaching does not depend on `store`: a finished background response stays retrievable for a while either way (OpenAI documents about ten minutes), and the sweep reaches it well inside that window, as the [provider requirements](./docs/providers.md#async-mode-requirements) detail. A re-attach failing with a not-found on an operation that should still be running means that window has shrunk. A 404 settles the generation as failed, so a wrong bound costs one result.
+
+### Transactions
+
+A check settles or requeues a generation, and records the attempt's answer and its Usage Record, in one transaction. Its provider calls run outside any transaction, as the [`transaction.Transactor` contract](https://pkg.go.dev/github.com/a-novel-kit/golib/transaction#Transactor) requires.
 
 ---
 

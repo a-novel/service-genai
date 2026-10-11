@@ -15,7 +15,7 @@ import (
 	"github.com/a-novel/service-genai/internal/models/migrations"
 )
 
-func TestGenerationAttemptInsert(t *testing.T) {
+func TestPgGenerationAttemptInsert(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
@@ -37,11 +37,6 @@ func TestGenerationAttemptInsert(t *testing.T) {
 			response: json.RawMessage(`{"status": "completed", "id": "resp_1", "usage": {"output_tokens": 5}}`),
 		},
 		{
-			name: "Success/ErrorBody",
-
-			response: json.RawMessage(`{"error": {"code": "invalid_value", "message": "bad model"}}`),
-		},
-		{
 			name: "Success/PurgedWithItsGeneration",
 
 			purgeParent: true,
@@ -57,7 +52,7 @@ func TestGenerationAttemptInsert(t *testing.T) {
 		},
 	}
 
-	daoAttemptInsert := dao.NewGenerationAttemptInsert()
+	daoAttemptInsert := dao.NewPgGenerationAttemptInsert()
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {

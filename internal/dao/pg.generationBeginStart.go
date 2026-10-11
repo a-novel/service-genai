@@ -21,18 +21,21 @@ type GenerationBeginStartRequest struct {
 	ID uuid.UUID
 }
 
-// GenerationBeginStart takes the next attempt and records that its provider call may be sent.
+// PgGenerationBeginStart takes the next attempt and records that its provider call may be sent.
 //
 // It refuses with [ErrGenerationChanged] unless the generation is pending, due, not cancelled and
 // not already starting, so one check at most sends each attempt.
-type GenerationBeginStart struct{}
+type PgGenerationBeginStart struct{}
 
-func NewGenerationBeginStart() *GenerationBeginStart {
-	return &GenerationBeginStart{}
+// NewPgGenerationBeginStart returns a new PgGenerationBeginStart dao.
+func NewPgGenerationBeginStart() *PgGenerationBeginStart {
+	return &PgGenerationBeginStart{}
 }
 
-func (dao *GenerationBeginStart) Exec(ctx context.Context, request *GenerationBeginStartRequest) (*Generation, error) {
-	ctx, span := otel.Tracer().Start(ctx, "dao.GenerationBeginStart")
+func (dao *PgGenerationBeginStart) Exec(
+	ctx context.Context, request *GenerationBeginStartRequest,
+) (*Generation, error) {
+	ctx, span := otel.Tracer().Start(ctx, "dao.PgGenerationBeginStart")
 	defer span.End()
 
 	tx, err := postgres.GetContext(ctx)

@@ -23,16 +23,17 @@ type GenerationSweepRequest struct {
 	Limit int
 }
 
-// GenerationSweep takes the unsettled generations nobody checked within the interval, marking them
+// PgGenerationSweep takes the unsettled generations nobody checked within the interval, marking them
 // checked.
-type GenerationSweep struct{}
+type PgGenerationSweep struct{}
 
-func NewGenerationSweep() *GenerationSweep {
-	return &GenerationSweep{}
+// NewPgGenerationSweep returns a new PgGenerationSweep dao.
+func NewPgGenerationSweep() *PgGenerationSweep {
+	return &PgGenerationSweep{}
 }
 
-func (dao *GenerationSweep) Exec(ctx context.Context, request *GenerationSweepRequest) ([]*Generation, error) {
-	ctx, span := otel.Tracer().Start(ctx, "dao.GenerationSweep")
+func (dao *PgGenerationSweep) Exec(ctx context.Context, request *GenerationSweepRequest) ([]*Generation, error) {
+	ctx, span := otel.Tracer().Start(ctx, "dao.PgGenerationSweep")
 	defer span.End()
 
 	tx, err := postgres.GetContext(ctx)

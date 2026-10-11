@@ -20,21 +20,20 @@ const (
 	OtelFlushTimeout = 2 * time.Second
 )
 
-// LoggerProd ships production logs to Google Cloud Logging, linked to their trace.
-var LoggerProd = loggingpresets.GRPCGcloud{
+// LoggerProdGrpc sends gRPC request logs to Google Cloud Logging, linked to their trace.
+var LoggerProdGrpc = loggingpresets.GRPCGcloud{
 	Component: env.AppName,
 	ProjectId: env.GcloudProjectId,
 }
 
-// LoggerDev pretty-prints logs to the console for local development.
-var LoggerDev = loggingpresets.GRPCLocal{}
+// LoggerDevGrpc prints gRPC request logs to the console in a human-readable format.
+var LoggerDevGrpc = loggingpresets.GRPCLocal{}
 
-// LogDev and LogProd are what checks and the sweep write to.
-var (
-	LogDev = &loggingpresets.LogLocal{Out: os.Stdout}
+// LoggerDev prints application logs to the console in a human-readable format.
+var LoggerDev = &loggingpresets.LogLocal{Out: os.Stdout}
 
-	LogProd = &loggingpresets.LogGcloud{ProjectId: env.GcloudProjectId}
-)
+// LoggerProd sends application logs to Google Cloud Logging.
+var LoggerProd = &loggingpresets.LogGcloud{ProjectId: env.GcloudProjectId}
 
 // AppPresetDefault is the configuration the service starts with. It reads every
 // value from the environment, and picks the Google Cloud logging and tracing
@@ -50,18 +49,20 @@ var AppPresetDefault = App{
 		Shutdown: env.GrpcTimeoutShutdown,
 	},
 
+	Generations: Generations{
+		CheckInterval: env.CheckInterval,
+		MaxAttempts:   env.MaxAttempts,
+		Retention:     env.Retention,
+	},
 	Sweep: Sweep{
 		Interval:  env.SweepInterval,
 		BatchSize: env.SweepBatchSize,
 	},
-	CheckInterval: env.CheckInterval,
-	MaxAttempts:   env.MaxAttempts,
 	OpenAI: OpenAI{
 		APIKey:  env.OpenAIAPIKey,
 		BaseURL: env.OpenAIBaseURL,
 	},
-	Retention: env.Retention,
-	Caps:      CapsDefault,
+	Caps: CapsDefault,
 
 	Otel: lo.If[otel.Config](!env.Otel, &otelpresets.Disabled{}).
 		ElseIf(env.GcloudProjectId == "", &otelpresets.Local{
@@ -71,7 +72,7 @@ var AppPresetDefault = App{
 			ProjectID:    env.GcloudProjectId,
 			FlushTimeout: OtelFlushTimeout,
 		}),
-	Logger:   lo.Ternary[logging.RPCConfig](env.GcloudProjectId == "", &LoggerDev, &LoggerProd),
-	Log:      lo.Ternary[logging.Log](env.GcloudProjectId == "", LogDev, LogProd),
-	Postgres: PostgresPresetDefault,
+	Logger:     lo.Ternary[logging.Log](env.GcloudProjectId == "", LoggerDev, LoggerProd),
+	GrpcLogger: lo.Ternary[logging.RPCConfig](env.GcloudProjectId == "", &LoggerDevGrpc, &LoggerProdGrpc),
+	Postgres:   PostgresPresetDefault,
 }

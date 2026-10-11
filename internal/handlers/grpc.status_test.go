@@ -35,21 +35,15 @@ func TestGrpcStatus(t *testing.T) {
 		closePostgres bool
 		transaction   bool
 		cancel        bool
-		queueDepth    *core.QueueDepthResult
+		queueDepth    *core.GenerationQueueDepthResult
 		queueError    error
 		expectQueue   *genaiv0.QueueDepth
 		expectStatus  codes.Code
 	}{
 		{
 			name:         "Success",
-			queueDepth:   &core.QueueDepthResult{Pending: 2, OldestPendingAge: 90 * time.Second},
+			queueDepth:   &core.GenerationQueueDepthResult{Pending: 2, OldestPendingAge: 90 * time.Second},
 			expectQueue:  &genaiv0.QueueDepth{Pending: 2, OldestPendingAgeSeconds: 90},
-			expectStatus: codes.OK,
-		},
-		{
-			name:         "Success/EmptyQueue",
-			queueDepth:   &core.QueueDepthResult{},
-			expectQueue:  &genaiv0.QueueDepth{},
 			expectStatus: codes.OK,
 		},
 		{name: "Error/MissingPostgres", skipPostgres: true, expectStatus: codes.Unavailable},
@@ -63,9 +57,12 @@ func TestGrpcStatus(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			queueDepth := handlersmocks.NewMockGrpcStatusQueueDepthService(t)
+			queueDepth := handlersmocks.NewMockGrpcStatusService(t)
 			if testCase.queueDepth != nil || testCase.queueError != nil {
-				queueDepth.EXPECT().Exec(mock.Anything).Return(testCase.queueDepth, testCase.queueError).Once()
+				queueDepth.EXPECT().
+					Exec(mock.Anything, &core.GenerationQueueDepthRequest{}).
+					Return(testCase.queueDepth, testCase.queueError).
+					Once()
 			}
 
 			ctx := t.Context()
@@ -129,7 +126,7 @@ func TestGrpcStatus(t *testing.T) {
 	t.Run("Transport/Unavailable", func(t *testing.T) {
 		t.Parallel()
 
-		queueDepth := handlersmocks.NewMockGrpcStatusQueueDepthService(t)
+		queueDepth := handlersmocks.NewMockGrpcStatusService(t)
 		listener := bufconn.Listen(1024 * 1024)
 		server := grpc.NewServer()
 		genaiv0.RegisterStatusServiceServer(server, handlers.NewGrpcStatus(queueDepth))

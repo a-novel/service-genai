@@ -14,35 +14,37 @@ import (
 	"github.com/a-novel/service-genai/internal/dao"
 )
 
-// Dependencies of [GenerationCancel].
-type (
-	// GenerationCancelDao cancels or marks the generation.
-	GenerationCancelDao interface {
-		Exec(ctx context.Context, request *dao.GenerationRequestCancelRequest) (*dao.Generation, error)
-	}
-	// GenerationCancelGetDao reads a generation that could not be stopped.
-	GenerationCancelGetDao interface {
-		Exec(ctx context.Context, request *dao.GenerationGetRequest) (*dao.Generation, error)
-	}
-	// GenerationCancelAttemptListDao reads the provider's answers to the generation's attempts.
-	GenerationCancelAttemptListDao interface {
-		Exec(ctx context.Context, request *dao.GenerationAttemptListRequest) ([]*dao.GenerationAttempt, error)
-	}
-	// GenerationCancelServiceCheck stops a running provider call.
-	GenerationCancelServiceCheck interface {
-		Exec(ctx context.Context, request *GenerationCheckRequest) (*dao.Generation, error)
-	}
-)
+// GenerationCancelDao cancels or marks the generation.
+type GenerationCancelDao interface {
+	Exec(ctx context.Context, request *dao.GenerationRequestCancelRequest) (*dao.Generation, error)
+}
+
+// GenerationCancelDaoGet reads a generation that could not be stopped.
+type GenerationCancelDaoGet interface {
+	Exec(ctx context.Context, request *dao.GenerationGetRequest) (*dao.Generation, error)
+}
+
+// GenerationCancelDaoAttemptList reads the provider's answers to the generation's attempts.
+type GenerationCancelDaoAttemptList interface {
+	Exec(ctx context.Context, request *dao.GenerationAttemptListRequest) ([]*dao.GenerationAttempt, error)
+}
+
+// GenerationCancelServiceCheck stops a running provider call.
+type GenerationCancelServiceCheck interface {
+	Exec(ctx context.Context, request *GenerationCheckRequest) (*dao.Generation, error)
+}
 
 // GenerationCancelConfig is what a [GenerationCancel] needs to run.
 type GenerationCancelConfig struct {
 	// Retention is how long a settled generation's user content survives before the purge.
-	Retention time.Duration `validate:"required"`
+	Retention time.Duration
 }
 
 // GenerationCancelRequest holds the parameters for a [GenerationCancel.Exec] call.
 type GenerationCancelRequest struct {
-	ID      uuid.UUID `validate:"required"`
+	// ID identifies the generation to stop.
+	ID uuid.UUID `validate:"required"`
+	// OwnerID scopes the cancel to the owner's generations.
 	OwnerID uuid.UUID `validate:"required"`
 }
 
@@ -53,28 +55,24 @@ type GenerationCancelRequest struct {
 // free one. One whose start is in flight is only marked, and the next check stops it. One already
 // settled is returned as it stands, so a cancel that lost a race or is retried still succeeds.
 type GenerationCancel struct {
-	config     GenerationCancelConfig
-	dao        GenerationCancelDao
-	getDao     GenerationCancelGetDao
-	attemptDao GenerationCancelAttemptListDao
-	check      GenerationCancelServiceCheck
+	config         GenerationCancelConfig
+	dao            GenerationCancelDao
+	daoGet         GenerationCancelDaoGet
+	daoAttemptList GenerationCancelDaoAttemptList
+	serviceCheck   GenerationCancelServiceCheck
 }
 
+// NewGenerationCancel returns a new GenerationCancel service.
 func NewGenerationCancel(
 	config GenerationCancelConfig,
-	cancelDao GenerationCancelDao,
-	getDao GenerationCancelGetDao,
-	attemptDao GenerationCancelAttemptListDao,
-	check GenerationCancelServiceCheck,
-) (*GenerationCancel, error) {
-	err := validate.Struct(config)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
-	}
-
+	dao GenerationCancelDao,
+	daoGet GenerationCancelDaoGet,
+	daoAttemptList GenerationCancelDaoAttemptList,
+	serviceCheck GenerationCancelServiceCheck,
+) *GenerationCancel {
 	return &GenerationCancel{
-		config: config, dao: cancelDao, getDao: getDao, attemptDao: attemptDao, check: check,
-	}, nil
+		config: config, dao: dao, daoGet: daoGet, daoAttemptList: daoAttemptList, serviceCheck: serviceCheck,
+	}
 }
 
 func (service *GenerationCancel) Exec(
@@ -90,7 +88,7 @@ func (service *GenerationCancel) Exec(
 
 	err := validate.Struct(request)
 	if err != nil {
-		return nil, otel.ReportError(span, fmt.Errorf("%w: %w", ErrInvalidRequest, err))
+		return nil, otel.ReportError(span, errors.Join(err, ErrInvalidRequest))
 	}
 
 	generation, err := service.dao.Exec(ctx, &dao.GenerationRequestCancelRequest{
@@ -103,10 +101,7 @@ func (service *GenerationCancel) Exec(
 	if errors.Is(err, dao.ErrGenerationNotCancellable) {
 		// Settled already, or not this owner's. The read is owner-scoped, so it tells the two apart
 		// without revealing anybody else's generation.
-		generation, err = service.getDao.Exec(ctx, &dao.GenerationGetRequest{ID: request.ID, OwnerID: request.OwnerID})
-		if errors.Is(err, dao.ErrGenerationGetNotFound) {
-			return nil, otel.ReportError(span, fmt.Errorf("%w: %w", ErrGenerationNotFound, err))
-		}
+		generation, err = service.daoGet.Exec(ctx, &dao.GenerationGetRequest{ID: request.ID, OwnerID: request.OwnerID})
 	}
 
 	if err != nil {
@@ -114,13 +109,13 @@ func (service *GenerationCancel) Exec(
 	}
 
 	if generation.ProviderCallID != nil && generation.SettledAt == nil {
-		generation, err = service.check.Exec(ctx, &GenerationCheckRequest{Generation: generation})
+		generation, err = service.serviceCheck.Exec(ctx, &GenerationCheckRequest{Generation: generation})
 		if err != nil {
 			return nil, otel.ReportError(span, fmt.Errorf("stop provider call: %w", err))
 		}
 	}
 
-	attempts, err := service.attemptDao.Exec(ctx, &dao.GenerationAttemptListRequest{GenerationID: generation.ID})
+	attempts, err := service.daoAttemptList.Exec(ctx, &dao.GenerationAttemptListRequest{GenerationID: generation.ID})
 	if err != nil {
 		return nil, otel.ReportError(span, fmt.Errorf("list attempts: %w", err))
 	}

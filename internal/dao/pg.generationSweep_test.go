@@ -15,7 +15,7 @@ import (
 	"github.com/a-novel/service-genai/internal/models/migrations"
 )
 
-func TestGenerationSweep(t *testing.T) {
+func TestPgGenerationSweep(t *testing.T) {
 	t.Parallel()
 
 	const interval = time.Minute
@@ -43,7 +43,7 @@ func TestGenerationSweep(t *testing.T) {
 		},
 	}
 
-	daoSweep := dao.NewGenerationSweep()
+	daoSweep := dao.NewPgGenerationSweep()
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {

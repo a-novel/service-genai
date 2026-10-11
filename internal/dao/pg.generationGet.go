@@ -16,28 +16,29 @@ import (
 //go:embed pg.generationGet.sql
 var generationGetQuery string
 
-// ErrGenerationGetNotFound is returned by [GenerationGet.Exec] when the owner has no generation
+// ErrGenerationGetNotFound is returned by [PgGenerationGet.Exec] when the owner has no generation
 // with the requested ID. It is joined onto sql.ErrNoRows so callers can branch on it with errors.Is.
 //
 // Another owner's generation reports this too: a distinct "forbidden" would confirm the ID exists.
 var ErrGenerationGetNotFound = errors.New("generation not found")
 
-// GenerationGetRequest is the input to [GenerationGet.Exec].
+// GenerationGetRequest is the input to [PgGenerationGet.Exec].
 type GenerationGetRequest struct {
 	ID uuid.UUID
 	// OwnerID scopes the read. A generation owned by anyone else reports not-found.
 	OwnerID uuid.UUID
 }
 
-// GenerationGet reads one of an owner's generations by its ID.
-type GenerationGet struct{}
+// PgGenerationGet reads one of an owner's generations by its ID.
+type PgGenerationGet struct{}
 
-func NewGenerationGet() *GenerationGet {
-	return new(GenerationGet)
+// NewPgGenerationGet returns a new PgGenerationGet dao.
+func NewPgGenerationGet() *PgGenerationGet {
+	return &PgGenerationGet{}
 }
 
-func (dao *GenerationGet) Exec(ctx context.Context, request *GenerationGetRequest) (*Generation, error) {
-	ctx, span := otel.Tracer().Start(ctx, "dao.GenerationGet")
+func (dao *PgGenerationGet) Exec(ctx context.Context, request *GenerationGetRequest) (*Generation, error) {
+	ctx, span := otel.Tracer().Start(ctx, "dao.PgGenerationGet")
 	defer span.End()
 
 	tx, err := postgres.GetContext(ctx)

@@ -26,6 +26,7 @@ type GrpcGenerationCancel struct {
 	service GrpcGenerationCancelService
 }
 
+// NewGrpcGenerationCancel returns a new GrpcGenerationCancel handler backed by the given service.
 func NewGrpcGenerationCancel(service GrpcGenerationCancelService) *GrpcGenerationCancel {
 	return &GrpcGenerationCancel{service: service}
 }

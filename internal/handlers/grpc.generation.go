@@ -8,8 +8,7 @@ import (
 )
 
 // generationStatuses maps the stored lifecycle onto the wire enum. A status with no mapping reports
-// unspecified rather than a plausible neighbour, so a value this service has not published cannot be
-// mistaken for one it has.
+// unspecified, so a value this service has not published cannot pass for one it has.
 var generationStatuses = map[core.GenerationStatus]genaiv0.GenerationStatus{
 	core.GenerationStatusPending:   genaiv0.GenerationStatus_GENERATION_STATUS_PENDING,
 	core.GenerationStatusRunning:   genaiv0.GenerationStatus_GENERATION_STATUS_RUNNING,
@@ -19,10 +18,6 @@ var generationStatuses = map[core.GenerationStatus]genaiv0.GenerationStatus{
 }
 
 // NewGrpcGeneration converts a stored generation to its wire form.
-//
-// The payload and the provider call identifier are deliberately dropped. The caller already has the
-// payload it sent, and the identifier is this service's recovery mechanism rather than a caller's
-// concern: publishing it would invite a caller to act on it.
 func NewGrpcGeneration(generation *core.Generation) *genaiv0.Generation {
 	message := &genaiv0.Generation{
 		Id:        generation.ID.String(),

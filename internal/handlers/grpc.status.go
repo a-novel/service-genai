@@ -20,9 +20,9 @@ func NewGrpcHealthStatus() *genaiv0.DependencyHealth {
 	}
 }
 
-// GrpcStatusQueueDepthService is the service dependency of [GrpcStatus].
-type GrpcStatusQueueDepthService interface {
-	Exec(ctx context.Context) (*core.QueueDepthResult, error)
+// GrpcStatusService is the service dependency of [GrpcStatus].
+type GrpcStatusService interface {
+	Exec(ctx context.Context, request *core.GenerationQueueDepthRequest) (*core.GenerationQueueDepthResult, error)
 }
 
 // GrpcStatus is the gRPC handler for the Status RPC, reporting the health of the
@@ -30,12 +30,12 @@ type GrpcStatusQueueDepthService interface {
 type GrpcStatus struct {
 	genaiv0.UnimplementedStatusServiceServer
 
-	queueDepth GrpcStatusQueueDepthService
+	service GrpcStatusService
 }
 
 // NewGrpcStatus creates a dependency-readiness handler with queue inspection.
-func NewGrpcStatus(queueDepth GrpcStatusQueueDepthService) *GrpcStatus {
-	return &GrpcStatus{queueDepth: queueDepth}
+func NewGrpcStatus(service GrpcStatusService) *GrpcStatus {
+	return &GrpcStatus{service: service}
 }
 
 // Status returns the backlog only after PostgreSQL and queue inspection succeed.
@@ -51,7 +51,7 @@ func (handler *GrpcStatus) Status(ctx context.Context, _ *genaiv0.StatusRequest)
 		return nil, status.Error(codes.Unavailable, "service dependencies unavailable")
 	}
 
-	depth, err := handler.queueDepth.Exec(ctx)
+	depth, err := handler.service.Exec(ctx, &core.GenerationQueueDepthRequest{})
 	if err != nil {
 		_ = otel.ReportError(span, err)
 

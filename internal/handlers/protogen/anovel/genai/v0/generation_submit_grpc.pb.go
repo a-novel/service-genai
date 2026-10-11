@@ -27,13 +27,14 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
 // GenerationSubmitService records a generation and starts it in the Async mode: the call runs on the
-// provider's side while the caller polls GenerationGet. Resending the same request is a replay: it
-// returns the generation already running or succeeded rather than paying again. A request whose
-// generation failed or was cancelled runs again from scratch. An invalid request, an undeclared
-// purpose included, answers INVALID_ARGUMENT with the reason; a provider without the Async mode
-// answers UNIMPLEMENTED; a user whose usage already reached a cap answers RESOURCE_EXHAUSTED, naming
-// the cap.
+// provider's side while the caller polls GenerationGet.
 type GenerationSubmitServiceClient interface {
+	// Records a generation and starts its provider call. Resending the same request is a replay: it
+	// returns the generation already pending, running or succeeded, so the call is paid once. A
+	// request whose generation failed or was cancelled runs again from scratch. Returns
+	// INVALID_ARGUMENT with the reason for an invalid request, an undeclared purpose or an unknown
+	// provider included; UNIMPLEMENTED for a provider without the Async mode; and RESOURCE_EXHAUSTED,
+	// naming the limit, when the user already reached one.
 	GenerationSubmit(ctx context.Context, in *GenerationSubmitRequest, opts ...grpc.CallOption) (*GenerationSubmitResponse, error)
 }
 
@@ -60,13 +61,14 @@ func (c *generationSubmitServiceClient) GenerationSubmit(ctx context.Context, in
 // for forward compatibility.
 //
 // GenerationSubmitService records a generation and starts it in the Async mode: the call runs on the
-// provider's side while the caller polls GenerationGet. Resending the same request is a replay: it
-// returns the generation already running or succeeded rather than paying again. A request whose
-// generation failed or was cancelled runs again from scratch. An invalid request, an undeclared
-// purpose included, answers INVALID_ARGUMENT with the reason; a provider without the Async mode
-// answers UNIMPLEMENTED; a user whose usage already reached a cap answers RESOURCE_EXHAUSTED, naming
-// the cap.
+// provider's side while the caller polls GenerationGet.
 type GenerationSubmitServiceServer interface {
+	// Records a generation and starts its provider call. Resending the same request is a replay: it
+	// returns the generation already pending, running or succeeded, so the call is paid once. A
+	// request whose generation failed or was cancelled runs again from scratch. Returns
+	// INVALID_ARGUMENT with the reason for an invalid request, an undeclared purpose or an unknown
+	// provider included; UNIMPLEMENTED for a provider without the Async mode; and RESOURCE_EXHAUSTED,
+	// naming the limit, when the user already reached one.
 	GenerationSubmit(context.Context, *GenerationSubmitRequest) (*GenerationSubmitResponse, error)
 	mustEmbedUnimplementedGenerationSubmitServiceServer()
 }

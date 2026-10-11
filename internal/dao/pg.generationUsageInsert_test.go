@@ -15,7 +15,7 @@ import (
 	"github.com/a-novel/service-genai/internal/models/migrations"
 )
 
-func TestGenerationUsageInsert(t *testing.T) {
+func TestPgGenerationUsageInsert(t *testing.T) {
 	t.Parallel()
 
 	tier := "flex"
@@ -67,7 +67,7 @@ func TestGenerationUsageInsert(t *testing.T) {
 		},
 	}
 
-	daoUsageInsert := dao.NewGenerationUsageInsert()
+	daoUsageInsert := dao.NewPgGenerationUsageInsert()
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {

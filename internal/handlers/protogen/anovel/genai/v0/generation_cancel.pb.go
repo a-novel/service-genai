@@ -76,11 +76,12 @@ func (x *GenerationCancelRequest) GetOwnerId() string {
 	return ""
 }
 
-// GenerationCancelResponse returns the generation as the cancellation left it: cancelled, still
-// running when the provider had not stopped the call yet, or settled before the cancel arrived.
+// GenerationCancelResponse carries the generation the cancel acted on.
 type GenerationCancelResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Generation    *Generation            `protobuf:"bytes,1,opt,name=generation,proto3" json:"generation,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The generation as the cancel left it: cancelled, still unsettled while the provider stops the
+	// call, or settled before the cancel arrived.
+	Generation    *Generation `protobuf:"bytes,1,opt,name=generation,proto3" json:"generation,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }

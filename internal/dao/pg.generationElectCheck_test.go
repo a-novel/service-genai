@@ -15,7 +15,7 @@ import (
 	"github.com/a-novel/service-genai/internal/models/migrations"
 )
 
-func TestGenerationElectCheck(t *testing.T) {
+func TestPgGenerationElectCheck(t *testing.T) {
 	t.Parallel()
 
 	const interval = 30 * time.Second
@@ -64,7 +64,7 @@ func TestGenerationElectCheck(t *testing.T) {
 		},
 	}
 
-	daoElectCheck := dao.NewGenerationElectCheck()
+	daoElectCheck := dao.NewPgGenerationElectCheck()
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {

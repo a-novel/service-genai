@@ -1,21 +1,17 @@
-# Exposes the service as a gRPC server.
-#
-# It needs a database instance with the schema migrations already applied.
+# Runs the GenAI gRPC server. Requires a database with migrations already applied.
 FROM docker.io/library/golang:1.27.2-alpine AS builder
 
-# Static binary: no libc dependency, so it runs on a bare alpine base.
+# CGO_ENABLED=0 produces a fully static binary, required to run safely on Alpine's musl libc.
 ENV CGO_ENABLED=0
 
 WORKDIR /app
 
-# Resolve modules off go.mod/go.sum alone, before the source, so the download layer
-# survives a source-only edit. The cache mount persists the module cache across builds.
+# Download dependencies before the source copy, so the module layer survives source-only rebuilds.
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod \
     go mod download
 
-# grpcurl backs the healthcheck. Installed before the source COPY so its cached compile
-# survives a source-only rebuild, and pinned for reproducibility.
+# grpcurl backs the healthcheck; installing it before the source copy keeps its layer cached too.
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     GOBIN=/usr/local/bin go install github.com/fullstorydev/grpcurl/cmd/grpcurl@v1.9.3
@@ -23,13 +19,13 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 COPY ./cmd/grpc ./cmd/grpc
 COPY ./internal/handlers ./internal/handlers
 COPY ./internal/dao ./internal/dao
-COPY ./internal/core ./internal/core
 COPY ./internal/lib ./internal/lib
+COPY ./internal/core ./internal/core
 COPY ./internal/models ./internal/models
 COPY ./internal/config ./internal/config
 
-# -ldflags="-s -w" strips the symbol table and DWARF for a smaller binary; -trimpath
-# drops absolute paths.
+# -ldflags="-s -w" strips the symbol table and DWARF debug info, shrinking the binary.
+# -trimpath removes local filesystem paths for reproducible builds.
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     go build -ldflags="-s -w" -trimpath -o /grpc ./cmd/grpc/
@@ -44,7 +40,6 @@ HEALTHCHECK --interval=1s --timeout=5s --retries=10 --start-period=1s \
 
 ENV GRPC_PORT=8080
 
-# gRPC port.
 EXPOSE 8080
 # TLS port.
 EXPOSE 443

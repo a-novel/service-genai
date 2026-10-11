@@ -24,7 +24,7 @@ var testOwner = uuid.MustParse("00000000-0000-0000-0000-000000000001")
 func seedGeneration(ctx context.Context, t *testing.T, maxAttempts int16) *dao.Generation {
 	t.Helper()
 
-	result, err := dao.NewGenerationSubmit().Exec(ctx, &dao.GenerationSubmitRequest{
+	result, err := dao.NewPgGenerationSubmit().Exec(ctx, &dao.GenerationSubmitRequest{
 		ID:          uuid.Must(uuid.NewV7()),
 		OwnerID:     testOwner,
 		Purpose:     "studio.generation",
@@ -44,7 +44,7 @@ func seedGeneration(ctx context.Context, t *testing.T, maxAttempts int16) *dao.G
 func startGeneration(ctx context.Context, t *testing.T, id uuid.UUID) *dao.Generation {
 	t.Helper()
 
-	generation, err := dao.NewGenerationBeginStart().Exec(ctx, &dao.GenerationBeginStartRequest{ID: id})
+	generation, err := dao.NewPgGenerationBeginStart().Exec(ctx, &dao.GenerationBeginStartRequest{ID: id})
 	if err != nil {
 		panic(err)
 	}
@@ -58,7 +58,7 @@ func runGeneration(ctx context.Context, t *testing.T, id uuid.UUID) *dao.Generat
 
 	started := startGeneration(ctx, t, id)
 
-	generation, err := dao.NewGenerationRecordProviderCall().Exec(ctx, &dao.GenerationRecordProviderCallRequest{
+	generation, err := dao.NewPgGenerationRecordProviderCall().Exec(ctx, &dao.GenerationRecordProviderCallRequest{
 		ID: id, Attempt: started.Attempt, ProviderCallID: testCallID,
 	})
 	if err != nil {
@@ -104,7 +104,7 @@ func settleGeneration(ctx context.Context, t *testing.T, generation *dao.Generat
 
 	reason := "the provider call failed"
 
-	settled, err := dao.NewGenerationSettle().Exec(ctx, &dao.GenerationSettleRequest{
+	settled, err := dao.NewPgGenerationSettle().Exec(ctx, &dao.GenerationSettleRequest{
 		ID:               generation.ID,
 		Attempt:          generation.Attempt,
 		StartRequestedAt: generation.StartRequestedAt,

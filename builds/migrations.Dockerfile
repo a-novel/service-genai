@@ -1,4 +1,4 @@
-# Runs a one-shot job applying the service's schema migrations to a database instance.
+# Runs the migrations job: applies pending database schema migrations.
 FROM docker.io/library/golang:1.27.2-alpine AS builder
 
 ENV CGO_ENABLED=0
@@ -18,8 +18,6 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     go build -ldflags="-s -w" -trimpath -o /migrations ./cmd/migrations/
 
 FROM docker.io/library/alpine:3.24.2
-
-WORKDIR /
 
 COPY --from=builder /migrations /migrations
 

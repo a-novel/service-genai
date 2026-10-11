@@ -14,7 +14,7 @@ import (
 	"github.com/a-novel/service-genai/internal/models/migrations"
 )
 
-func TestGenerationRequestCancel(t *testing.T) {
+func TestPgGenerationRequestCancel(t *testing.T) {
 	t.Parallel()
 
 	const reason = "generation cancelled"
@@ -84,7 +84,7 @@ func TestGenerationRequestCancel(t *testing.T) {
 		},
 	}
 
-	daoRequestCancel := dao.NewGenerationRequestCancel()
+	daoRequestCancel := dao.NewPgGenerationRequestCancel()
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {

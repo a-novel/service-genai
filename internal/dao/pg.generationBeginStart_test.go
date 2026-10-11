@@ -15,7 +15,7 @@ import (
 	"github.com/a-novel/service-genai/internal/models/migrations"
 )
 
-func TestGenerationBeginStart(t *testing.T) {
+func TestPgGenerationBeginStart(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
@@ -72,7 +72,7 @@ func TestGenerationBeginStart(t *testing.T) {
 		},
 	}
 
-	daoBeginStart := dao.NewGenerationBeginStart()
+	daoBeginStart := dao.NewPgGenerationBeginStart()
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {

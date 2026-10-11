@@ -22,7 +22,7 @@ var generationRequestCancelQuery string
 // somebody else's identifier exists.
 var ErrGenerationNotCancellable = errors.New("generation cannot be cancelled")
 
-// GenerationRequestCancelRequest is the input to [GenerationRequestCancel.Exec].
+// GenerationRequestCancelRequest is the input to [PgGenerationRequestCancel.Exec].
 type GenerationRequestCancelRequest struct {
 	ID      uuid.UUID
 	OwnerID uuid.UUID
@@ -31,17 +31,18 @@ type GenerationRequestCancelRequest struct {
 	Retention time.Duration
 }
 
-// GenerationRequestCancel cancels a generation that never started, and marks one that did.
-type GenerationRequestCancel struct{}
+// PgGenerationRequestCancel cancels a generation that never started, and marks one that did.
+type PgGenerationRequestCancel struct{}
 
-func NewGenerationRequestCancel() *GenerationRequestCancel {
-	return &GenerationRequestCancel{}
+// NewPgGenerationRequestCancel returns a new PgGenerationRequestCancel dao.
+func NewPgGenerationRequestCancel() *PgGenerationRequestCancel {
+	return &PgGenerationRequestCancel{}
 }
 
-func (dao *GenerationRequestCancel) Exec(
+func (dao *PgGenerationRequestCancel) Exec(
 	ctx context.Context, request *GenerationRequestCancelRequest,
 ) (*Generation, error) {
-	ctx, span := otel.Tracer().Start(ctx, "dao.GenerationRequestCancel")
+	ctx, span := otel.Tracer().Start(ctx, "dao.PgGenerationRequestCancel")
 	defer span.End()
 
 	tx, err := postgres.GetContext(ctx)

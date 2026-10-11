@@ -12,7 +12,7 @@ import (
 	"github.com/a-novel/service-genai/internal/dao"
 )
 
-func TestQueueDepth(t *testing.T) {
+func TestGenerationQueueDepth(t *testing.T) {
 	t.Parallel()
 
 	type daoMock struct {
@@ -25,38 +25,25 @@ func TestQueueDepth(t *testing.T) {
 
 		daoMock *daoMock
 
-		expectPending int64
-		expectAge     time.Duration
-		expectErr     error
+		expect    *core.GenerationQueueDepthResult
+		expectErr error
 	}{
 		{
 			name: "Success/EmptyQueue",
 
 			daoMock: &daoMock{resp: &dao.GenerationQueueDepth{}},
+
+			expect: &core.GenerationQueueDepthResult{},
 		},
 		{
-			// The seconds the query produced become a duration here, because converting a result is
-			// this layer's job and not the data access's.
-			name: "Success/Backlog",
-
-			daoMock: &daoMock{resp: &dao.GenerationQueueDepth{
-				Pending: 3, OldestPendingAgeSeconds: 90,
-			}},
-
-			expectPending: 3,
-			expectAge:     90 * time.Second,
-		},
-		{
-			// A count alone cannot tell a queue absorbing a burst from a stalled one, so a
-			// sub-second age must survive the conversion rather than round to zero.
+			// A sub-second age must survive the conversion.
 			name: "Success/SubSecondAge",
 
 			daoMock: &daoMock{resp: &dao.GenerationQueueDepth{
 				Pending: 1, OldestPendingAgeSeconds: 0.25,
 			}},
 
-			expectPending: 1,
-			expectAge:     250 * time.Millisecond,
+			expect: &core.GenerationQueueDepthResult{Pending: 1, OldestPendingAge: 250 * time.Millisecond},
 		},
 		{
 			name: "Error/Internal",
@@ -71,23 +58,15 @@ func TestQueueDepth(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			depthDao := coremocks.NewMockQueueDepthDao(t)
+			depthDao := coremocks.NewMockGenerationQueueDepthDao(t)
 
 			depthDao.EXPECT().
-				Exec(mock.Anything).
+				Exec(mock.Anything, &dao.GenerationQueueDepthRequest{}).
 				Return(testCase.daoMock.resp, testCase.daoMock.err)
 
-			result, err := core.NewQueueDepth(depthDao).Exec(t.Context())
+			result, err := core.NewGenerationQueueDepth(depthDao).Exec(t.Context(), &core.GenerationQueueDepthRequest{})
 			require.ErrorIs(t, err, testCase.expectErr)
-
-			if testCase.expectErr != nil {
-				require.Nil(t, result)
-
-				return
-			}
-
-			require.Equal(t, testCase.expectPending, result.Pending)
-			require.Equal(t, testCase.expectAge, result.OldestPendingAge)
+			require.Equal(t, testCase.expect, result)
 
 			depthDao.AssertExpectations(t)
 		})

@@ -2,7 +2,6 @@ package core
 
 import (
 	"encoding/json"
-	"errors"
 	"time"
 
 	"github.com/google/uuid"
@@ -10,18 +9,10 @@ import (
 	"github.com/a-novel/service-genai/internal/dao"
 )
 
-// Ceilings the configuration and requests are held to. They live here because validation is this
-// layer's responsibility; the data access below takes what it is given.
-const (
-	// SweepIntervalCeiling bounds how long an unpolled generation goes unchecked. A finished
-	// background response stays retrievable for only a limited time when it is not stored, so the
-	// sweep must reach it well inside that window.
-	SweepIntervalCeiling = 5 * time.Minute
-	// PayloadSizeCeiling bounds a payload. It stays below gRPC's default 4 MiB receive limit, leaving
-	// room for the protobuf envelope, so an oversized payload reaches application validation. It
-	// bounds transport and storage, not what a provider accepts.
-	PayloadSizeCeiling = 3_688_000
-)
+// PayloadSizeCeiling bounds a payload. It stays below gRPC's default 4 MiB receive limit, leaving
+// room for the protobuf envelope, so an oversized payload reaches application validation. It bounds
+// transport and storage, not what a provider accepts.
+const PayloadSizeCeiling = 3_688_000
 
 // GenerationStatus identifies where a generation sits in its lifecycle.
 type GenerationStatus string
@@ -94,13 +85,3 @@ func newGeneration(generation *dao.Generation, attempts []*dao.GenerationAttempt
 
 	return result
 }
-
-// Errors a caller can act on. Everything else is a fault.
-var (
-	// ErrGenerationNotFound is returned when the owner has no such generation. A generation owned by
-	// somebody else reports this too, so an identifier cannot be probed for existence.
-	ErrGenerationNotFound = errors.New("generation not found")
-	// ErrUsageCapReached is returned when the user's usage already reached a cap the submit answers
-	// to. Its message names the cap.
-	ErrUsageCapReached = errors.New("usage cap reached")
-)

@@ -19,17 +19,18 @@ type GenerationAttemptListRequest struct {
 	GenerationID uuid.UUID
 }
 
-// GenerationAttemptList reads the provider's answer to each attempt of a generation, in order.
-type GenerationAttemptList struct{}
+// PgGenerationAttemptList reads the provider's answer to each attempt of a generation, in order.
+type PgGenerationAttemptList struct{}
 
-func NewGenerationAttemptList() *GenerationAttemptList {
-	return &GenerationAttemptList{}
+// NewPgGenerationAttemptList returns a new PgGenerationAttemptList dao.
+func NewPgGenerationAttemptList() *PgGenerationAttemptList {
+	return &PgGenerationAttemptList{}
 }
 
-func (dao *GenerationAttemptList) Exec(
+func (dao *PgGenerationAttemptList) Exec(
 	ctx context.Context, request *GenerationAttemptListRequest,
 ) ([]*GenerationAttempt, error) {
-	ctx, span := otel.Tracer().Start(ctx, "dao.GenerationAttemptList")
+	ctx, span := otel.Tracer().Start(ctx, "dao.PgGenerationAttemptList")
 	defer span.End()
 
 	tx, err := postgres.GetContext(ctx)

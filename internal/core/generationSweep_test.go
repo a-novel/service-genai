@@ -30,77 +30,62 @@ func TestGenerationSweep(t *testing.T) {
 	testCases := []struct {
 		name string
 
-		config core.GenerationSweepConfig
-
 		swept    []*dao.Generation
 		sweepErr error
 
 		checkMocks []checkMock
 
-		expectWorked   bool
-		expectErr      error
-		expectBuildErr error
+		expect    *core.GenerationSweepResult
+		expectErr error
 	}{
 		{
 			name: "Success",
 
-			config: config,
-			swept:  []*dao.Generation{first, second},
+			swept: []*dao.Generation{first, second},
 			checkMocks: []checkMock{
 				{generation: first},
 				{generation: second},
 			},
 
-			expectWorked: true,
+			expect: &core.GenerationSweepResult{Checked: 2},
 		},
 		{
 			name: "Success/Empty",
 
-			config: config,
-			swept:  []*dao.Generation{},
+			swept: []*dao.Generation{},
+
+			expect: &core.GenerationSweepResult{},
 		},
 		{
 			// One generation's failure must not strand the rest of the batch.
 			name: "Error/CheckContinuesBatch",
 
-			config: config,
-			swept:  []*dao.Generation{first, second},
+			swept: []*dao.Generation{first, second},
 			checkMocks: []checkMock{
 				{generation: first, err: errFoo},
 				{generation: second},
 			},
 
-			expectWorked: true,
-			expectErr:    errFoo,
+			expectErr: errFoo,
 		},
 		{
 			// A panic stays with its generation: the process keeps running and the batch progresses.
 			name: "Success/CheckPanics",
 
-			config: config,
-			swept:  []*dao.Generation{first, second},
+			swept: []*dao.Generation{first, second},
 			checkMocks: []checkMock{
 				{generation: first, panics: true},
 				{generation: second},
 			},
 
-			expectWorked: true,
+			expect: &core.GenerationSweepResult{Checked: 2},
 		},
 		{
 			name: "Error/Sweep",
 
-			config:   config,
 			sweepErr: errFoo,
 
 			expectErr: errFoo,
-		},
-		{
-			// A finished result stays retrievable for about ten minutes; a slower sweep would lose it.
-			name: "Error/IntervalAboveCeiling",
-
-			config: core.GenerationSweepConfig{Interval: 10 * time.Minute, BatchSize: 10},
-
-			expectBuildErr: core.ErrInvalidRequest,
 		},
 	}
 
@@ -111,17 +96,10 @@ func TestGenerationSweep(t *testing.T) {
 			sweepDao := coremocks.NewMockGenerationSweepDao(t)
 			check := coremocks.NewMockGenerationSweepServiceCheck(t)
 
-			sweep, err := core.NewGenerationSweep(testCase.config, sweepDao, check)
-			require.ErrorIs(t, err, testCase.expectBuildErr)
-
-			if testCase.expectBuildErr != nil {
-				return
-			}
-
 			sweepDao.EXPECT().
 				Exec(mock.Anything, &dao.GenerationSweepRequest{
-					Interval: testCase.config.Interval,
-					Limit:    testCase.config.BatchSize,
+					Interval: config.Interval,
+					Limit:    config.BatchSize,
 				}).
 				Return(testCase.swept, testCase.sweepErr)
 
@@ -137,9 +115,10 @@ func TestGenerationSweep(t *testing.T) {
 				}
 			}
 
-			worked, err := sweep.RunOnce(t.Context())
+			result, err := core.NewGenerationSweep(config, sweepDao, check).
+				Exec(t.Context(), &core.GenerationSweepRequest{})
 			require.ErrorIs(t, err, testCase.expectErr)
-			require.Equal(t, testCase.expectWorked, worked)
+			require.Equal(t, testCase.expect, result)
 
 			sweepDao.AssertExpectations(t)
 			check.AssertExpectations(t)

@@ -26,17 +26,18 @@ type GenerationLiveCount struct {
 	Count int64 `bun:"count"`
 }
 
-// GenerationCountLive counts an owner's pending and running generations.
-type GenerationCountLive struct{}
+// PgGenerationCountLive counts an owner's pending and running generations.
+type PgGenerationCountLive struct{}
 
-func NewGenerationCountLive() *GenerationCountLive {
-	return &GenerationCountLive{}
+// NewPgGenerationCountLive returns a new PgGenerationCountLive dao.
+func NewPgGenerationCountLive() *PgGenerationCountLive {
+	return &PgGenerationCountLive{}
 }
 
-func (dao *GenerationCountLive) Exec(
+func (dao *PgGenerationCountLive) Exec(
 	ctx context.Context, request *GenerationCountLiveRequest,
 ) (*GenerationLiveCount, error) {
-	ctx, span := otel.Tracer().Start(ctx, "dao.GenerationCountLive")
+	ctx, span := otel.Tracer().Start(ctx, "dao.PgGenerationCountLive")
 	defer span.End()
 
 	tx, err := postgres.GetContext(ctx)

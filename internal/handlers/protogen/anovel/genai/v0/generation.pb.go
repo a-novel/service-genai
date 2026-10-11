@@ -25,7 +25,7 @@ const (
 type GenerationStatus int32
 
 const (
-	// GENERATION_STATUS_UNSPECIFIED means the status was not set. Never a value the service stores.
+	// GENERATION_STATUS_UNSPECIFIED means the status was not set. The service never stores it.
 	GenerationStatus_GENERATION_STATUS_UNSPECIFIED GenerationStatus = 0
 	// GENERATION_STATUS_PENDING means no provider call has been accepted for the current attempt yet.
 	GenerationStatus_GENERATION_STATUS_PENDING GenerationStatus = 1

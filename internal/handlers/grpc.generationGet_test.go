@@ -3,6 +3,7 @@ package handlers_test
 import (
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
@@ -29,6 +30,7 @@ func TestGrpcGenerationGet(t *testing.T) {
 
 		serviceMock *serviceMock
 
+		expect       *genaiv0.GenerationGetResponse
 		expectStatus codes.Code
 	}{
 		{
@@ -36,6 +38,8 @@ func TestGrpcGenerationGet(t *testing.T) {
 
 			request:     &genaiv0.GenerationGetRequest{Id: testGenerationID, OwnerId: testOwnerID},
 			serviceMock: &serviceMock{resp: testGeneration()},
+
+			expect: &genaiv0.GenerationGetResponse{Generation: testGrpcGeneration()},
 		},
 		{
 			// Another owner's generation reports exactly this, so an id cannot be probed for
@@ -88,25 +92,21 @@ func TestGrpcGenerationGet(t *testing.T) {
 
 			if testCase.serviceMock != nil {
 				service.EXPECT().
-					Exec(mock.Anything, mock.Anything).
+					Exec(mock.Anything, &core.GenerationGetRequest{
+						ID: uuid.MustParse(testCase.request.GetId()), OwnerID: uuid.MustParse(testCase.request.GetOwnerId()),
+					}).
 					Return(testCase.serviceMock.resp, testCase.serviceMock.err)
 			}
 
-			response, err := handlers.NewGrpcGenerationGet(service).
-				GenerationGet(t.Context(), testCase.request)
-
-			if testCase.expectStatus != codes.OK {
-				require.Equal(t, testCase.expectStatus, status.Code(err))
-				require.Nil(t, response)
-
-				return
-			}
-
-			require.NoError(t, err)
-			require.Equal(t, testGenerationID, response.GetGeneration().GetId())
-			// The request and the provider call identifier are never published: the caller already
-			// has its request, and the identifier is this service's recovery mechanism.
-			require.Equal(t, genaiv0.GenerationStatus_GENERATION_STATUS_PENDING, response.GetGeneration().GetStatus())
+			res, err := handlers.NewGrpcGenerationGet(service).GenerationGet(t.Context(), testCase.request)
+			resSt, ok := status.FromError(err)
+			require.True(t, ok, resSt.Code().String())
+			require.Equal(
+				t,
+				testCase.expectStatus, resSt.Code(),
+				"expected status code %s, got %s (%v)", testCase.expectStatus, resSt.Code(), err,
+			)
+			require.Equal(t, testCase.expect, res)
 
 			service.AssertExpectations(t)
 		})

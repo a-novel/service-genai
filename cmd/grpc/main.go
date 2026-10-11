@@ -1,8 +1,5 @@
 // Command grpc serves the generation API. It is the service's only network
 // entrypoint; cmd/migrations applies the database schema.
-//
-// The service is internal: callers are other services, never a browser, so
-// there is no HTTP surface to serve alongside it.
 package main
 
 import (
@@ -19,7 +16,6 @@ import (
 	"time"
 
 	"github.com/samber/lo"
-	"go.opentelemetry.io/otel/attribute"
 	"google.golang.org/grpc"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
@@ -27,7 +23,6 @@ import (
 	"github.com/a-novel-kit/golib/downtime"
 	"github.com/a-novel-kit/golib/grpcf"
 	golibproto "github.com/a-novel-kit/golib/grpcf/proto/gen"
-	"github.com/a-novel-kit/golib/logging"
 	"github.com/a-novel-kit/golib/otel"
 	"github.com/a-novel-kit/golib/postgres"
 	"github.com/a-novel-kit/golib/worker"
@@ -48,6 +43,7 @@ var (
 
 func main() {
 	cfg := config.AppPresetDefault
+	lo.Must0(cfg.Validate())
 
 	processCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -75,8 +71,22 @@ func main() {
 	// DAO
 	// =================================================================================================================
 
-	daoGet := dao.NewGenerationGet()
-	daoAttemptList := dao.NewGenerationAttemptList()
+	daoAttemptInsert := dao.NewPgGenerationAttemptInsert()
+	daoAttemptList := dao.NewPgGenerationAttemptList()
+	daoBeginStart := dao.NewPgGenerationBeginStart()
+	daoCountLive := dao.NewPgGenerationCountLive()
+	daoElectCheck := dao.NewPgGenerationElectCheck()
+	daoGet := dao.NewPgGenerationGet()
+	daoQueueDepth := dao.NewPgGenerationQueueDepth()
+	daoRecordProviderCall := dao.NewPgGenerationRecordProviderCall()
+	daoReleaseStart := dao.NewPgGenerationReleaseStart()
+	daoRequestCancel := dao.NewPgGenerationRequestCancel()
+	daoRequeue := dao.NewPgGenerationRequeue()
+	daoSettle := dao.NewPgGenerationSettle()
+	daoSubmit := dao.NewPgGenerationSubmit()
+	daoSweep := dao.NewPgGenerationSweep()
+	daoUsageInsert := dao.NewPgGenerationUsageInsert()
+	daoUsageSum := dao.NewPgGenerationUsageSum()
 
 	// =================================================================================================================
 	// SERVICES
@@ -84,56 +94,56 @@ func main() {
 
 	registry := lo.Must(newConnectors(cfg))
 
-	serviceCheck := lo.Must(core.NewGenerationCheck(
-		core.GenerationCheckConfig{Retention: cfg.Retention},
-		cfg.Log,
+	serviceCheck := core.NewGenerationCheck(
+		core.GenerationCheckConfig{Retention: cfg.Generations.Retention},
+		cfg.Logger,
 		registry,
 		postgres.NewTransactor(nil),
 		core.GenerationCheckDaos{
-			BeginStart:   dao.NewGenerationBeginStart(),
-			ReleaseStart: dao.NewGenerationReleaseStart(),
-			Record:       dao.NewGenerationRecordProviderCall(),
-			Settle:       dao.NewGenerationSettle(),
-			Requeue:      dao.NewGenerationRequeue(),
-			Attempt:      dao.NewGenerationAttemptInsert(),
-			Usage:        dao.NewGenerationUsageInsert(),
+			BeginStart:   daoBeginStart,
+			ReleaseStart: daoReleaseStart,
+			Record:       daoRecordProviderCall,
+			Settle:       daoSettle,
+			Requeue:      daoRequeue,
+			Attempt:      daoAttemptInsert,
+			Usage:        daoUsageInsert,
 			Get:          daoGet,
 		},
-	))
-
-	serviceSubmit := lo.Must(core.NewGenerationSubmit(
-		core.GenerationSubmitConfig{MaxAttempts: cfg.MaxAttempts, Retention: cfg.Retention, Caps: cfg.Caps},
+	)
+	serviceSubmit := core.NewGenerationSubmit(
+		core.GenerationSubmitConfig{
+			MaxAttempts: cfg.Generations.MaxAttempts, Retention: cfg.Generations.Retention, Caps: cfg.Caps,
+		},
 		registry,
 		core.GenerationSubmitDaos{
-			Submit:   dao.NewGenerationSubmit(),
+			Submit:   daoSubmit,
 			Attempts: daoAttemptList,
-			Usage:    dao.NewGenerationUsageSum(),
-			Live:     dao.NewGenerationCountLive(),
-			Settle:   dao.NewGenerationSettle(),
+			Usage:    daoUsageSum,
+			Live:     daoCountLive,
+			Settle:   daoSettle,
 		},
 		serviceCheck,
-	))
-	serviceGet := lo.Must(core.NewGenerationGet(
-		core.GenerationGetConfig{CheckInterval: cfg.CheckInterval},
+	)
+	serviceGet := core.NewGenerationGet(
+		core.GenerationGetConfig{CheckInterval: cfg.Generations.CheckInterval},
 		daoGet,
-		dao.NewGenerationElectCheck(),
+		daoElectCheck,
 		daoAttemptList,
 		serviceCheck,
-	))
-	serviceCancel := lo.Must(core.NewGenerationCancel(
-		core.GenerationCancelConfig{Retention: cfg.Retention},
-		dao.NewGenerationRequestCancel(),
+	)
+	serviceCancel := core.NewGenerationCancel(
+		core.GenerationCancelConfig{Retention: cfg.Generations.Retention},
+		daoRequestCancel,
 		daoGet,
 		daoAttemptList,
 		serviceCheck,
-	))
-	serviceQueueDepth := core.NewQueueDepth(dao.NewGenerationQueueDepth())
-
-	sweep := lo.Must(core.NewGenerationSweep(
+	)
+	serviceQueueDepth := core.NewGenerationQueueDepth(daoQueueDepth)
+	serviceSweep := core.NewGenerationSweep(
 		core.GenerationSweepConfig{Interval: cfg.Sweep.Interval, BatchSize: cfg.Sweep.BatchSize},
-		dao.NewGenerationSweep(),
+		daoSweep,
 		serviceCheck,
-	))
+	)
 
 	// =================================================================================================================
 	// HANDLERS
@@ -162,14 +172,14 @@ func main() {
 		cfg.Otel.RpcInterceptor(),
 		grpc.ChainUnaryInterceptor(
 			grpcf.BaseContextUnaryInterceptor(ctxInterceptor),
-			cfg.Logger.UnaryInterceptor(),
-			cfg.Logger.PanicUnaryInterceptor(),
+			cfg.GrpcLogger.UnaryInterceptor(),
+			cfg.GrpcLogger.PanicUnaryInterceptor(),
 			downtime.UnaryServerInterceptor(cfg.App.DowntimeStart, open...),
 		),
 		grpc.ChainStreamInterceptor(
 			grpcf.BaseContextStreamInterceptor(ctxInterceptor),
-			cfg.Logger.StreamInterceptor(),
-			cfg.Logger.PanicStreamInterceptor(),
+			cfg.GrpcLogger.StreamInterceptor(),
+			cfg.GrpcLogger.PanicStreamInterceptor(),
 			downtime.StreamServerInterceptor(cfg.App.DowntimeStart, open...),
 		),
 	)
@@ -205,10 +215,12 @@ func main() {
 			return grpcf.Serve(ctx, server, fmt.Sprintf("0.0.0.0:%d", cfg.Grpc.Port), cfg.Grpc.Shutdown)
 		},
 		func(ctx context.Context) error {
-			return runLoop(
-				ctx, cfg.Log, "generation-sweep", cfg.Sweep.Interval, 0,
-				outsideDowntime(cfg.App.DowntimeStart, sweep.RunOnce),
-			)
+			return observeLoop(ctx, "generation-sweep", func() {
+				worker.Poll(
+					ctx, cfg.Logger, "generation-sweep", cfg.Sweep.Interval, 0,
+					outsideDowntime(cfg.App.DowntimeStart, sweepOnce(serviceSweep)),
+				)
+			})
 		},
 	)
 	if serveErr != nil {
@@ -273,31 +285,28 @@ func outsideDowntime(
 	}
 }
 
-// runLoop drives a background loop until cancellation. A panic or premature return becomes a
-// process error without including the panic payload, which may contain private provider data.
-func runLoop(
-	ctx context.Context,
-	logger logging.Log,
-	name string,
-	interval, stagger time.Duration,
-	fn func(context.Context) (bool, error),
-) error {
-	return observeLoop(ctx, name, func() {
-		worker.Poll(ctx, logger, name, interval, stagger, fn)
-	})
+// sweepOnce runs one sweep pass in the shape worker.Poll drives, reporting whether it found work.
+func sweepOnce(sweep *core.GenerationSweep) func(context.Context) (bool, error) {
+	return func(ctx context.Context) (bool, error) {
+		result, err := sweep.Exec(ctx, &core.GenerationSweepRequest{})
+		if err != nil {
+			return false, err
+		}
+
+		return result.Checked > 0, nil
+	}
 }
 
-// observeLoop turns a loop boundary into a normal cancellation or a safe, named process failure.
+// observeLoop turns a loop boundary into a normal cancellation or a safe, named process failure. A
+// panic becomes a process error without its payload, which may contain private provider data.
 func observeLoop(ctx context.Context, name string, loop func()) (err error) {
-	ctx, span := otel.Tracer().Start(ctx, "cmd.runLoop")
+	ctx, span := otel.Tracer().Start(ctx, "cmd.observeLoop")
 	defer span.End()
 	defer func() {
 		if recover() != nil {
 			err = otel.ReportError(span, fmt.Errorf("%s: %w", name, errLoopPanicked))
 		}
 	}()
-
-	span.SetAttributes(attribute.String("loop.name", name))
 
 	loop()
 

@@ -5,20 +5,21 @@ package anovel.genai.v0;
 import "anovel/genai/v0/generation.proto";
 
 // GenerationSubmitService records a generation and starts it in the Async mode: the call runs on the
-// provider's side while the caller polls GenerationGet. Resending the same request is a replay: it
-// returns the generation already running or succeeded rather than paying again. A request whose
-// generation failed or was cancelled runs again from scratch. An invalid request, an undeclared
-// purpose included, answers INVALID_ARGUMENT with the reason; a provider without the Async mode
-// answers UNIMPLEMENTED; a user whose usage already reached a cap answers RESOURCE_EXHAUSTED, naming
-// the cap.
+// provider's side while the caller polls GenerationGet.
 service GenerationSubmitService {
+  // Records a generation and starts its provider call. Resending the same request is a replay: it
+  // returns the generation already pending, running or succeeded, so the call is paid once. A
+  // request whose generation failed or was cancelled runs again from scratch. Returns
+  // INVALID_ARGUMENT with the reason for an invalid request, an undeclared purpose or an unknown
+  // provider included; UNIMPLEMENTED for a provider without the Async mode; and RESOURCE_EXHAUSTED,
+  // naming the limit, when the user already reached one.
   rpc GenerationSubmit(GenerationSubmitRequest) returns (GenerationSubmitResponse);
 }
 
 // GenerationSubmitRequest carries a new generation. The server mints the id and the timestamps.
 message GenerationSubmitRequest {
-  // OwnerID is the user this acts for, formatted as a UUID. Supplied by the calling service, which
-  // verified it against its own credential: this service does not authenticate.
+  // OwnerID is the user this acts for, formatted as a UUID. The calling service verifies it against
+  // its own credential, and this service trusts it as sent.
   string owner_id = 1;
   // Purpose labels why the call is made, such as "studio.generation". Required, and declared in the
   // service's caps file, which sets how much each user may consume for it.
@@ -31,12 +32,13 @@ message GenerationSubmitRequest {
   // the Async mode needs, such as OpenAI's background and stream, over the payload's own values.
   bytes payload = 12;
   // UserTier is the usage tier the caller assigns its user, such as "premium". It selects the caps
-  // the submit answers to; an empty or unrecognized tier answers to the default caps. Not part of
-  // the request's identity: it changes what the user may spend, not what the call does.
+  // the submit answers to; an empty or unrecognized tier answers to the default caps. It is left out
+  // of the request's identity, so resending a request under another tier returns the same
+  // generation.
   string user_tier = 13;
   // Variant asks for another generation of a request that already succeeded, such as a regenerate.
-  // Zero by default. A caller recovering from a crash counts variants from zero again, and each one
-  // already run returns its stored result.
+  // It defaults to zero. A caller recovering from a crash counts variants from zero again, and each
+  // one already run returns its stored result.
   uint32 variant = 10;
 
   // A request is identified by its own content and owner: the caller keeps no key to recover it.

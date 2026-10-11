@@ -1,6 +1,7 @@
 package handlers_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 
@@ -45,8 +46,8 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 
 		serviceMock *serviceMock
 
-		expectCreated bool
-		expectStatus  codes.Code
+		expect       *genaiv0.GenerationSubmitResponse
+		expectStatus codes.Code
 		// expectMessage is part of the error a caller reads, telling it what to fix.
 		expectMessage string
 	}{
@@ -60,7 +61,7 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 				Generation: testGeneration(), Created: true,
 			}},
 
-			expectCreated: true,
+			expect: &genaiv0.GenerationSubmitResponse{Generation: testGrpcGeneration(), Created: true},
 		},
 		{
 			// A caller retrying a request it never saw the answer to attaches to the work already in
@@ -73,6 +74,8 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 			serviceMock: &serviceMock{resp: &core.GenerationSubmitResult{
 				Generation: testGeneration(), Created: false,
 			}},
+
+			expect: &genaiv0.GenerationSubmitResponse{Generation: testGrpcGeneration()},
 		},
 		{
 			name: "Error/InvalidOwnerID",
@@ -138,31 +141,27 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 
 			if testCase.serviceMock != nil {
 				service.EXPECT().
-					Exec(mock.Anything, mock.MatchedBy(func(request *core.GenerationSubmitRequest) bool {
-						return request.OwnerID == uuid.MustParse(testCase.request.GetOwnerId()) &&
-							request.Purpose == testCase.request.GetPurpose() &&
-							request.UserTier == testCase.request.GetUserTier() &&
-							request.Provider == testCase.request.GetProvider() &&
-							string(request.Payload) == string(testCase.request.GetPayload()) &&
-							request.Variant == testCase.request.GetVariant()
-					})).
+					Exec(mock.Anything, &core.GenerationSubmitRequest{
+						OwnerID:  uuid.MustParse(testCase.request.GetOwnerId()),
+						Purpose:  testCase.request.GetPurpose(),
+						UserTier: testCase.request.GetUserTier(),
+						Provider: testCase.request.GetProvider(),
+						Payload:  json.RawMessage(testCase.request.GetPayload()),
+						Variant:  testCase.request.GetVariant(),
+					}).
 					Return(testCase.serviceMock.resp, testCase.serviceMock.err)
 			}
 
-			response, err := handlers.NewGrpcGenerationSubmit(service).
-				GenerationSubmit(t.Context(), testCase.request)
-
-			if testCase.expectStatus != codes.OK {
-				require.Equal(t, testCase.expectStatus, status.Code(err))
-				require.Contains(t, status.Convert(err).Message(), testCase.expectMessage)
-				require.Nil(t, response)
-
-				return
-			}
-
-			require.NoError(t, err)
-			require.Equal(t, testCase.expectCreated, response.GetCreated())
-			require.Equal(t, testGenerationID, response.GetGeneration().GetId())
+			res, err := handlers.NewGrpcGenerationSubmit(service).GenerationSubmit(t.Context(), testCase.request)
+			resSt, ok := status.FromError(err)
+			require.True(t, ok, resSt.Code().String())
+			require.Equal(
+				t,
+				testCase.expectStatus, resSt.Code(),
+				"expected status code %s, got %s (%v)", testCase.expectStatus, resSt.Code(), err,
+			)
+			require.Contains(t, resSt.Message(), testCase.expectMessage)
+			require.Equal(t, testCase.expect, res)
 
 			service.AssertExpectations(t)
 		})
