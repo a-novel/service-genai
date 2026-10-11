@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+package anovel.genai.v0;
+
+// GenerationStreamService forwards the provider's events of a streamed generation.
+service GenerationStreamService {
+  // Streams the provider's events of a generation submitted with stream, as they are produced, and
+  // ends after the terminal one. A stream lasts at most one call: after a disconnect, open a new one
+  // after the last sequence number received. The provider streams a call for 5 minutes after its
+  // creation; past that, read the result with GenerationGet. Returns NOT_FOUND if the owner has no
+  // such generation, FAILED_PRECONDITION if it was not submitted with stream or the provider no
+  // longer streams it, UNAVAILABLE if the provider dropped the stream, and INVALID_ARGUMENT if an
+  // id is not a UUID.
+  rpc GenerationStream(GenerationStreamRequest) returns (stream GenerationStreamResponse);
+}
+
+// GenerationStreamRequest identifies the generation to stream and where to resume.
+message GenerationStreamRequest {
+  // ID of the generation to stream, formatted as a UUID.
+  string id = 1;
+  // OwnerID scopes the stream, formatted as a UUID.
+  string owner_id = 2;
+  // StartingAfter is the sequence number of the last event already received. Unset streams from the
+  // first event.
+  optional int64 starting_after = 3;
+}
+
+// GenerationStreamResponse is one of the provider's events.
+message GenerationStreamResponse {
+  // SequenceNumber orders the generation's events; resume after the last one received.
+  int64 sequence_number = 1;
+  // Event is the provider's event, as JSON in the provider's own format.
+  bytes event = 2;
+}

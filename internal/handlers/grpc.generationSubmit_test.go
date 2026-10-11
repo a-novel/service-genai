@@ -23,7 +23,7 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 
 	// Every request field reaches the request key: it is how a resend finds its generation. A new
 	// field must be mapped below and added to the key, or two different requests would share one.
-	keyFields := []string{"owner_id", "purpose", "provider", "payload", "variant"}
+	keyFields := []string{"owner_id", "purpose", "provider", "payload", "variant", "stream"}
 	// user_tier selects the caps a submit answers to, and changes nothing about the call.
 	notKeyed := []string{"user_tier"}
 
@@ -56,6 +56,18 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 
 			request: &genaiv0.GenerationSubmitRequest{
 				OwnerId: testOwnerID, Purpose: "studio.generation", Provider: "openai", Payload: payload, Variant: 2,
+			},
+			serviceMock: &serviceMock{resp: &core.GenerationSubmitResult{
+				Generation: testGeneration(), Created: true,
+			}},
+
+			expect: &genaiv0.GenerationSubmitResponse{Generation: testGrpcGeneration(), Created: true},
+		},
+		{
+			name: "Success/Streamed",
+
+			request: &genaiv0.GenerationSubmitRequest{
+				OwnerId: testOwnerID, Purpose: "studio.generation", Provider: "openai", Payload: payload, Stream: true,
 			},
 			serviceMock: &serviceMock{resp: &core.GenerationSubmitResult{
 				Generation: testGeneration(), Created: true,
@@ -119,7 +131,7 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 			serviceMock: &serviceMock{err: fmt.Errorf("provider: %w", connectors.ErrModeUnsupported)},
 
 			expectStatus:  codes.Unimplemented,
-			expectMessage: "Async mode",
+			expectMessage: "requested mode",
 		},
 		{
 			name: "Error/Internal",
@@ -148,6 +160,7 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 						Provider: testCase.request.GetProvider(),
 						Payload:  json.RawMessage(testCase.request.GetPayload()),
 						Variant:  testCase.request.GetVariant(),
+						Stream:   testCase.request.GetStream(),
 					}).
 					Return(testCase.serviceMock.resp, testCase.serviceMock.err)
 			}

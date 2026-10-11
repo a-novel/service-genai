@@ -69,6 +69,8 @@ func TestGenerationCheck(t *testing.T) {
 		callerGone bool
 		// expectStop asks the provider to cancel instead of reading the call.
 		expectStop bool
+		// stopped is the provider's answer to a cancel sent after the read found the call stuck.
+		stopped *connectors.Call
 
 		expectStart      bool
 		expectRelease    bool
@@ -125,6 +127,17 @@ func TestGenerationCheck(t *testing.T) {
 			expectStart:  true,
 			expectSettle: &settle{attempt: 1, status: dao.GenerationStatusFailed, reason: &startFailedMessage},
 			expectStatus: dao.GenerationStatusFailed,
+		},
+		{
+			// The connector creates a streamed generation's call in streaming mode.
+			name: "Success/StreamedStart",
+
+			generation: streamed(pendingGeneration()),
+			start:      providerCall(connectors.CallRunning),
+
+			expectStart:  true,
+			expectRecord: true,
+			expectStatus: dao.GenerationStatusRunning,
 		},
 		{
 			// Nothing ran. The caller built the request, so it reads the provider's reason to fix it.
@@ -327,7 +340,7 @@ func TestGenerationCheck(t *testing.T) {
 			// Past the run ceiling, the call is stopped and the generation fails with what it consumed.
 			name: "Success/Overdue",
 
-			generation: overdue(runningGeneration(1)),
+			generation: startedAgo(runningGeneration(1), 3*time.Hour),
 			observe:    providerCall(connectors.CallCancelled),
 			expectStop: true,
 
@@ -342,7 +355,7 @@ func TestGenerationCheck(t *testing.T) {
 			// The call finished before the stop reached it: its result stands.
 			name: "Success/OverdueFinishedMeanwhile",
 
-			generation: overdue(runningGeneration(1)),
+			generation: startedAgo(runningGeneration(1), 3*time.Hour),
 			observe:    providerCall(connectors.CallSucceeded),
 			expectStop: true,
 
@@ -355,7 +368,7 @@ func TestGenerationCheck(t *testing.T) {
 			// A provider that cannot be reached, a revoked key included, must not hold the slot forever.
 			name: "Success/OverdueUnreachable",
 
-			generation: overdue(runningGeneration(1)),
+			generation: startedAgo(runningGeneration(1), 3*time.Hour),
 			observeErr: connectors.ErrRetryable,
 			expectStop: true,
 
@@ -363,6 +376,39 @@ func TestGenerationCheck(t *testing.T) {
 				attempt: 1, callID: &callID, status: dao.GenerationStatusFailed, reason: &overdueMessage,
 			},
 			expectStatus: dao.GenerationStatusFailed,
+		},
+		{
+			// A streamed creation stream left early can leave the call queued for good: past its
+			// ceiling, it is stopped like an overdue one.
+			name: "Success/StreamedStuckQueued",
+
+			generation: streamed(startedAgo(runningGeneration(1), 10*time.Minute)),
+			observe:    providerCall(connectors.CallQueued),
+			stopped:    providerCall(connectors.CallCancelled),
+
+			expectSettle: &settle{
+				attempt: 1, callID: &callID, status: dao.GenerationStatusFailed, reason: &overdueMessage,
+			},
+			expectAttempt: testResponse,
+			expectUsage:   true,
+			expectStatus:  dao.GenerationStatusFailed,
+		},
+		{
+			name: "Success/StreamedQueuedWithinCeiling",
+
+			generation: streamed(startedAgo(runningGeneration(1), time.Minute)),
+			observe:    providerCall(connectors.CallQueued),
+
+			expectStatus: dao.GenerationStatusRunning,
+		},
+		{
+			// Only a streamed creation risks the early-disconnect bug; a polled call may queue a while.
+			name: "Success/PolledQueuedLong",
+
+			generation: startedAgo(runningGeneration(1), 10*time.Minute),
+			observe:    providerCall(connectors.CallQueued),
+
+			expectStatus: dao.GenerationStatusRunning,
 		},
 		{
 			name: "Success/RetriesExhausted",
@@ -506,6 +552,7 @@ func TestGenerationCheck(t *testing.T) {
 			// The attempt a fresh start takes.
 			intent := startingGeneration(0)
 			intent.CreatedAt = generation.CreatedAt
+			intent.Streamed = generation.Streamed
 
 			// usageOf is the Usage Record of a call answered for an attempt. The test provider reports
 			// no start, so the call is timed from when it was sent.
@@ -535,7 +582,7 @@ func TestGenerationCheck(t *testing.T) {
 			if testCase.expectStart {
 				// The payload as the caller built it: the connector writes its own envelope.
 				connector.EXPECT().
-					Start(mock.Anything, &connectors.AsyncStartRequest{Payload: testPayload}).
+					Start(mock.Anything, &connectors.AsyncStartRequest{Payload: testPayload, Stream: generation.Streamed}).
 					Return(testCase.start, testCase.startErr)
 			}
 
@@ -571,6 +618,10 @@ func TestGenerationCheck(t *testing.T) {
 					connector.EXPECT().Get(mock.MatchedBy(func(ctx context.Context) bool { return ctx.Err() == nil }), testCallID).
 						Return(testCase.observe, testCase.observeErr)
 				}
+			}
+
+			if testCase.stopped != nil {
+				connector.EXPECT().Cancel(mock.Anything, testCallID).Return(testCase.stopped, nil)
 			}
 
 			if expected := testCase.expectSettle; expected != nil {
@@ -618,7 +669,7 @@ func TestGenerationCheck(t *testing.T) {
 
 			if testCase.expectUsage {
 				usage.EXPECT().
-					Exec(mock.Anything, usageOf(generation, testCase.observe)).
+					Exec(mock.Anything, usageOf(generation, lo.CoalesceOrEmpty(testCase.stopped, testCase.observe))).
 					Return(&dao.GenerationUsage{}, testCase.usageErr)
 			}
 

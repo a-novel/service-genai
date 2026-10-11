@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -26,9 +27,12 @@ type scriptedProvider struct {
 	body   string
 	// cancel, when set, answers cancel requests instead.
 	cancel *scriptedProvider
+	// events, when set, answers as a server-sent event stream instead of JSON.
+	events bool
 
-	lastPath string
-	lastBody json.RawMessage
+	lastPath  string
+	lastQuery string
+	lastBody  json.RawMessage
 }
 
 func (script *scriptedProvider) serve(t *testing.T) *httptest.Server {
@@ -36,6 +40,7 @@ func (script *scriptedProvider) serve(t *testing.T) *httptest.Server {
 
 	server := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		script.lastPath = request.URL.Path
+		script.lastQuery = request.URL.RawQuery
 
 		if request.Body != nil {
 			script.lastBody, _ = io.ReadAll(request.Body)
@@ -46,7 +51,7 @@ func (script *scriptedProvider) serve(t *testing.T) *httptest.Server {
 			answer = script.cancel
 		}
 
-		writer.Header().Set("Content-Type", "application/json")
+		writer.Header().Set("Content-Type", lo.Ternary(answer.events, "text/event-stream", "application/json"))
 		writer.WriteHeader(answer.status)
 		_, _ = writer.Write([]byte(answer.body))
 	}))
@@ -95,6 +100,28 @@ func response(status string, extra string) string {
 	}
 
 	return body + "}"
+}
+
+// sse writes events as the provider streams them.
+func sse(events ...string) string {
+	var body strings.Builder
+
+	for _, event := range events {
+		body.WriteString("data: " + event + "\n\n")
+	}
+
+	return body.String()
+}
+
+// lifecycleEvent is a stream event carrying the response in the given status.
+func lifecycleEvent(kind string, sequence int, status string) string {
+	return `{"type": "response.` + kind + `", "sequence_number": ` + strconv.Itoa(sequence) +
+		`, "response": ` + response(status, "") + `}`
+}
+
+// deltaEvent is a stream event carrying output text.
+func deltaEvent(sequence int) string {
+	return `{"type": "response.output_text.delta", "sequence_number": ` + strconv.Itoa(sequence) + `, "delta": "the"}`
 }
 
 const (
@@ -187,7 +214,7 @@ func TestOpenAI(t *testing.T) {
 
 			script: &scriptedProvider{status: http.StatusOK, body: response("queued", "")},
 
-			expectState: connectors.CallRunning,
+			expectState: connectors.CallQueued,
 		},
 		{
 			// The output stopped at the caller's own max_output_tokens. Finished, and the caller's to read.
@@ -627,6 +654,159 @@ func TestOpenAI(t *testing.T) {
 
 		_, err = provider.Start(t.Context(), testStartRequest())
 		require.ErrorIs(t, err, connectors.ErrRetryable)
+	})
+
+	// A streamed start holds the provider's creation stream until the provider begins the call:
+	// leaving it while still queued can leave the call queued for good.
+	t.Run("StreamedStart", func(t *testing.T) {
+		t.Parallel()
+
+		testCases := []struct {
+			name string
+
+			events []string
+
+			expectState connectors.CallState
+			expectErr   error
+		}{
+			{
+				name: "Success/HeldUntilInProgress",
+
+				events: []string{
+					lifecycleEvent("created", 0, "queued"),
+					lifecycleEvent("queued", 1, "queued"),
+					lifecycleEvent("in_progress", 2, "in_progress"),
+					deltaEvent(3),
+				},
+
+				expectState: connectors.CallRunning,
+			},
+			{
+				// The provider never began it within the hold: the call is recorded queued, for the
+				// checks to follow.
+				name: "Success/LeftQueued",
+
+				events: []string{lifecycleEvent("created", 0, "queued"), lifecycleEvent("queued", 1, "queued")},
+
+				expectState: connectors.CallQueued,
+			},
+			{
+				// The request left, so the provider may hold a call nothing names.
+				name: "Error/EndedBeforeID",
+
+				expectErr: connectors.ErrStartAmbiguous,
+			},
+		}
+
+		for _, testCase := range testCases {
+			t.Run(testCase.name, func(t *testing.T) {
+				t.Parallel()
+
+				script := &scriptedProvider{status: http.StatusOK, events: true, body: sse(testCase.events...)}
+				provider := newTestProvider(t, script)
+
+				call, err := provider.Start(t.Context(), &connectors.AsyncStartRequest{
+					Payload: json.RawMessage(testPayload), Stream: true,
+				})
+				require.ErrorIs(t, err, testCase.expectErr)
+
+				var sent map[string]json.RawMessage
+
+				require.NoError(t, json.Unmarshal(script.lastBody, &sent))
+				require.JSONEq(t, "true", string(sent["stream"]))
+				require.JSONEq(t, "true", string(sent["background"]))
+
+				if testCase.expectErr != nil {
+					return
+				}
+
+				require.Equal(t, "resp_1", call.ID)
+				require.Equal(t, testCase.expectState, call.State)
+			})
+		}
+	})
+
+	t.Run("Stream", func(t *testing.T) {
+		t.Parallel()
+
+		testCases := []struct {
+			name string
+
+			script        *scriptedProvider
+			startingAfter *int64
+
+			expectQuery     string
+			expectSequences []int64
+			expectErr       error
+		}{
+			{
+				// The stream stops at the terminal event, whatever the provider sends after.
+				name: "Success",
+
+				script: &scriptedProvider{status: http.StatusOK, events: true, body: sse(
+					deltaEvent(3), lifecycleEvent("completed", 4, "completed"), deltaEvent(5),
+				)},
+				startingAfter: new(int64(2)),
+
+				expectQuery:     "starting_after=2&stream=true",
+				expectSequences: []int64{3, 4},
+			},
+			{
+				name: "Success/FromTheStart",
+
+				script: &scriptedProvider{status: http.StatusOK, events: true, body: sse(deltaEvent(0))},
+
+				expectQuery:     "stream=true",
+				expectSequences: []int64{0},
+			},
+			{
+				// Past the stream window, or a call not created to be streamed.
+				name: "Error/Unavailable",
+
+				script: &scriptedProvider{status: http.StatusBadRequest, body: `{"error": {"message": "too old"}}`},
+
+				expectQuery: "stream=true",
+				expectErr:   connectors.ErrStreamUnavailable,
+			},
+			{
+				name: "Error/ProviderFailure",
+
+				script: &scriptedProvider{status: http.StatusInternalServerError, body: `{}`},
+
+				expectQuery: "stream=true",
+				expectErr:   connectors.ErrRetryable,
+			},
+		}
+
+		for _, testCase := range testCases {
+			t.Run(testCase.name, func(t *testing.T) {
+				t.Parallel()
+
+				provider := newTestProvider(t, testCase.script)
+
+				var (
+					sequences []int64
+					err       error
+				)
+
+				for event, eventErr := range provider.Stream(t.Context(), &connectors.StreamRequest{
+					ID: "resp_1", StartingAfter: testCase.startingAfter,
+				}) {
+					if eventErr != nil {
+						err = eventErr
+
+						break
+					}
+
+					sequences = append(sequences, event.Sequence)
+				}
+
+				require.ErrorIs(t, err, testCase.expectErr)
+				require.Equal(t, testCase.expectSequences, sequences)
+				require.Equal(t, "/responses/resp_1", testCase.script.lastPath)
+				require.Equal(t, testCase.expectQuery, testCase.script.lastQuery)
+			})
+		}
 	})
 }
 

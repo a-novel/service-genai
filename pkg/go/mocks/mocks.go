@@ -248,6 +248,89 @@ func (_c *MockClient_GenerationGet_Call) RunAndReturn(run func(ctx context.Conte
 	return _c
 }
 
+// GenerationStream provides a mock function for the type MockClient
+func (_mock *MockClient) GenerationStream(ctx context.Context, req *servicegenai.GenerationStreamRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[servicegenai.GenerationStreamResponse], error) {
+	var tmpRet mock.Arguments
+	if len(opts) > 0 {
+		tmpRet = _mock.Called(ctx, req, opts)
+	} else {
+		tmpRet = _mock.Called(ctx, req)
+	}
+	ret := tmpRet
+
+	if len(ret) == 0 {
+		panic("no return value specified for GenerationStream")
+	}
+
+	var r0 grpc.ServerStreamingClient[servicegenai.GenerationStreamResponse]
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *servicegenai.GenerationStreamRequest, ...grpc.CallOption) (grpc.ServerStreamingClient[servicegenai.GenerationStreamResponse], error)); ok {
+		return returnFunc(ctx, req, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *servicegenai.GenerationStreamRequest, ...grpc.CallOption) grpc.ServerStreamingClient[servicegenai.GenerationStreamResponse]); ok {
+		r0 = returnFunc(ctx, req, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(grpc.ServerStreamingClient[servicegenai.GenerationStreamResponse])
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *servicegenai.GenerationStreamRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, req, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockClient_GenerationStream_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GenerationStream'
+type MockClient_GenerationStream_Call struct {
+	*mock.Call
+}
+
+// GenerationStream is a helper method to define mock.On call
+//   - ctx context.Context
+//   - req *servicegenai.GenerationStreamRequest
+//   - opts ...grpc.CallOption
+func (_e *MockClient_Expecter) GenerationStream(ctx any, req any, opts ...any) *MockClient_GenerationStream_Call {
+	return &MockClient_GenerationStream_Call{Call: _e.mock.On("GenerationStream",
+		append([]any{ctx, req}, opts...)...)}
+}
+
+func (_c *MockClient_GenerationStream_Call) Run(run func(ctx context.Context, req *servicegenai.GenerationStreamRequest, opts ...grpc.CallOption)) *MockClient_GenerationStream_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *servicegenai.GenerationStreamRequest
+		if args[1] != nil {
+			arg1 = args[1].(*servicegenai.GenerationStreamRequest)
+		}
+		var arg2 []grpc.CallOption
+		var variadicArgs []grpc.CallOption
+		if len(args) > 2 {
+			variadicArgs = args[2].([]grpc.CallOption)
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockClient_GenerationStream_Call) Return(serverStreamingClient grpc.ServerStreamingClient[servicegenai.GenerationStreamResponse], err error) *MockClient_GenerationStream_Call {
+	_c.Call.Return(serverStreamingClient, err)
+	return _c
+}
+
+func (_c *MockClient_GenerationStream_Call) RunAndReturn(run func(ctx context.Context, req *servicegenai.GenerationStreamRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[servicegenai.GenerationStreamResponse], error)) *MockClient_GenerationStream_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GenerationSubmit provides a mock function for the type MockClient
 func (_mock *MockClient) GenerationSubmit(ctx context.Context, req *servicegenai.GenerationSubmitRequest, opts ...grpc.CallOption) (*servicegenai.GenerationSubmitResponse, error) {
 	var tmpRet mock.Arguments

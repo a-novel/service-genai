@@ -21,6 +21,8 @@ type submission struct {
 	key []byte
 	// settleBefore moves the previous submission's generation to this status first.
 	settleBefore dao.GenerationStatus
+	// streamed submits the generation for streaming.
+	streamed bool
 
 	expectCreated bool
 	// expectReplayOf is the 1-based index of an earlier submission whose generation this one must
@@ -42,6 +44,8 @@ func (sub submission) build() *dao.GenerationSubmitRequest {
 	if sub.key != nil {
 		base.RequestKey = sub.key
 	}
+
+	base.Streamed = sub.streamed
 
 	return base
 }
@@ -92,6 +96,11 @@ func TestPgGenerationSubmit(t *testing.T) {
 			name: "Created",
 
 			submissions: []submission{{expectCreated: true}},
+		},
+		{
+			name: "Created/Streamed",
+
+			submissions: []submission{{streamed: true, expectCreated: true}},
 		},
 		{
 			// A resend mints a fresh identifier, exactly as a caller that never saw the first answer
@@ -176,6 +185,7 @@ func TestPgGenerationSubmit(t *testing.T) {
 						require.Equal(t, request.Provider, result.Generation.Provider)
 						// Stored as sent: key order and characters reach the provider unchanged.
 						require.Equal(t, request.Traceparent, result.Generation.Traceparent)
+						require.Equal(t, request.Streamed, result.Generation.Streamed)
 
 						// The database owns these, and a caller must never supply them.
 						require.False(t, result.Generation.CreatedAt.IsZero())

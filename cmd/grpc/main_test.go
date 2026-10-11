@@ -215,7 +215,7 @@ func TestNewConnectors(t *testing.T) {
 		require.NoError(t, err)
 		// Background mode, with the caller's store: false: the id comes back before the model runs.
 		require.NotEmpty(t, started.ID)
-		require.Equal(t, connectors.CallRunning, started.State)
+		require.False(t, started.State.Terminal())
 
 		finished := await(t, started.ID)
 		require.Equal(t, connectors.CallSucceeded, finished.State, finished.Reason)
@@ -234,6 +234,39 @@ func TestNewConnectors(t *testing.T) {
 		again, err := connector.Get(t.Context(), started.ID)
 		require.NoError(t, err, "result gone %s after it finished", config.SweepIntervalCeiling)
 		require.JSONEq(t, output(t, finished.Response), output(t, again.Response))
+	})
+
+	// Streaming mode: the start waits for the provider to begin the call, then a stream reads its
+	// events, as sent, through the terminal one.
+	t.Run("Success/Streamed", func(t *testing.T) {
+		t.Parallel()
+
+		streaming, err := registry.Streaming("openai")
+		require.NoError(t, err)
+
+		started, err := connector.Start(t.Context(), &connectors.AsyncStartRequest{
+			Payload: payload("gpt-5.6-luna", "low"), Stream: true,
+		})
+		require.NoError(t, err)
+		require.NotEmpty(t, started.ID)
+		// Left only once the provider began it: a call left queued can stay queued for good.
+		require.NotEqual(t, connectors.CallQueued, started.State)
+
+		var last *connectors.StreamEvent
+
+		for event, err := range streaming.Stream(t.Context(), &connectors.StreamRequest{ID: started.ID}) {
+			require.NoError(t, err)
+			require.True(t, json.Valid(event.Data))
+
+			if last != nil {
+				require.Greater(t, event.Sequence, last.Sequence)
+			}
+
+			last = event
+		}
+
+		require.NotNil(t, last)
+		require.True(t, last.Terminal)
 	})
 
 	t.Run("Success/CancelFinished", func(t *testing.T) {

@@ -45,7 +45,11 @@ type GenerationSubmitRequest struct {
 	// Variant asks for another generation of a request that already succeeded, such as a regenerate.
 	// It defaults to zero. A caller recovering from a crash counts variants from zero again, and each
 	// one already run returns its stored result.
-	Variant       uint32 `protobuf:"varint,10,opt,name=variant,proto3" json:"variant,omitempty"`
+	Variant uint32 `protobuf:"varint,10,opt,name=variant,proto3" json:"variant,omitempty"`
+	// Stream creates the provider call in streaming mode, so GenerationStream can forward its events
+	// while it runs. The submit then answers once the provider has begun the call, after its queue
+	// time. It is part of the request: the same payload with and without it are two generations.
+	Stream        bool `protobuf:"varint,14,opt,name=stream,proto3" json:"stream,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -122,6 +126,13 @@ func (x *GenerationSubmitRequest) GetVariant() uint32 {
 	return 0
 }
 
+func (x *GenerationSubmitRequest) GetStream() bool {
+	if x != nil {
+		return x.Stream
+	}
+	return false
+}
+
 // GenerationSubmitResponse returns the recorded generation and whether this call created it.
 type GenerationSubmitResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -182,7 +193,7 @@ var File_anovel_genai_v0_generation_submit_proto protoreflect.FileDescriptor
 
 const file_anovel_genai_v0_generation_submit_proto_rawDesc = "" +
 	"\n" +
-	"'anovel/genai/v0/generation_submit.proto\x12\x0fanovel.genai.v0\x1a anovel/genai/v0/generation.proto\"\xb7\x02\n" +
+	"'anovel/genai/v0/generation_submit.proto\x12\x0fanovel.genai.v0\x1a anovel/genai/v0/generation.proto\"\xcf\x02\n" +
 	"\x17GenerationSubmitRequest\x12\x19\n" +
 	"\bowner_id\x18\x01 \x01(\tR\aownerId\x12\x18\n" +
 	"\apurpose\x18\x02 \x01(\tR\apurpose\x12\x1a\n" +
@@ -190,7 +201,8 @@ const file_anovel_genai_v0_generation_submit_proto_rawDesc = "" +
 	"\apayload\x18\f \x01(\fR\apayload\x12\x1b\n" +
 	"\tuser_tier\x18\r \x01(\tR\buserTier\x12\x18\n" +
 	"\avariant\x18\n" +
-	" \x01(\rR\avariantJ\x04\b\x03\x10\x04J\x04\b\x04\x10\x05J\x04\b\x05\x10\x06J\x04\b\x06\x10\aJ\x04\b\a\x10\bJ\x04\b\b\x10\tJ\x04\b\t\x10\n" +
+	" \x01(\rR\avariant\x12\x16\n" +
+	"\x06stream\x18\x0e \x01(\bR\x06streamJ\x04\b\x03\x10\x04J\x04\b\x04\x10\x05J\x04\b\x05\x10\x06J\x04\b\x06\x10\aJ\x04\b\a\x10\bJ\x04\b\b\x10\tJ\x04\b\t\x10\n" +
 	"R\x0fidempotency_keyR\arequestR\fmax_attemptsR\x04tierR\finstructionsR\x05inputR\routput_schema\"q\n" +
 	"\x18GenerationSubmitResponse\x12;\n" +
 	"\n" +

@@ -3,6 +3,7 @@ package core_test
 import (
 	"encoding/json"
 	"errors"
+	"iter"
 	"time"
 
 	"github.com/google/uuid"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/a-novel/service-genai/internal/dao"
 	"github.com/a-novel/service-genai/internal/lib/connectors"
+	connectorsmocks "github.com/a-novel/service-genai/internal/lib/connectors/mocks"
 )
 
 var errFoo = errors.New("foo")
@@ -18,6 +20,8 @@ const (
 	testCallID = "resp_1"
 	// testProvider is the provider the generations under test run on.
 	testProvider = "openai"
+	// testStreamer is a provider offering the Streaming mode too.
+	testStreamer = "streamer"
 	testPurpose  = "studio.generation"
 	// testModel is the snapshot a provider reports running.
 	testModel = "a-model-2026-01-01"
@@ -86,12 +90,25 @@ func withCancel(generation *dao.Generation) *dao.Generation {
 }
 
 // withProvider moves the generation to another provider.
-// overdue backdates a running generation's start past the run ceiling.
-func overdue(generation *dao.Generation) *dao.Generation {
-	started := testNow.Add(-3 * time.Hour)
+// startedAgo backdates a generation's start by the given age before testNow.
+func startedAgo(generation *dao.Generation, age time.Duration) *dao.Generation {
+	started := testNow.Add(-age)
 	generation.StartRequestedAt = &started
 
 	return generation
+}
+
+// streamed marks a generation submitted for streaming.
+func streamed(generation *dao.Generation) *dao.Generation {
+	generation.Streamed = true
+
+	return generation
+}
+
+// asyncStreaming serves both the Async and the Streaming modes, as the OpenAI connector does.
+type asyncStreaming struct {
+	*connectorsmocks.MockAsync
+	*connectorsmocks.MockStreaming
 }
 
 // submittedAgo dates the generation's submission age before testNow.
@@ -144,4 +161,19 @@ func failedCall(retryable bool) *connectors.Call {
 // testAttemptRows are the provider's answers to a generation's attempts, as stored.
 func testAttemptRows() []*dao.GenerationAttempt {
 	return []*dao.GenerationAttempt{{GenerationID: testGenerationID, Attempt: 1, Response: testResponse}}
+}
+
+// streamOf yields the given events, then the error when there is one, as a connector streams them.
+func streamOf(events []*connectors.StreamEvent, err error) iter.Seq2[*connectors.StreamEvent, error] {
+	return func(yield func(*connectors.StreamEvent, error) bool) {
+		for _, event := range events {
+			if !yield(event, nil) {
+				return
+			}
+		}
+
+		if err != nil {
+			yield(nil, err)
+		}
+	}
 }

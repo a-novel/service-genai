@@ -218,7 +218,8 @@ func (service *GenerationCheck) start(ctx context.Context, generation *dao.Gener
 
 	span.SetAttributes(attribute.Int("generation.attempt", int(intent.Attempt)))
 
-	startCtx, cancelStart := context.WithTimeout(ctx, startTimeout)
+	// A streamed start waits for the provider to begin the call, which takes its queue time.
+	startCtx, cancelStart := context.WithTimeout(ctx, lo.Ternary(intent.Streamed, streamStartTimeout, startTimeout))
 	defer cancelStart()
 
 	// A process frozen since recording intent may find the attempt already settled as unknown by
@@ -232,7 +233,7 @@ func (service *GenerationCheck) start(ctx context.Context, generation *dao.Gener
 		return released, nil
 	}
 
-	call, err := connector.Start(startCtx, &connectors.AsyncStartRequest{Payload: intent.Payload})
+	call, err := connector.Start(startCtx, &connectors.AsyncStartRequest{Payload: intent.Payload, Stream: intent.Streamed})
 	if err != nil {
 		failed, failErr := service.failStart(ctx, intent, err)
 		if failErr != nil {
@@ -390,6 +391,14 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 		call, err = connector.Cancel(ctx, *generation.ProviderCallID)
 	} else {
 		call, err = connector.Get(ctx, *generation.ProviderCallID)
+	}
+
+	// The provider can leave a streamed call queued for good when its creation stream was left early.
+	// One still queued past its ceiling is stopped like an overdue call.
+	if err == nil && generation.Streamed && !overdue && generation.CancelRequestedAt == nil &&
+		call.State == connectors.CallQueued && generation.CheckedAt.Sub(*generation.StartRequestedAt) >= streamQueuedCeiling {
+		overdue = true
+		call, err = connector.Cancel(ctx, *generation.ProviderCallID)
 	}
 
 	if errors.Is(err, connectors.ErrRetryable) && !overdue {
@@ -698,13 +707,17 @@ const (
 	startTimeout = 5 * time.Second
 	// persistenceTimeout bounds a write that runs detached from a cancelled caller.
 	persistenceTimeout = 2 * time.Second
+	// streamStartTimeout bounds a streamed start, which waits for the provider to begin the call.
+	streamStartTimeout = 30 * time.Second
+	// streamQueuedCeiling is how long a streamed call may stay queued before it is stopped.
+	streamQueuedCeiling = 5 * time.Minute
 	// startOutcomeUnknownAfter is how old a start intent without an id must be before no start can
-	// still be in flight for it. Well above startTimeout plus persistenceTimeout.
-	startOutcomeUnknownAfter = 30 * time.Second
+	// still be in flight for it. Well above streamStartTimeout plus persistenceTimeout.
+	startOutcomeUnknownAfter = time.Minute
 	// checkTimeout bounds a whole check, detached from its caller. A start that proceeds takes under
-	// startTimeout to begin, then startTimeout plus persistenceTimeout; a read takes the connector's
-	// ten seconds plus its commit.
-	checkTimeout = 15 * time.Second
+	// startTimeout to begin, then at most streamStartTimeout plus persistenceTimeout; a read takes
+	// the connector's ten seconds plus its commit.
+	checkTimeout = 45 * time.Second
 	// retryDelay postpones a fresh call after a rate limit or a retryable provider failure.
 	retryDelay = 15 * time.Second
 	// startRetryCeiling bounds how long a generation keeps retrying a start the provider turns away,

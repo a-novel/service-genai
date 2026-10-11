@@ -137,6 +137,7 @@ func main() {
 		daoAttemptList,
 		serviceCheck,
 	)
+	serviceStream := core.NewGenerationStream(daoGet, registry)
 	serviceQueueDepth := core.NewGenerationQueueDepth(daoQueueDepth)
 	serviceSweep := core.NewGenerationSweep(
 		core.GenerationSweepConfig{Interval: cfg.Sweep.Interval, BatchSize: cfg.Sweep.BatchSize},
@@ -152,6 +153,7 @@ func main() {
 	handlerSubmit := handlers.NewGrpcGenerationSubmit(serviceSubmit)
 	handlerGet := handlers.NewGrpcGenerationGet(serviceGet)
 	handlerCancel := handlers.NewGrpcGenerationCancel(serviceCancel)
+	handlerStream := handlers.NewGrpcGenerationStream(serviceStream)
 
 	// =================================================================================================================
 	// SERVER
@@ -180,6 +182,7 @@ func main() {
 	genaiv0.RegisterGenerationSubmitServiceServer(server, handlerSubmit)
 	genaiv0.RegisterGenerationGetServiceServer(server, handlerGet)
 	genaiv0.RegisterGenerationCancelServiceServer(server, handlerCancel)
+	genaiv0.RegisterGenerationStreamServiceServer(server, handlerStream)
 
 	reflection.Register(server)
 
