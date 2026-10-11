@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
@@ -71,38 +70,26 @@ func (service *GenerationSweep) Exec(
 		return nil, otel.ReportError(span, fmt.Errorf("sweep generations: %w", err))
 	}
 
-	var checkErr error
-
 	for _, generation := range generations {
 		if ctx.Err() != nil {
 			break
 		}
 
-		err = service.checkOne(ctx, generation)
-		if err != nil {
-			// One generation's failure belongs to it; the rest of the batch still progresses.
-			checkErr = errors.Join(checkErr, fmt.Errorf("check generation %s: %w", generation.ID, err))
-		}
-	}
-
-	if checkErr != nil {
-		return nil, otel.ReportError(span, checkErr)
+		service.checkOne(ctx, generation)
 	}
 
 	return &GenerationSweepResult{Checked: len(generations)}, nil
 }
 
-// checkOne keeps a panic with the generation that caused it, so one bad row cannot end the process
-// on every pass. The server recovers a poll's panic the same way.
-func (service *GenerationSweep) checkOne(ctx context.Context, generation *dao.Generation) error {
+// checkOne keeps a failure or a panic with the generation that caused it, so one bad row neither
+// ends the process nor slows the rest of the backlog. The server recovers a poll's panic the same way.
+func (service *GenerationSweep) checkOne(ctx context.Context, generation *dao.Generation) {
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationSweep(checkOne)")
 	defer span.End()
 	defer otel.RecoverPanic(ctx, span)
 
 	_, err := service.serviceCheck.Exec(ctx, &GenerationCheckRequest{Generation: generation})
 	if err != nil {
-		return otel.ReportError(span, err)
+		_ = otel.ReportError(span, err)
 	}
-
-	return nil
 }
