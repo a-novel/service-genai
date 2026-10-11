@@ -6,14 +6,15 @@ An adapter offers a mode by implementing its interface. The OpenAI adapter offer
 
 ## Async mode requirements
 
-| Requirement                                                              | Why the service needs it                                                                                                                      |
-| ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| Create, retrieve by id, and cancel an operation                          | The adapter's three operations.                                                                                                               |
-| An operation id returned before the model runs                           | Crash safety: the id is recorded before anything else, so a restarted check re-attaches instead of paying again. OpenAI's `background: true`. |
-| Asynchronous runs available without provider-side retention              | A caller that sets `store: false` keeps its prose out of a 30-day provider copy, and the call stays recoverable.                              |
-| A finished operation stays retrievable for at least five minutes         | The sweep reads an unpolled result within `SWEEP_INTERVAL`, which is capped at five minutes. OpenAI kept one for over three hours.            |
-| Cancelling a finished operation returns its result, or a read still does | A cancel that lost a race with completion keeps the paid result.                                                                              |
-| A JSON error body on a rejected request                                  | The caller built the request, so the provider's reason is what tells it what to fix.                                                          |
+| Requirement                                                                            | Why the service needs it                                                                                                                      |
+| -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Create, retrieve by id, and cancel an operation                                        | The adapter's three operations.                                                                                                               |
+| An operation id returned before the model runs                                         | Crash safety: the id is recorded before anything else, so a restarted check re-attaches instead of paying again. OpenAI's `background: true`. |
+| Asynchronous runs available without provider-side retention                            | A caller that sets `store: false` keeps its prose out of a 30-day provider copy, and the call stays recoverable.                              |
+| A finished operation stays retrievable for at least five minutes                       | The sweep reads an unpolled result within `SWEEP_INTERVAL`, which is capped at five minutes. OpenAI kept one for over three hours.            |
+| Cancelling a finished operation returns its result, or a read still does               | A cancel that lost a race with completion keeps the paid result.                                                                              |
+| A JSON error body on a rejected request                                                | The caller built the request, so the provider's reason is what tells it what to fix.                                                          |
+| A finished operation names its model and reasoning effort, and reports its token usage | Every answered call leaves a Usage Record of what ran and what it consumed, which caps sum.                                                   |
 
 The OpenAI adapter writes `background: true` and `stream: false` over the payload's own values, and forwards everything else unchanged. Background mode reorders a `json_schema`'s properties before the model runs, so a caller cannot use property order to make the model write one field before another.
 

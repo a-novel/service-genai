@@ -31,7 +31,7 @@ There is no REST surface: callers are other services on the internal network, so
 
 ## Retention purge
 
-The `database` image schedules a `pg_cron` job that deletes settled generations once `expires_at` has passed. Their attempts go with them: callers keep what they need of the provider's responses.
+The `database` image schedules a `pg_cron` job that deletes settled generations once `expires_at` has passed. Their attempts go with them: callers keep what they need of the provider's responses. The Usage Records stay: they hold no content and no key to the purged rows, and are kept for good.
 
 It is scheduled in the image's init SQL rather than in a migration: `postgres.RunDBTest` clones a database with no `cron` schema, so a migration calling `cron.schedule` would fail every data-access test.
 
