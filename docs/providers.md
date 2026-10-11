@@ -2,7 +2,7 @@
 
 A provider is reached through a connector: the code that authenticates against it, owns its endpoints, writes the fields an execution mode needs over the caller's payload, and reads the provider's status and errors. The caller builds the payload in the provider's own format, so a provider is never swapped behind a caller's back: moving to another one is a change in the caller.
 
-A connector offers a mode by implementing its interface. The OpenAI connector offers the Async mode, through the [Responses API](https://developers.openai.com/api/reference/resources/responses).
+A connector offers a mode by implementing its interface. The OpenAI connector offers the Async and Streaming modes, through the [Responses API](https://developers.openai.com/api/reference/resources/responses), and the Notifications mode once given its webhook signing secret.
 
 ## Async mode requirements
 
@@ -21,6 +21,12 @@ The OpenAI connector writes `background: true` and `stream` over the payload's o
 ## Streaming mode
 
 A provider offers the Streaming mode by reading an operation's events after a cursor. OpenAI streams only a background call created with `stream: true`, and only for 5 minutes after its creation; past that, the result is read by polling. Leaving a streamed creation before the provider reports `response.in_progress` can leave the call queued for good, an open OpenAI bug: the connector holds the creation stream until then, at most 30 seconds, and a check stops a streamed call still queued 5 minutes after its start. The connector issues the stream's GET itself, because openai-go's `GetStreaming` sends a body the API refuses ([openai-go#660](https://github.com/openai/openai-go/issues/660)).
+
+## Notifications mode
+
+A provider offers the Notifications mode by posting a signed message when one of its operations ends. The connector verifies the message and names the operation it concerns, or reports it invalid, or irrelevant to the service; the `rest` server then checks the generation carrying that operation. Nothing provider-specific leaves the connector, so the server serves every provider at `/webhooks/{provider}`.
+
+OpenAI follows the [Standard Webhooks](https://www.standardwebhooks.com/) specification: each event is signed with the endpoint's secret, delivered at least once, in no guaranteed order, and retried for up to 72 hours until it is answered with a `2xx`. The connector verifies events with openai-go's `Webhooks.Unwrap` and acts on `response.completed`, `response.failed`, `response.cancelled` and `response.incomplete`. An event carries only the response id, so the check retrieves the result as a poll would, and a duplicate or late event finds the generation already settled.
 
 ## Who conforms
 

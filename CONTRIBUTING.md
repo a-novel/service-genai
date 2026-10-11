@@ -20,6 +20,12 @@ grpcurl -plaintext localhost:${SERVICE_GENAI_GRPC_PORT} grpc.health.v1.Health/Ch
 grpcurl -plaintext localhost:${SERVICE_GENAI_GRPC_PORT} anovel.genai.v0.StatusService/Status
 ```
 
+The notification server (`a-novel run start service-genai/rest`) listens on `${SERVICE_GENAI_REST_PORT}`. No provider reaches a local stack, so polls and the sweep settle its generations.
+
+```bash
+curl localhost:${SERVICE_GENAI_REST_PORT}/ping
+```
+
 ### Generations
 
 The payload and each attempt's response are `bytes` fields, so `grpcurl` takes and prints them base64-encoded. The local stack reads `OPENAI_API_KEY` from the environment it starts in, with a placeholder when it is unset (see [`builds/podman-compose.yaml`](./builds/podman-compose.yaml)); with the placeholder, every generation fails with OpenAI's authentication error as its response.
