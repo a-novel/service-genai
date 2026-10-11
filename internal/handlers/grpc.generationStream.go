@@ -87,7 +87,9 @@ func streamStatus(span trace.Span, err error) error {
 	case errors.Is(err, connectors.ErrModeUnsupported):
 		return status.Error(codes.Unimplemented, "the provider does not support the Streaming mode")
 	case errors.Is(err, connectors.ErrRetryable):
-		// The provider dropped the stream: a new one resumes after the last event received.
+		// The provider dropped the stream, a server fault: a new one resumes after the last event received.
+		_ = otel.ReportError(span, err)
+
 		return status.Error(codes.Unavailable, "stream interrupted: resume after the last event received")
 	}
 
