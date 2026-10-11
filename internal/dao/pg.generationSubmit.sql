@@ -10,9 +10,9 @@ INSERT INTO
   generations (
     id,
     owner_id,
-    purpose,
+    provider,
     request_key,
-    request,
+    payload,
     max_attempts
   )
 VALUES

@@ -1,6 +1,5 @@
 -- Takes the generations nobody checked within the interval, stalest first, and marks them checked.
 -- SKIP LOCKED gives concurrent sweeps disjoint batches instead of queueing them behind each other.
--- A generation a newer provider configuration took over is left to the replicas running it.
 WITH
   due AS (
     SELECT
@@ -10,7 +9,6 @@ WITH
     WHERE
       status IN ('pending', 'running')
       AND checked_at <= clock_timestamp() - make_interval(secs => ?0)
-      AND coalesce(provider_epoch, 0) <= ?2
     ORDER BY
       checked_at,
       id

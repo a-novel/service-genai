@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	_ "embed"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -18,8 +17,7 @@ import (
 //go:embed pg.generationSettle.sql
 var generationSettleQuery string
 
-// GenerationSettleRequest is the input to [GenerationSettle.Exec]. Exactly one of Output and Error
-// is set: an output on success, an error otherwise.
+// GenerationSettleRequest is the input to [GenerationSettle.Exec].
 type GenerationSettleRequest struct {
 	ID uuid.UUID
 	// Attempt, StartRequestedAt and ProviderCallID are what the caller observed. A generation that
@@ -29,11 +27,7 @@ type GenerationSettleRequest struct {
 	ProviderCallID   *string
 	// Status is the terminal state to land in. The terminal-fields constraint rejects any other.
 	Status GenerationStatus
-	// Output is the provider's structured output on success.
-	Output json.RawMessage
-	// Failure is the kind of failure, set exactly when Status is failed.
-	Failure *string
-	// Error names the cause of a failure or cancellation.
+	// Error names the cause of a failure or cancellation. Empty on success.
 	Error *string
 	// Retention is how long the settled row survives before the purge takes it.
 	Retention time.Duration
@@ -41,8 +35,8 @@ type GenerationSettleRequest struct {
 
 // GenerationSettle records a terminal outcome.
 //
-// It does not write the usage row. A transition without its usage row is an untracked charge, so
-// the caller wraps both in one transaction. See [GenerationUsageInsert].
+// It does not record the attempt's answer. A transition without it loses what the attempt consumed,
+// so the caller wraps both in one transaction. See [GenerationAttemptInsert].
 type GenerationSettle struct{}
 
 func NewGenerationSettle() *GenerationSettle {
@@ -66,10 +60,8 @@ func (dao *GenerationSettle) Exec(ctx context.Context, request *GenerationSettle
 		request.Attempt,
 		request.ProviderCallID,
 		string(request.Status),
-		request.Output,
 		request.Error,
 		request.Retention.Seconds(),
-		request.Failure,
 		request.StartRequestedAt,
 	).Scan(ctx, entity)
 	if err != nil {

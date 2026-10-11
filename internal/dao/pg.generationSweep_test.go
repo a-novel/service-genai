@@ -29,8 +29,7 @@ func TestGenerationSweep(t *testing.T) {
 		expect []string
 	}{
 		{
-			// A fresh generation is someone's poll away from a check, and a settled one needs none. One a
-			// newer provider configuration took over belongs to the replicas running it.
+			// A fresh generation is someone's poll away from a check, and a settled one needs none.
 			name: "Success",
 
 			limit:  10,
@@ -66,17 +65,12 @@ func TestGenerationSweep(t *testing.T) {
 				fresh := seedGeneration(ctx, t, 1)
 				ids[fresh.ID] = "fresh"
 
-				newer := seedGeneration(ctx, t, 1)
-				execute(ctx, t, "UPDATE generations SET provider_epoch = ?1 WHERE id = ?0", newer.ID, testEpoch+1)
-				setCheckedAt(ctx, t, newer.ID, -time.Hour)
-				ids[newer.ID] = "newer"
-
 				settled := settleGeneration(ctx, t, runGeneration(ctx, t, seedGeneration(ctx, t, 1).ID))
 				setCheckedAt(ctx, t, settled.ID, -time.Hour)
 				ids[settled.ID] = "settled"
 
 				swept, err := daoSweep.Exec(ctx, &dao.GenerationSweepRequest{
-					Interval: interval, Limit: testCase.limit, ProviderEpoch: testEpoch,
+					Interval: interval, Limit: testCase.limit,
 				})
 				require.NoError(t, err)
 
@@ -89,7 +83,7 @@ func TestGenerationSweep(t *testing.T) {
 
 				// Swept generations are marked checked, so the next sweep does not take them again.
 				again, err := daoSweep.Exec(ctx, &dao.GenerationSweepRequest{
-					Interval: interval, Limit: testCase.limit, ProviderEpoch: testEpoch,
+					Interval: interval, Limit: testCase.limit,
 				})
 				require.NoError(t, err)
 

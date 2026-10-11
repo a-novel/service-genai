@@ -2,7 +2,6 @@ package dao_test
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -18,7 +17,6 @@ func TestGenerationSettle(t *testing.T) {
 	t.Parallel()
 
 	failure := "the provider call failed"
-	kindFailed := "failed"
 	callID := testCallID
 	otherCallID := "resp_other"
 
@@ -30,20 +28,16 @@ func TestGenerationSettle(t *testing.T) {
 		// recordAfterRead lands the provider call id after the caller's read, as a concurrent start
 		// would.
 		recordAfterRead bool
-		// restartAfterRead restarts the generation on a newer epoch after the caller's read, which
+		// requeueAfterRead records the call and requeues the attempt after the caller's read, which
 		// keeps the attempt number and clears the start.
-		restartAfterRead bool
+		requeueAfterRead bool
 
 		attempt int16
 		callID  *string
 		status  dao.GenerationStatus
-		output  json.RawMessage
-		failure *string
 		error   *string
 
 		expectErr error
-		// expectRefused is a write the schema itself refuses.
-		expectRefused bool
 	}{
 		{
 			name: "Success/Succeeded",
@@ -52,7 +46,6 @@ func TestGenerationSettle(t *testing.T) {
 			attempt: 1,
 			callID:  &callID,
 			status:  dao.GenerationStatusSucceeded,
-			output:  json.RawMessage(`{"text": "done"}`),
 		},
 		{
 			// A start intent with no call id, past its timeout: the provider may have accepted it.
@@ -61,19 +54,7 @@ func TestGenerationSettle(t *testing.T) {
 			state:   "starting",
 			attempt: 1,
 			status:  dao.GenerationStatusFailed,
-			failure: &kindFailed,
 			error:   &failure,
-		},
-		{
-			// A failed generation always says what kind of failure ended it.
-			name: "Error/FailedWithoutKind",
-
-			state:   "starting",
-			attempt: 1,
-			status:  dao.GenerationStatusFailed,
-			error:   &failure,
-
-			expectRefused: true,
 		},
 		{
 			name: "Success/CancelledBeforeStart",
@@ -110,21 +91,20 @@ func TestGenerationSettle(t *testing.T) {
 			recordAfterRead: true,
 			attempt:         1,
 			status:          dao.GenerationStatusFailed,
-			failure:         &kindFailed,
 			error:           &failure,
 
 			expectErr: dao.ErrGenerationChanged,
 		},
 		{
-			// A check read a start in flight, then a newer epoch restarted the generation. Settling the
-			// read as unknown would fail a generation that is about to start on the new provider.
-			name: "Error/RestartedSinceRead",
+			// A check read a start in flight, then the call landed and failed retryably, and its attempt
+			// went back to the queue. Settling the read as unknown would fail a generation about to
+			// start again.
+			name: "Error/RequeuedSinceRead",
 
 			state:            "starting",
-			restartAfterRead: true,
+			requeueAfterRead: true,
 			attempt:          1,
 			status:           dao.GenerationStatusFailed,
-			failure:          &kindFailed,
 			error:            &failure,
 
 			expectErr: dao.ErrGenerationChanged,
@@ -171,9 +151,14 @@ func TestGenerationSettle(t *testing.T) {
 					require.NoError(t, err)
 				}
 
-				if testCase.restartAfterRead {
-					_, err := dao.NewGenerationRestart().Exec(ctx, &dao.GenerationRestartRequest{
-						ID: generation.ID, Attempt: 1, ProviderEpoch: testEpoch + 1,
+				if testCase.requeueAfterRead {
+					_, err := dao.NewGenerationRecordProviderCall().Exec(ctx, &dao.GenerationRecordProviderCallRequest{
+						ID: generation.ID, Attempt: 1, ProviderCallID: testCallID,
+					})
+					require.NoError(t, err)
+
+					_, err = dao.NewGenerationRequeue().Exec(ctx, &dao.GenerationRequeueRequest{
+						ID: generation.ID, Attempt: 1, ProviderCallID: testCallID,
 					})
 					require.NoError(t, err)
 				}
@@ -184,18 +169,9 @@ func TestGenerationSettle(t *testing.T) {
 					StartRequestedAt: read.StartRequestedAt,
 					ProviderCallID:   testCase.callID,
 					Status:           testCase.status,
-					Output:           testCase.output,
-					Failure:          testCase.failure,
 					Error:            testCase.error,
 					Retention:        testRetention,
 				})
-				if testCase.expectRefused {
-					require.Error(t, err)
-					require.NotErrorIs(t, err, dao.ErrGenerationChanged)
-
-					return
-				}
-
 				require.ErrorIs(t, err, testCase.expectErr)
 
 				if testCase.expectErr != nil {
@@ -203,15 +179,10 @@ func TestGenerationSettle(t *testing.T) {
 				}
 
 				require.Equal(t, testCase.status, settled.Status)
-				require.Equal(t, testCase.failure, settled.Failure)
 				require.Equal(t, testCase.error, settled.Error)
 				require.NotNil(t, settled.SettledAt)
 				require.NotNil(t, settled.ExpiresAt)
 				require.Equal(t, testRetention, settled.ExpiresAt.Sub(*settled.SettledAt))
-
-				if testCase.output != nil {
-					require.JSONEq(t, string(testCase.output), string(settled.Output))
-				}
 			})
 		})
 	}

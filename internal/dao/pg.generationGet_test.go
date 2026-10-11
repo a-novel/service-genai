@@ -27,9 +27,9 @@ func TestGenerationGet(t *testing.T) {
 		return &dao.Generation{
 			ID:          id,
 			OwnerID:     ownerID,
-			Purpose:     "studio.generation",
+			Provider:    "openai",
 			RequestKey:  []byte("key-" + id.String()),
-			Request:     json.RawMessage(`{"instructions": "write"}`),
+			Payload:     json.RawMessage(`{"model": "a-model"}`),
 			Status:      dao.GenerationStatusPending,
 			MaxAttempts: 1,
 		}
@@ -104,7 +104,8 @@ func TestGenerationGet(t *testing.T) {
 				require.Equal(t, testCase.request.ID, result.ID)
 				require.Equal(t, testCase.request.OwnerID, result.OwnerID)
 				require.Equal(t, dao.GenerationStatusPending, result.Status)
-				require.JSONEq(t, `{"instructions": "write"}`, string(result.Request))
+				require.Equal(t, "openai", result.Provider)
+				require.JSONEq(t, `{"model": "a-model"}`, string(result.Payload))
 			})
 		})
 	}

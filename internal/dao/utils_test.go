@@ -16,8 +16,6 @@ import (
 const (
 	testCallID    = "resp_1"
 	testRetention = 7 * 24 * time.Hour
-	// testEpoch is the provider configuration seeded attempts start on.
-	testEpoch int32 = 1
 )
 
 var testOwner = uuid.MustParse("00000000-0000-0000-0000-000000000001")
@@ -29,9 +27,9 @@ func seedGeneration(ctx context.Context, t *testing.T, maxAttempts int16) *dao.G
 	result, err := dao.NewGenerationSubmit().Exec(ctx, &dao.GenerationSubmitRequest{
 		ID:          uuid.Must(uuid.NewV7()),
 		OwnerID:     testOwner,
-		Purpose:     "studio.generation",
+		Provider:    "openai",
 		RequestKey:  []byte(uuid.Must(uuid.NewV7()).String()),
-		Request:     json.RawMessage(`{"tier": "balanced"}`),
+		Payload:     json.RawMessage(`{"model": "a-model"}`),
 		MaxAttempts: maxAttempts,
 	})
 	if err != nil {
@@ -45,9 +43,7 @@ func seedGeneration(ctx context.Context, t *testing.T, maxAttempts int16) *dao.G
 func startGeneration(ctx context.Context, t *testing.T, id uuid.UUID) *dao.Generation {
 	t.Helper()
 
-	generation, err := dao.NewGenerationBeginStart().Exec(ctx, &dao.GenerationBeginStartRequest{
-		ID: id, ProviderEpoch: testEpoch,
-	})
+	generation, err := dao.NewGenerationBeginStart().Exec(ctx, &dao.GenerationBeginStartRequest{ID: id})
 	if err != nil {
 		panic(err)
 	}
@@ -106,7 +102,6 @@ func settleGeneration(ctx context.Context, t *testing.T, generation *dao.Generat
 	t.Helper()
 
 	reason := "the provider call failed"
-	kind := "failed"
 
 	settled, err := dao.NewGenerationSettle().Exec(ctx, &dao.GenerationSettleRequest{
 		ID:               generation.ID,
@@ -114,7 +109,6 @@ func settleGeneration(ctx context.Context, t *testing.T, generation *dao.Generat
 		StartRequestedAt: generation.StartRequestedAt,
 		ProviderCallID:   generation.ProviderCallID,
 		Status:           dao.GenerationStatusFailed,
-		Failure:          &kind,
 		Error:            &reason,
 		Retention:        testRetention,
 	})

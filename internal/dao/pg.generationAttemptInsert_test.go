@@ -2,6 +2,7 @@ package dao_test
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -14,10 +15,8 @@ import (
 	"github.com/a-novel/service-genai/internal/models/migrations"
 )
 
-func TestGenerationUsageInsert(t *testing.T) {
+func TestGenerationAttemptInsert(t *testing.T) {
 	t.Parallel()
-
-	effort := "medium"
 
 	testCases := []struct {
 		name string
@@ -27,46 +26,38 @@ func TestGenerationUsageInsert(t *testing.T) {
 		// purgeParent deletes the generation the way the retention purge does.
 		purgeParent bool
 
-		usage *dao.GenerationUsageInsertRequest
+		response json.RawMessage
 
 		expectErr error
 	}{
 		{
+			// Stored as sent: the caller reads the provider's own bytes back.
 			name: "Success",
 
-			usage: &dao.GenerationUsageInsertRequest{
-				Provider: "openai", Model: "a-model-snapshot", ReasoningEffort: &effort,
-				InputTokens: 1000, CachedInputTokens: 200, CacheWriteTokens: 300,
-				OutputTokens: 500, ReasoningTokens: 100,
-			},
+			response: json.RawMessage(`{"status": "completed", "id": "resp_1", "usage": {"output_tokens": 5}}`),
 		},
 		{
-			name: "Success/NoTokens",
+			name: "Success/ErrorBody",
 
-			usage: &dao.GenerationUsageInsertRequest{Provider: "openai", Model: "a-model-snapshot"},
+			response: json.RawMessage(`{"error": {"code": "invalid_value", "message": "bad model"}}`),
 		},
 		{
-			// Callers keep long-term usage, so this record goes with the generation it describes.
 			name: "Success/PurgedWithItsGeneration",
 
 			purgeParent: true,
-			usage: &dao.GenerationUsageInsertRequest{
-				Provider: "openai", Model: "a-model-snapshot", InputTokens: 10, OutputTokens: 5,
-			},
+			response:    json.RawMessage(`{"status": "completed"}`),
 		},
 		{
 			name: "Error/AlreadyRecordedForThisAttempt",
 
 			insertTwice: true,
-			usage: &dao.GenerationUsageInsertRequest{
-				Provider: "openai", Model: "a-model-snapshot", InputTokens: 10, OutputTokens: 5,
-			},
+			response:    json.RawMessage(`{"status": "completed"}`),
 
-			expectErr: dao.ErrGenerationUsageExists,
+			expectErr: dao.ErrGenerationAttemptExists,
 		},
 	}
 
-	daoUsageInsert := dao.NewGenerationUsageInsert()
+	daoAttemptInsert := dao.NewGenerationAttemptInsert()
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -78,31 +69,26 @@ func TestGenerationUsageInsert(t *testing.T) {
 				generation := seedGeneration(ctx, t, 1)
 				running := runGeneration(ctx, t, generation.ID)
 
-				request := *testCase.usage
-				request.GenerationID = running.ID
-				request.Attempt = running.Attempt
-				request.OwnerID = generation.OwnerID
-				request.Purpose = generation.Purpose
+				request := &dao.GenerationAttemptInsertRequest{
+					GenerationID: running.ID, Attempt: running.Attempt, Response: testCase.response,
+				}
 
 				if testCase.insertTwice {
-					_, err := daoUsageInsert.Exec(ctx, &request)
+					_, err := daoAttemptInsert.Exec(ctx, request)
 					require.NoError(t, err)
 				}
 
-				usage, err := daoUsageInsert.Exec(ctx, &request)
+				attempt, err := daoAttemptInsert.Exec(ctx, request)
 				require.ErrorIs(t, err, testCase.expectErr)
 
 				if testCase.expectErr != nil {
-					require.Nil(t, usage)
+					require.Nil(t, attempt)
 
 					return
 				}
 
-				require.Equal(t, testCase.usage.Model, usage.Model)
-				require.Equal(t, testCase.usage.ReasoningEffort, usage.ReasoningEffort)
-				require.Equal(t, testCase.usage.InputTokens, usage.InputTokens)
-				require.Equal(t, testCase.usage.CachedInputTokens, usage.CachedInputTokens)
-				require.Equal(t, testCase.usage.CacheWriteTokens, usage.CacheWriteTokens)
+				require.Equal(t, running.Attempt, attempt.Attempt)
+				require.Equal(t, string(testCase.response), string(attempt.Response))
 
 				if !testCase.purgeParent {
 					return
@@ -117,7 +103,7 @@ func TestGenerationUsageInsert(t *testing.T) {
 				var remaining int
 
 				err = db.NewRaw(
-					"SELECT count(*) FROM generation_usage WHERE generation_id = ?0", generation.ID,
+					"SELECT count(*) FROM generation_attempts WHERE generation_id = ?0", generation.ID,
 				).Scan(ctx, &remaining)
 				require.NoError(t, err)
 				require.Zero(t, remaining)

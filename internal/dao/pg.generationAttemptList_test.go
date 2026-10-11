@@ -2,6 +2,7 @@ package dao_test
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/google/uuid"
@@ -14,13 +15,13 @@ import (
 	"github.com/a-novel/service-genai/internal/models/migrations"
 )
 
-func TestGenerationUsageList(t *testing.T) {
+func TestGenerationAttemptList(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
 		name string
 
-		// attempts lists the attempts that recorded usage, in insertion order.
+		// attempts lists the attempts that recorded an answer, in insertion order.
 		attempts []int16
 
 		expectAttempts []int16
@@ -38,7 +39,7 @@ func TestGenerationUsageList(t *testing.T) {
 		},
 	}
 
-	daoUsageList := dao.NewGenerationUsageList()
+	daoAttemptList := dao.NewGenerationAttemptList()
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -52,19 +53,18 @@ func TestGenerationUsageList(t *testing.T) {
 
 				for _, generationID := range []uuid.UUID{generation.ID, other.ID} {
 					for _, attempt := range testCase.attempts {
-						_, err := dao.NewGenerationUsageInsert().Exec(ctx, &dao.GenerationUsageInsertRequest{
-							GenerationID: generationID, Attempt: attempt, OwnerID: testOwner,
-							Purpose: "studio.generation", Provider: "openai", Model: "a-model-snapshot",
+						_, err := dao.NewGenerationAttemptInsert().Exec(ctx, &dao.GenerationAttemptInsertRequest{
+							GenerationID: generationID, Attempt: attempt, Response: json.RawMessage(`{}`),
 						})
 						require.NoError(t, err)
 					}
 				}
 
-				usage, err := daoUsageList.Exec(ctx, &dao.GenerationUsageListRequest{GenerationID: generation.ID})
+				listed, err := daoAttemptList.Exec(ctx, &dao.GenerationAttemptListRequest{GenerationID: generation.ID})
 				require.NoError(t, err)
 
-				attempts := make([]int16, 0, len(usage))
-				for _, attempt := range usage {
+				attempts := make([]int16, 0, len(listed))
+				for _, attempt := range listed {
 					require.Equal(t, generation.ID, attempt.GenerationID)
 
 					attempts = append(attempts, attempt.Attempt)
