@@ -6,7 +6,7 @@
 -- resending its request inserts a fresh generation.
 --
 -- The owner's advisory lock holds until the transaction ends, so one owner's admissions run one at a
--- time and none misses another's generation. The payload is stored only with a new generation.
+-- time and none misses another's generation.
 --
 -- Timestamps are left to the column defaults, since the database is the clock for this table.
 WITH
@@ -31,8 +31,8 @@ WITH
       ?2::text,
       ?3::text,
       ?4::bytea,
-      ?6::smallint,
-      ?7::text
+      ?5::smallint,
+      ?6::text
     FROM
       owner_lock
     ON CONFLICT (request_key)
@@ -42,17 +42,6 @@ WITH
       updated_at = generations.updated_at
     RETURNING
       *
-  ),
-  payload AS (
-    INSERT INTO
-      generation_payloads (generation_id, payload)
-    SELECT
-      id,
-      ?5::json
-    FROM
-      generation
-    WHERE
-      id = ?0::uuid
   )
 SELECT
   *

@@ -132,6 +132,8 @@ func TestGenerationSubmit(t *testing.T) {
 		// back, so nothing ever starts it.
 		expectRefusal bool
 		// checkErr is what starting a created generation returns. A replay is never started here.
+		// payloadErr is what storing an admitted generation's payload returns.
+		payloadErr error
 		checkErr   error
 		attemptErr error
 
@@ -376,6 +378,18 @@ func TestGenerationSubmit(t *testing.T) {
 			expectErr: core.ErrInvalidRequest,
 		},
 		{
+			// Recording and admission roll back together, so nothing starts a generation with no payload.
+			name: "Error/StorePayload",
+
+			request:    submitRequest(nil),
+			daoMock:    &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration(), Created: true}},
+			live:       alone,
+			usage:      underCaps,
+			payloadErr: errFoo,
+
+			expectErr: errFoo,
+		},
+		{
 			// The generation is recorded, so a resend finds it; the caller learns the start failed.
 			name: "Error/Start",
 
@@ -390,8 +404,10 @@ func TestGenerationSubmit(t *testing.T) {
 		{
 			name: "Error/Attempts",
 
-			request:    submitRequest(nil),
-			daoMock:    &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration()}},
+			request: submitRequest(nil),
+			daoMock: &daoMock{
+				resp: &dao.GenerationSubmitResult{Generation: settledGeneration(dao.GenerationStatusSucceeded)},
+			},
 			attemptErr: errFoo,
 
 			expectErr: errFoo,
@@ -414,6 +430,7 @@ func TestGenerationSubmit(t *testing.T) {
 			attemptDao := coremocks.NewMockGenerationSubmitDaoAttemptList(t)
 			usageDao := coremocks.NewMockGenerationSubmitDaoUsageSum(t)
 			liveDao := coremocks.NewMockGenerationSubmitDaoCountLive(t)
+			payloadDao := coremocks.NewMockGenerationSubmitDaoPayloadInsert(t)
 			check := coremocks.NewMockGenerationSubmitServiceCheck(t)
 
 			admitted := !testCase.expectRefusal
@@ -451,11 +468,9 @@ func TestGenerationSubmit(t *testing.T) {
 			if testCase.daoMock != nil {
 				submitDao.EXPECT().
 					Exec(mock.Anything, mock.MatchedBy(func(request *dao.GenerationSubmitRequest) bool {
-						// The payload is stored exactly as sent, and the digest is derived rather than
-						// left empty.
+						// The digest is derived rather than left empty.
 						return request.Purpose == testCase.request.Purpose &&
 							request.Provider == testCase.request.Provider &&
-							string(request.Payload) == string(testCase.request.Payload) &&
 							request.MaxAttempts == maxAttempts &&
 							len(request.RequestKey) == 32 &&
 							request.ID != uuid.Nil &&
@@ -466,12 +481,23 @@ func TestGenerationSubmit(t *testing.T) {
 					Return(testCase.daoMock.resp, testCase.daoMock.err)
 
 				if created && admitted {
+					// Stored as sent, once admitted: a replay or a refusal never sends it over.
+					payloadDao.EXPECT().
+						Exec(mock.Anything, &dao.GenerationPayloadInsertRequest{
+							GenerationID: testGenerationID, Payload: testCase.request.Payload,
+						}).
+						Return(&dao.GenerationPayload{GenerationID: testGenerationID}, testCase.payloadErr)
+				}
+
+				if created && admitted && testCase.payloadErr == nil {
 					check.EXPECT().
 						Exec(mock.Anything, &core.GenerationCheckRequest{Generation: testCase.daoMock.resp.Generation}).
 						Return(testCase.daoMock.resp.Generation, testCase.checkErr)
 				}
 
-				if testCase.daoMock.resp != nil && testCase.checkErr == nil && (!created || admitted) {
+				// Only a generation with an answered attempt is listed; the fixtures' pending ones have none.
+				if testCase.daoMock.resp != nil && testCase.checkErr == nil && testCase.payloadErr == nil &&
+					(!created || admitted) && testCase.daoMock.resp.Generation.SettledAt != nil {
 					attemptDao.EXPECT().
 						Exec(mock.Anything, &dao.GenerationAttemptListRequest{GenerationID: testGenerationID}).
 						Return([]*dao.GenerationAttempt{}, testCase.attemptErr)
@@ -483,7 +509,7 @@ func TestGenerationSubmit(t *testing.T) {
 				testConnectors(t),
 				transactiontest.NewTransactor(),
 				core.GenerationSubmitDaos{
-					Submit: submitDao, Attempts: attemptDao, Usage: usageDao, Live: liveDao,
+					Submit: submitDao, Attempts: attemptDao, Usage: usageDao, Live: liveDao, Payload: payloadDao,
 				},
 				check,
 			)
@@ -502,6 +528,7 @@ func TestGenerationSubmit(t *testing.T) {
 			attemptDao.AssertExpectations(t)
 			usageDao.AssertExpectations(t)
 			liveDao.AssertExpectations(t)
+			payloadDao.AssertExpectations(t)
 			check.AssertExpectations(t)
 		})
 	}

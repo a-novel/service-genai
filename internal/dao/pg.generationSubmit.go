@@ -3,7 +3,6 @@ package dao
 import (
 	"context"
 	_ "embed"
-	"encoding/json"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -29,9 +28,7 @@ type GenerationSubmitRequest struct {
 	Provider string
 	// RequestKey identifies the request: another submission with the same key is a replay while its
 	// generation is pending, running or succeeded.
-	RequestKey []byte
-	// Payload is the provider's own request, stored as sent.
-	Payload     json.RawMessage
+	RequestKey  []byte
 	MaxAttempts int16
 	// Traceparent is the W3C trace context of the submitting request, if it runs in a trace.
 	Traceparent *string
@@ -65,7 +62,7 @@ func (dao *PgGenerationSubmit) Exec(
 		return nil, otel.ReportError(span, fmt.Errorf("get transaction: %w", err))
 	}
 
-	entity := new(Generation)
+	entity := &Generation{}
 
 	err = tx.NewRaw(
 		generationSubmitQuery,
@@ -74,7 +71,6 @@ func (dao *PgGenerationSubmit) Exec(
 		request.Purpose,
 		request.Provider,
 		request.RequestKey,
-		request.Payload,
 		request.MaxAttempts,
 		request.Traceparent,
 	).Scan(ctx, entity)
