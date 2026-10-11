@@ -37,6 +37,7 @@ func TestGenerationCheck(t *testing.T) {
 	rejectedMessage := "the provider rejected the request"
 	callFailedMessage := "the provider failed the call"
 	unavailableMessage := "no connector serves the generation's provider"
+	overdueMessage := "the provider did not finish the call in time, so it was stopped"
 
 	rejectionBody := json.RawMessage(`{"error":{"message":"bad model"}}`)
 
@@ -46,6 +47,8 @@ func TestGenerationCheck(t *testing.T) {
 		callID  *string
 		status  dao.GenerationStatus
 		reason  *string
+		// outcomeUnknown marks a start the provider may have accepted: the slot stays held.
+		outcomeUnknown bool
 	}
 
 	testCases := []struct {
@@ -64,6 +67,8 @@ func TestGenerationCheck(t *testing.T) {
 		usageErr      error
 		// callerGone runs the check for a caller whose call already ended.
 		callerGone bool
+		// expectStop asks the provider to cancel instead of reading the call.
+		expectStop bool
 
 		expectStart      bool
 		expectRelease    bool
@@ -151,7 +156,7 @@ func TestGenerationCheck(t *testing.T) {
 			startErr:   connectors.ErrStartAmbiguous,
 
 			expectStart:  true,
-			expectSettle: &settle{attempt: 1, status: dao.GenerationStatusFailed, reason: &unknownMessage},
+			expectSettle: &settle{attempt: 1, status: dao.GenerationStatusFailed, reason: &unknownMessage, outcomeUnknown: true},
 			expectStatus: dao.GenerationStatusFailed,
 		},
 		{
@@ -217,7 +222,7 @@ func TestGenerationCheck(t *testing.T) {
 
 			generation: startingGeneration(time.Minute),
 
-			expectSettle: &settle{attempt: 1, status: dao.GenerationStatusFailed, reason: &unknownMessage},
+			expectSettle: &settle{attempt: 1, status: dao.GenerationStatusFailed, reason: &unknownMessage, outcomeUnknown: true},
 			expectStatus: dao.GenerationStatusFailed,
 		},
 		{
@@ -317,6 +322,47 @@ func TestGenerationCheck(t *testing.T) {
 			expectAttempt: testResponse,
 			expectUsage:   true,
 			expectStatus:  dao.GenerationStatusSucceeded,
+		},
+		{
+			// Past the run ceiling, the call is stopped and the generation fails with what it consumed.
+			name: "Success/Overdue",
+
+			generation: overdue(runningGeneration(1)),
+			observe:    providerCall(connectors.CallCancelled),
+			expectStop: true,
+
+			expectSettle: &settle{
+				attempt: 1, callID: &callID, status: dao.GenerationStatusFailed, reason: &overdueMessage,
+			},
+			expectAttempt: testResponse,
+			expectUsage:   true,
+			expectStatus:  dao.GenerationStatusFailed,
+		},
+		{
+			// The call finished before the stop reached it: its result stands.
+			name: "Success/OverdueFinishedMeanwhile",
+
+			generation: overdue(runningGeneration(1)),
+			observe:    providerCall(connectors.CallSucceeded),
+			expectStop: true,
+
+			expectSettle:  &settle{attempt: 1, callID: &callID, status: dao.GenerationStatusSucceeded},
+			expectAttempt: testResponse,
+			expectUsage:   true,
+			expectStatus:  dao.GenerationStatusSucceeded,
+		},
+		{
+			// A provider that cannot be reached, a revoked key included, must not hold the slot forever.
+			name: "Success/OverdueUnreachable",
+
+			generation: overdue(runningGeneration(1)),
+			observeErr: connectors.ErrRetryable,
+			expectStop: true,
+
+			expectSettle: &settle{
+				attempt: 1, callID: &callID, status: dao.GenerationStatusFailed, reason: &overdueMessage,
+			},
+			expectStatus: dao.GenerationStatusFailed,
 		},
 		{
 			name: "Success/RetriesExhausted",
@@ -518,7 +564,7 @@ func TestGenerationCheck(t *testing.T) {
 			}
 
 			if testCase.observe != nil || testCase.observeErr != nil {
-				if generation.CancelRequestedAt != nil {
+				if generation.CancelRequestedAt != nil || testCase.expectStop {
 					connector.EXPECT().Cancel(mock.Anything, testCallID).Return(testCase.observe, testCase.observeErr)
 				} else {
 					// The read must run on a live context, whatever became of the caller's.
@@ -543,6 +589,7 @@ func TestGenerationCheck(t *testing.T) {
 						Status:           expected.status,
 						Error:            expected.reason,
 						Retention:        retention,
+						OutcomeUnknown:   expected.outcomeUnknown,
 					}).
 					Return(settledGeneration(expected.status), testCase.settleErr)
 			}

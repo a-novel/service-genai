@@ -4,6 +4,7 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -19,6 +20,9 @@ type GenerationCountLiveRequest struct {
 	OwnerID uuid.UUID
 	// Purpose restricts the count to one purpose; nil counts every purpose.
 	Purpose *string
+	// UnknownOutcomeWindow is how long a generation that failed with its start's outcome unknown
+	// still counts.
+	UnknownOutcomeWindow time.Duration
 }
 
 // GenerationLiveCount is how many generations an owner has pending or running.
@@ -47,7 +51,9 @@ func (dao *PgGenerationCountLive) Exec(
 
 	live := &GenerationLiveCount{}
 
-	err = tx.NewRaw(generationCountLiveQuery, request.OwnerID, request.Purpose).Scan(ctx, live)
+	err = tx.NewRaw(
+		generationCountLiveQuery, request.OwnerID, request.Purpose, request.UnknownOutcomeWindow.Seconds(),
+	).Scan(ctx, live)
 	if err != nil {
 		return nil, otel.ReportError(span, fmt.Errorf("execute query: %w", err))
 	}

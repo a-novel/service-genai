@@ -379,25 +379,32 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 		return settled, nil
 	}
 
+	// Past the run ceiling the call is stopped: one the provider never finishes, or a key it no longer
+	// accepts, must not hold the owner's slot forever. Both times come from the database clock.
+	overdue := generation.CancelRequestedAt == nil && generation.StartRequestedAt != nil &&
+		generation.CheckedAt.Sub(*generation.StartRequestedAt) >= runCeiling
+
 	var call *connectors.Call
 
-	if generation.CancelRequestedAt != nil {
+	if generation.CancelRequestedAt != nil || overdue {
 		call, err = connector.Cancel(ctx, *generation.ProviderCallID)
 	} else {
 		call, err = connector.Get(ctx, *generation.ProviderCallID)
 	}
 
-	if errors.Is(err, connectors.ErrRetryable) {
+	if errors.Is(err, connectors.ErrRetryable) && !overdue {
 		// A transient failure is retried by the next check; the provider span holds the cause.
 		return generation, nil
 	}
 
 	if err != nil {
-		// The operation is unreadable, typically gone past the provider's retention window. Starting
-		// another call would pay twice, so the generation fails.
+		// The operation is unreadable, typically gone past the provider's retention window, or an
+		// overdue call could not be stopped. Starting another call would pay twice, so it fails.
 		service.logFailure(ctx, generation, err.Error())
 
-		settled, settleErr := service.settleFailure(ctx, generation, failureResultLost, nil)
+		failure := lo.Ternary(overdue, failureOverdue, failureResultLost)
+
+		settled, settleErr := service.settleFailure(ctx, generation, failure, nil)
 		if settleErr != nil {
 			return nil, otel.ReportError(span, settleErr)
 		}
@@ -474,7 +481,7 @@ func (service *GenerationCheck) settle(
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(settle)")
 	defer span.End()
 
-	status, message := settleOutcomeOf(call)
+	status, message := settleOutcomeOf(generation, call)
 
 	span.SetAttributes(attribute.String("generation.status", string(status)))
 
@@ -537,6 +544,8 @@ func (service *GenerationCheck) commit(
 			Status:           status,
 			Error:            message,
 			Retention:        service.config.Retention,
+			// The provider may still run the call, so admission keeps counting the generation.
+			OutcomeUnknown: lo.FromPtr(message) == failureOutcomeUnknown,
 		})
 		if err != nil {
 			return fmt.Errorf("settle generation: %w", err)
@@ -661,11 +670,16 @@ func (service *GenerationCheck) logFailure(ctx context.Context, generation *dao.
 //
 // A failed call is not a free one: its response carries what it consumed, which is why settle still
 // records it.
-func settleOutcomeOf(call *connectors.Call) (dao.GenerationStatus, *string) {
+func settleOutcomeOf(generation *dao.Generation, call *connectors.Call) (dao.GenerationStatus, *string) {
 	switch call.State {
 	case connectors.CallSucceeded:
 		return dao.GenerationStatusSucceeded, nil
 	case connectors.CallCancelled:
+		// Only this service cancels its calls: one its owner never asked to stop ran past the ceiling.
+		if generation.CancelRequestedAt == nil {
+			return dao.GenerationStatusFailed, new(failureOverdue)
+		}
+
 		return dao.GenerationStatusCancelled, new(generationCancelledReason)
 	case connectors.CallFailed:
 		return dao.GenerationStatusFailed, new(failureCallFailed)
@@ -697,6 +711,9 @@ const (
 	// measured from its submission. Past it the generation fails, so a request the provider never
 	// accepts cannot hold a concurrency slot forever.
 	startRetryCeiling = 10 * time.Minute
+	// runCeiling bounds how long a call may run once started. Long reasoning runs take tens of
+	// minutes; past this, the call is stopped and the generation fails.
+	runCeiling = 2 * time.Hour
 )
 
 // What a caller reads about a generation that did not succeed. The provider's own account of a
@@ -709,4 +726,5 @@ const (
 	failureCallFailed          = "the provider failed the call"
 	failureRejected            = "the provider rejected the request"
 	failureProviderUnavailable = "no connector serves the generation's provider"
+	failureOverdue             = "the provider did not finish the call in time, so it was stopped"
 )

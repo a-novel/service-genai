@@ -36,6 +36,8 @@ func TestPgGenerationSettle(t *testing.T) {
 		callID  *string
 		status  dao.GenerationStatus
 		error   *string
+		// outcomeUnknown marks a failure whose start the provider may have accepted.
+		outcomeUnknown bool
 
 		expectErr error
 	}{
@@ -51,10 +53,11 @@ func TestPgGenerationSettle(t *testing.T) {
 			// A start intent with no call id, past its timeout: the provider may have accepted it.
 			name: "Success/OutcomeUnknown",
 
-			state:   "starting",
-			attempt: 1,
-			status:  dao.GenerationStatusFailed,
-			error:   &failure,
+			state:          "starting",
+			attempt:        1,
+			status:         dao.GenerationStatusFailed,
+			error:          &failure,
+			outcomeUnknown: true,
 		},
 		{
 			name: "Success/CancelledBeforeStart",
@@ -171,6 +174,7 @@ func TestPgGenerationSettle(t *testing.T) {
 					Status:           testCase.status,
 					Error:            testCase.error,
 					Retention:        testRetention,
+					OutcomeUnknown:   testCase.outcomeUnknown,
 				})
 				require.ErrorIs(t, err, testCase.expectErr)
 
@@ -183,6 +187,13 @@ func TestPgGenerationSettle(t *testing.T) {
 				require.NotNil(t, settled.SettledAt)
 				require.NotNil(t, settled.ExpiresAt)
 				require.Equal(t, testRetention, settled.ExpiresAt.Sub(*settled.SettledAt))
+
+				// Marked at the settle's own instant, so admission's window starts there.
+				if testCase.outcomeUnknown {
+					require.Equal(t, settled.SettledAt, settled.OutcomeUnknownAt)
+				} else {
+					require.Nil(t, settled.OutcomeUnknownAt)
+				}
 			})
 		})
 	}

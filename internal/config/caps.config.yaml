@@ -2,7 +2,7 @@
 purposes: # Every purpose a caller may submit; any other is refused.
   studio.generation:
     default: # Required: users whose tier is absent or unknown.
-      concurrency: 2 # Generations of this purpose one user may have pending or running at once.
+      concurrency: 2 # Generations of this purpose one user may have in flight at once.
       windows:
         5h: # A rolling window, as a Go duration.
           inputTokens: 2000000 # A limit left out does not apply.

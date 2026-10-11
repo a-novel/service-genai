@@ -60,6 +60,9 @@ type Generation struct {
 	CheckedAt time.Time `bun:"checked_at"`
 	// Traceparent is the W3C trace context of the request that submitted the generation.
 	Traceparent *string `bun:"traceparent,nullzero"`
+	// OutcomeUnknownAt is when the generation failed with its start's outcome unknown: the provider
+	// may still run a call nothing tracks.
+	OutcomeUnknownAt *time.Time `bun:"outcome_unknown_at,nullzero"`
 
 	CreatedAt time.Time  `bun:"created_at"`
 	UpdatedAt time.Time  `bun:"updated_at"`

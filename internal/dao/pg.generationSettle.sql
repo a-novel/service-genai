@@ -10,6 +10,9 @@ SET
   error = ?4,
   settled_at = settle.at,
   expires_at = settle.at + make_interval(secs => ?5),
+  outcome_unknown_at = CASE
+    WHEN ?7 THEN settle.at
+  END,
   updated_at = settle.at
 FROM
   (
