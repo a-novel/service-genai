@@ -44,6 +44,7 @@ var AppPresetDefault = App{
 		DowntimeStart: env.DowntimeStart,
 	},
 	Grpc: env.Grpc,
+	Rest: env.Rest,
 
 	Generations: Generations{
 		CheckInterval: env.CheckInterval,
@@ -55,8 +56,9 @@ var AppPresetDefault = App{
 		BatchSize: env.SweepBatchSize,
 	},
 	OpenAI: OpenAI{
-		APIKey:  env.OpenAIAPIKey,
-		BaseURL: env.OpenAIBaseURL,
+		APIKey:        env.OpenAIAPIKey,
+		BaseURL:       env.OpenAIBaseURL,
+		WebhookSecret: env.OpenAIWebhookSecret,
 	},
 	Caps: CapsDefault,
 
@@ -70,5 +72,10 @@ var AppPresetDefault = App{
 		}),
 	Logger:     lo.Ternary[logging.Log](env.GcloudProjectId == "", LoggerDev, LoggerProd),
 	GrpcLogger: lo.Ternary[logging.RPCConfig](env.GcloudProjectId == "", &LoggerDevGrpc, &LoggerProdGrpc),
-	Postgres:   PostgresPresetServer,
+	RestLogger: lo.Ternary[logging.HTTPConfig](
+		env.GcloudProjectId == "",
+		&loggingpresets.HTTPLocal{BaseLogger: LoggerDev},
+		&loggingpresets.HTTPGcloud{BaseLogger: LoggerProd},
+	),
+	Postgres: PostgresPresetServer,
 }

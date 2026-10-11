@@ -92,7 +92,9 @@ func main() {
 	// SERVICES
 	// =================================================================================================================
 
-	registry := lo.Must(newConnectors(cfg))
+	registry := lo.Must(connectors.NewRegistry(connectors.OpenAIConfig{
+		BaseURL: cfg.OpenAI.BaseURL, APIKey: cfg.OpenAI.APIKey, WebhookSecret: cfg.OpenAI.WebhookSecret,
+	}))
 
 	serviceCheck := core.NewGenerationCheck(
 		core.GenerationCheckConfig{Retention: cfg.Generations.Retention},
@@ -302,15 +304,4 @@ func observeLoop(ctx context.Context, name string, loop func()) (err error) {
 	}
 
 	return otel.ReportError(span, fmt.Errorf("%s: %w", name, errLoopExitedUnexpectedly))
-}
-
-// newConnectors builds the connectors the server runs, named by the provider each serves. The
-// conformance check builds them the same way, so what the check proves is what the server runs.
-func newConnectors(cfg config.App) (connectors.Registry, error) {
-	openAI, err := connectors.NewOpenAI(connectors.OpenAIConfig{BaseURL: cfg.OpenAI.BaseURL, APIKey: cfg.OpenAI.APIKey})
-	if err != nil {
-		return nil, fmt.Errorf("openai: %w", err)
-	}
-
-	return connectors.Registry{"openai": openAI}, nil
 }

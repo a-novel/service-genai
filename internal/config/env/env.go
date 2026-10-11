@@ -7,6 +7,7 @@ import (
 	"github.com/a-novel-kit/golib/config"
 	"github.com/a-novel-kit/golib/downtime"
 	"github.com/a-novel-kit/golib/grpcf"
+	"github.com/a-novel-kit/golib/httpf"
 )
 
 // prefix is prepended to every configuration variable name that this package reads.
@@ -18,6 +19,17 @@ func getEnv(name string) string {
 	return os.Getenv(prefix + name)
 }
 
+// restDefault keeps golib's REST defaults but for two. The drain fits Cloud Run's kill window, as the
+// gRPC server's does. The rate limit lets a provider's burst of notifications through, since they
+// all come from its few addresses.
+var restDefault = func() httpf.ServerConfig {
+	defaults := httpf.ServerConfigDefault
+	defaults.Timeouts.Shutdown = GrpcTimeoutShutdownDefault
+	defaults.RateLimit = httpf.Rate{Requests: RestRateLimitDefault, Window: time.Second}
+
+	return defaults
+}()
+
 // Default values applied when an environment variable is unset.
 const (
 	AppNameDefault = "service-genai"
@@ -25,6 +37,8 @@ const (
 	// GrpcTimeoutShutdownDefault fits inside the ten seconds Cloud Run allows between SIGTERM and
 	// SIGKILL, so an in-flight check finishes before the process is killed.
 	GrpcTimeoutShutdownDefault = 8 * time.Second
+	// RestRateLimitDefault is how many notifications per second one address may post.
+	RestRateLimitDefault = 500
 
 	// CheckIntervalDefault is how long a check stays fresh: however often callers poll a generation,
 	// it reaches the provider at most once per interval.
@@ -74,6 +88,8 @@ var (
 	otel    = getEnv("OTEL")
 
 	grpcUrl = getEnv("GRPC_URL")
+
+	openAIWebhookSecret = getEnv("OPENAI_WEBHOOK_SECRET")
 
 	openAIAPIKey  = getEnv("OPENAI_API_KEY")
 	openAIBaseURL = getEnv("OPENAI_BASE_URL")
@@ -125,6 +141,8 @@ var (
 
 	// GrpcUrl is the URL of the gRPC service, typically <host>:<port>.
 	GrpcUrl = grpcUrl
+	// Rest configures the REST server from the REST_* variables.
+	Rest = httpf.LoadServerConfig(getEnv, restDefault)
 	// Grpc configures the gRPC server from the GRPC_* variables.
 	Grpc = grpcf.LoadServerConfig(getEnv, grpcf.ServerConfig{
 		Port: grpcf.ServerConfigDefault.Port, Shutdown: GrpcTimeoutShutdownDefault,
@@ -133,6 +151,9 @@ var (
 	// OpenAIAPIKey authenticates the OpenAI connector. The only credential this service holds, and the
 	// reason no caller holds one.
 	OpenAIAPIKey = openAIAPIKey
+	// OpenAIWebhookSecret is the signing secret of the webhook endpoint OpenAI notifies. Inject it as a
+	// secret; unset, the service reads no notification.
+	OpenAIWebhookSecret = openAIWebhookSecret
 	// OpenAIBaseURL is the Responses API endpoint the OpenAI connector calls.
 	OpenAIBaseURL = config.LoadEnv(openAIBaseURL, OpenAIBaseURLDefault, config.StringParser)
 
