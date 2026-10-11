@@ -29,8 +29,10 @@ const (
 // GenerationSubmitService records a generation and starts it in the Async mode: the call runs on the
 // provider's side while the caller polls GenerationGet. Resending the same request is a replay: it
 // returns the generation already running or succeeded rather than paying again. A request whose
-// generation failed or was cancelled runs again from scratch. An invalid request answers
-// INVALID_ARGUMENT with the reason; a provider without the Async mode answers UNIMPLEMENTED.
+// generation failed or was cancelled runs again from scratch. An invalid request, an undeclared
+// purpose included, answers INVALID_ARGUMENT with the reason; a provider without the Async mode
+// answers UNIMPLEMENTED; a user whose usage already reached a cap answers RESOURCE_EXHAUSTED, naming
+// the cap.
 type GenerationSubmitServiceClient interface {
 	GenerationSubmit(ctx context.Context, in *GenerationSubmitRequest, opts ...grpc.CallOption) (*GenerationSubmitResponse, error)
 }
@@ -60,8 +62,10 @@ func (c *generationSubmitServiceClient) GenerationSubmit(ctx context.Context, in
 // GenerationSubmitService records a generation and starts it in the Async mode: the call runs on the
 // provider's side while the caller polls GenerationGet. Resending the same request is a replay: it
 // returns the generation already running or succeeded rather than paying again. A request whose
-// generation failed or was cancelled runs again from scratch. An invalid request answers
-// INVALID_ARGUMENT with the reason; a provider without the Async mode answers UNIMPLEMENTED.
+// generation failed or was cancelled runs again from scratch. An invalid request, an undeclared
+// purpose included, answers INVALID_ARGUMENT with the reason; a provider without the Async mode
+// answers UNIMPLEMENTED; a user whose usage already reached a cap answers RESOURCE_EXHAUSTED, naming
+// the cap.
 type GenerationSubmitServiceServer interface {
 	GenerationSubmit(context.Context, *GenerationSubmitRequest) (*GenerationSubmitResponse, error)
 	mustEmbedUnimplementedGenerationSubmitServiceServer()
