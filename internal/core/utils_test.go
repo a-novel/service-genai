@@ -52,6 +52,7 @@ func pendingGeneration() *dao.Generation {
 		Status:      dao.GenerationStatusPending,
 		MaxAttempts: 2,
 		CheckedAt:   testNow,
+		CreatedAt:   testNow,
 	}
 }
 
@@ -85,6 +86,13 @@ func withCancel(generation *dao.Generation) *dao.Generation {
 }
 
 // withProvider moves the generation to another provider.
+// submittedAgo dates the generation's submission age before testNow.
+func submittedAgo(generation *dao.Generation, age time.Duration) *dao.Generation {
+	generation.CreatedAt = testNow.Add(-age)
+
+	return generation
+}
+
 func withProvider(generation *dao.Generation, provider string) *dao.Generation {
 	generation.Provider = provider
 

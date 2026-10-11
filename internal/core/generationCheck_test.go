@@ -109,6 +109,17 @@ func TestGenerationCheck(t *testing.T) {
 			expectStatus:  dao.GenerationStatusPending,
 		},
 		{
+			// A request the provider keeps turning away must not hold a concurrency slot forever.
+			name: "Success/StartRetriesExhausted",
+
+			generation: submittedAgo(pendingGeneration(), time.Hour),
+			startErr:   connectors.ErrRetryable,
+
+			expectStart:  true,
+			expectSettle: &settle{attempt: 1, status: dao.GenerationStatusFailed, reason: &startFailedMessage},
+			expectStatus: dao.GenerationStatusFailed,
+		},
+		{
 			// Nothing ran. The caller built the request, so it reads the provider's reason to fix it.
 			name: "Success/StartRejected",
 
@@ -278,6 +289,20 @@ func TestGenerationCheck(t *testing.T) {
 			expectStatus:  dao.GenerationStatusPending,
 		},
 		{
+			// The owner asked to stop: a fresh attempt would run what they cancelled.
+			name: "Success/RetryableFailureAfterCancel",
+
+			generation: withCancel(runningGeneration(1)),
+			observe:    failedCall(true),
+
+			expectSettle: &settle{
+				attempt: 1, callID: &callID, status: dao.GenerationStatusFailed, reason: &callFailedMessage,
+			},
+			expectAttempt: testResponse,
+			expectUsage:   true,
+			expectStatus:  dao.GenerationStatusFailed,
+		},
+		{
 			name: "Success/RetriesExhausted",
 
 			generation: runningGeneration(2),
@@ -418,6 +443,26 @@ func TestGenerationCheck(t *testing.T) {
 
 			// The attempt a fresh start takes.
 			intent := startingGeneration(0)
+			intent.CreatedAt = generation.CreatedAt
+
+			// usageOf is the Usage Record of a call answered for an attempt. The test provider reports
+			// no start, so the call is timed from when it was sent.
+			usageOf := func(attempt *dao.Generation, call *connectors.Call) *dao.GenerationUsageInsertRequest {
+				return &dao.GenerationUsageInsertRequest{
+					GenerationID:      attempt.ID,
+					Attempt:           attempt.Attempt,
+					OwnerID:           attempt.OwnerID,
+					Purpose:           attempt.Purpose,
+					Provider:          attempt.Provider,
+					Model:             call.Model,
+					Class:             call.Class,
+					StartedAt:         *attempt.StartRequestedAt,
+					InputTokens:       call.Usage.InputTokens,
+					CachedInputTokens: call.Usage.CachedInputTokens,
+					OutputTokens:      call.Usage.OutputTokens,
+					ReasoningTokens:   call.Usage.ReasoningTokens,
+				}
+			}
 
 			if testCase.expectStart || testCase.beginStartErr != nil {
 				beginStart.EXPECT().
@@ -449,7 +494,11 @@ func TestGenerationCheck(t *testing.T) {
 			}
 
 			if testCase.expectStopOrphan {
-				connector.EXPECT().Cancel(mock.Anything, testCallID).Return(providerCall(connectors.CallCancelled), nil)
+				orphan := providerCall(connectors.CallCancelled)
+
+				connector.EXPECT().Cancel(mock.Anything, testCallID).Return(orphan, nil)
+				// The orphan ran on the provider's side: what it consumed still counts.
+				usage.EXPECT().Exec(mock.Anything, usageOf(intent, orphan)).Return(&dao.GenerationUsage{}, nil)
 			}
 
 			if testCase.observe != nil || testCase.observeErr != nil {
@@ -504,21 +553,7 @@ func TestGenerationCheck(t *testing.T) {
 
 			if testCase.expectUsage {
 				usage.EXPECT().
-					Exec(mock.Anything, &dao.GenerationUsageInsertRequest{
-						GenerationID: generation.ID,
-						Attempt:      generation.Attempt,
-						OwnerID:      generation.OwnerID,
-						Purpose:      generation.Purpose,
-						Provider:     generation.Provider,
-						Model:        testCase.observe.Model,
-						Class:        testCase.observe.Class,
-						// The test provider reports no start: the call is timed from when it was sent.
-						StartedAt:         *generation.StartRequestedAt,
-						InputTokens:       testCase.observe.Usage.InputTokens,
-						CachedInputTokens: testCase.observe.Usage.CachedInputTokens,
-						OutputTokens:      testCase.observe.Usage.OutputTokens,
-						ReasoningTokens:   testCase.observe.Usage.ReasoningTokens,
-					}).
+					Exec(mock.Anything, usageOf(generation, testCase.observe)).
 					Return(&dao.GenerationUsage{}, testCase.usageErr)
 			}
 
