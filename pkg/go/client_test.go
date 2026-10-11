@@ -245,7 +245,7 @@ func TestClient(t *testing.T) {
 		_, err := client.GenerationSubmit(t.Context(), over)
 		require.Equal(t, codes.ResourceExhausted, status.Code(err))
 		require.Equal(t,
-			`usage cap reached: purpose "studio.generation" concurrency: 2 generations already pending or running`,
+			`usage cap reached: purpose "studio.generation" concurrency: 2 generations already in flight`,
 			status.Convert(err).Message(),
 		)
 	})

@@ -448,7 +448,7 @@ func TestGenerationSubmit(t *testing.T) {
 			for _, live := range testCase.live {
 				liveDao.EXPECT().
 					Exec(mock.Anything, &dao.GenerationCountLiveRequest{
-						OwnerID: testCase.request.OwnerID, Purpose: scope(live.purpose),
+						OwnerID: testCase.request.OwnerID, Purpose: scope(live.purpose), UnknownOutcomeWindow: 15 * time.Minute,
 					}).
 					Return(&dao.GenerationLiveCount{Count: live.count}, live.err)
 

@@ -86,6 +86,14 @@ func withCancel(generation *dao.Generation) *dao.Generation {
 }
 
 // withProvider moves the generation to another provider.
+// overdue backdates a running generation's start past the run ceiling.
+func overdue(generation *dao.Generation) *dao.Generation {
+	started := testNow.Add(-3 * time.Hour)
+	generation.StartRequestedAt = &started
+
+	return generation
+}
+
 // submittedAgo dates the generation's submission age before testNow.
 func submittedAgo(generation *dao.Generation, age time.Duration) *dao.Generation {
 	generation.CreatedAt = testNow.Add(-age)

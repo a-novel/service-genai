@@ -31,6 +31,8 @@ type GenerationSettleRequest struct {
 	Error *string
 	// Retention is how long the settled row survives before the purge takes it.
 	Retention time.Duration
+	// OutcomeUnknown marks a failure whose start the provider may have accepted.
+	OutcomeUnknown bool
 }
 
 // PgGenerationSettle records a terminal outcome.
@@ -64,6 +66,7 @@ func (dao *PgGenerationSettle) Exec(ctx context.Context, request *GenerationSett
 		request.Error,
 		request.Retention.Seconds(),
 		request.StartRequestedAt,
+		request.OutcomeUnknown,
 	).Scan(ctx, entity)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

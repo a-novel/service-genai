@@ -3,6 +3,7 @@ package dao_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -22,6 +23,8 @@ func TestPgGenerationCountLive(t *testing.T) {
 
 		owner   uuid.UUID
 		purpose *string
+		// unknownSince seeds a generation that failed with its start's outcome unknown, that long ago.
+		unknownSince time.Duration
 
 		expect int64
 	}{
@@ -41,6 +44,23 @@ func TestPgGenerationCountLive(t *testing.T) {
 			purpose: new("studio.generation"),
 
 			expect: 1,
+		},
+		{
+			// The provider may still run its call, so it holds a slot within the window.
+			name: "Success/UnknownOutcomeHeld",
+
+			owner:        testOwner,
+			unknownSince: time.Minute,
+
+			expect: 3,
+		},
+		{
+			name: "Success/UnknownOutcomeReleased",
+
+			owner:        testOwner,
+			unknownSince: time.Hour,
+
+			expect: 2,
 		},
 		{
 			name: "Success/OtherOwner",
@@ -65,8 +85,16 @@ func TestPgGenerationCountLive(t *testing.T) {
 				execute(ctx, t, "UPDATE generations SET purpose = 'studio.analysis' WHERE id = ?0", running.ID)
 				settleGeneration(ctx, t, runGeneration(ctx, t, seedGeneration(ctx, t, 1).ID))
 
+				if testCase.unknownSince > 0 {
+					unknown := settleGeneration(ctx, t, startGeneration(ctx, t, seedGeneration(ctx, t, 1).ID))
+					execute(ctx, t,
+						"UPDATE generations SET outcome_unknown_at = clock_timestamp() - make_interval(secs => ?1) WHERE id = ?0",
+						unknown.ID, testCase.unknownSince.Seconds(),
+					)
+				}
+
 				live, err := daoCountLive.Exec(ctx, &dao.GenerationCountLiveRequest{
-					OwnerID: testCase.owner, Purpose: testCase.purpose,
+					OwnerID: testCase.owner, Purpose: testCase.purpose, UnknownOutcomeWindow: 15 * time.Minute,
 				})
 				require.NoError(t, err)
 				require.Equal(t, testCase.expect, live.Count)
