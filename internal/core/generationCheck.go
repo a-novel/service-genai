@@ -387,10 +387,12 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 		return settled, nil
 	}
 
+	// How long the call has run, by the database clock. A recorded call always has its start.
+	age := generation.CheckedAt.Sub(*generation.StartRequestedAt)
+
 	// Past the run ceiling the call is stopped: one the provider never finishes, or a key it no longer
-	// accepts, must not hold the owner's slot forever. Both times come from the database clock.
-	overdue := generation.CancelRequestedAt == nil && generation.StartRequestedAt != nil &&
-		generation.CheckedAt.Sub(*generation.StartRequestedAt) >= runCeiling
+	// accepts, must not hold the owner's slot forever.
+	overdue := generation.CancelRequestedAt == nil && age >= runCeiling
 
 	var call *connectors.Call
 
@@ -403,7 +405,7 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 	// The provider can leave a streamed call queued for good when its creation stream was left early.
 	// One still queued past its ceiling is stopped like an overdue call.
 	if err == nil && generation.Streamed && !overdue && generation.CancelRequestedAt == nil &&
-		call.State == connectors.CallQueued && generation.CheckedAt.Sub(*generation.StartRequestedAt) >= streamQueuedCeiling {
+		call.State == connectors.CallQueued && age >= streamQueuedCeiling {
 		overdue = true
 		call, err = connector.Cancel(ctx, *generation.ProviderCallID)
 	}
@@ -514,8 +516,8 @@ func (service *GenerationCheck) settle(
 }
 
 // settleFailure records a terminal failure in this service's words, with the provider's answer when
-// it gave one. It runs detached, with its own deadline, so a departing caller cannot leave the
-// generation half-settled.
+// it gave one. It takes a deadline of its own, so a check that spent its budget on a slow start still
+// records the failure.
 func (service *GenerationCheck) settleFailure(
 	ctx context.Context, generation *dao.Generation, message string, response json.RawMessage,
 ) (*dao.Generation, error) {
