@@ -16,7 +16,11 @@ A connector offers a mode by implementing its interface. The OpenAI connector of
 | A JSON error body on a rejected request                                                | The caller built the request, so the provider's reason is what tells it what to fix.                                                          |
 | A finished operation names its model and reasoning effort, and reports its token usage | Every answered call leaves a Usage Record of what ran and what it consumed, which caps sum.                                                   |
 
-The OpenAI connector writes `background: true` and `stream: false` over the payload's own values, and forwards everything else unchanged. Background mode reorders a `json_schema`'s properties before the model runs, so a caller cannot use property order to make the model write one field before another.
+The OpenAI connector writes `background: true` and `stream` over the payload's own values, and forwards everything else unchanged. `stream` is `false` unless the caller asked to stream the generation. Background mode reorders a `json_schema`'s properties before the model runs, so a caller cannot use property order to make the model write one field before another.
+
+## Streaming mode
+
+A provider offers the Streaming mode by reading an operation's events after a cursor. OpenAI streams only a background call created with `stream: true`, and only for 5 minutes after its creation; past that, the result is read by polling. Leaving a streamed creation before the provider reports `response.in_progress` can leave the call queued for good, an open OpenAI bug: the connector holds the creation stream until then, at most 30 seconds, and a check stops a streamed call still queued 5 minutes after its start. The connector issues the stream's GET itself, because openai-go's `GetStreaming` sends a body the API refuses ([openai-go#660](https://github.com/openai/openai-go/issues/660)).
 
 ## Who conforms
 
