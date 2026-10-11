@@ -29,9 +29,6 @@ type GenerationSweepConfig struct {
 	Interval time.Duration `validate:"required,gt=0"`
 	// BatchSize caps the generations checked in one pass.
 	BatchSize int `validate:"required,min=1,max=100"`
-	// ProviderEpoch is this replica's provider configuration. Generations a newer one took over are
-	// left to the replicas running it.
-	ProviderEpoch int32 `validate:"required,min=1"`
 }
 
 // A GenerationSweep checks the unsettled generations nobody checked within the interval.
@@ -69,7 +66,7 @@ func (service *GenerationSweep) RunOnce(ctx context.Context) (bool, error) {
 	defer span.End()
 
 	generations, err := service.dao.Exec(ctx, &dao.GenerationSweepRequest{
-		Interval: service.config.Interval, Limit: service.config.BatchSize, ProviderEpoch: service.config.ProviderEpoch,
+		Interval: service.config.Interval, Limit: service.config.BatchSize,
 	})
 	if err != nil {
 		return false, otel.ReportError(span, fmt.Errorf("sweep generations: %w", err))

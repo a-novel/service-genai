@@ -8,24 +8,19 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/a-novel/service-genai/internal/dao"
-	"github.com/a-novel/service-genai/internal/lib"
 )
 
 // Ceilings the configuration and requests are held to. They live here because validation is this
 // layer's responsibility; the data access below takes what it is given.
 const (
 	// SweepIntervalCeiling bounds how long an unpolled generation goes unchecked. A finished
-	// background response stays retrievable for only about ten minutes when it is not stored, so the
+	// background response stays retrievable for only a limited time when it is not stored, so the
 	// sweep must reach it well inside that window.
 	SweepIntervalCeiling = 5 * time.Minute
-	// RequestSizeCeiling bounds a request's instructions, input and output schema together. It
-	// estimates OpenAI's 922,000-token maximum input using the rough English heuristic of four
-	// characters per token and one byte per ASCII character. Tokenization and UTF-8 width vary, so this
-	// is a transport and storage bound, not a promise that every request below it fits every model.
-	//
-	// The ceiling also remains below gRPC's default 4 MiB receive limit, leaving room for the
-	// protobuf envelope so an oversized request reaches application validation.
-	RequestSizeCeiling = 3_688_000
+	// PayloadSizeCeiling bounds a payload. It stays below gRPC's default 4 MiB receive limit, leaving
+	// room for the protobuf envelope, so an oversized payload reaches application validation. It
+	// bounds transport and storage, not what a provider accepts.
+	PayloadSizeCeiling = 3_688_000
 )
 
 // GenerationStatus identifies where a generation sits in its lifecycle.
@@ -36,9 +31,10 @@ const (
 	GenerationStatusPending GenerationStatus = "pending"
 	// GenerationStatusRunning means the provider accepted the call and it has not settled yet.
 	GenerationStatusRunning GenerationStatus = "running"
-	// GenerationStatusSucceeded means the provider returned a usable output.
+	// GenerationStatusSucceeded means the provider finished the call. Whether its output is usable is
+	// the caller's reading of the last attempt's response.
 	GenerationStatusSucceeded GenerationStatus = "succeeded"
-	// GenerationStatusFailed means the generation exhausted its attempts without a usable output.
+	// GenerationStatusFailed means the generation holds no finished response.
 	GenerationStatusFailed GenerationStatus = "failed"
 	// GenerationStatusCancelled means the generation settled after its owner requested cancellation.
 	GenerationStatusCancelled GenerationStatus = "cancelled"
@@ -50,18 +46,14 @@ type Generation struct {
 	ID uuid.UUID
 	// OwnerID identifies the user who owns the generation.
 	OwnerID uuid.UUID
-	// Purpose groups the generation under the caller's workflow vocabulary.
-	Purpose string
-	// Output is the document conforming to the output schema, when the generation succeeds.
-	Output json.RawMessage
-	// Failure is the kind of failure that ended a failed generation.
-	Failure *lib.FailureKind
+	// Provider names the service the generation runs on.
+	Provider string
 	// Error names the cause of a failure or cancellation in this service's own words.
 	Error *string
 	// Status identifies the generation's current lifecycle state.
 	Status GenerationStatus
-	// Usage is what each provider call consumed, in attempt order.
-	Usage []*GenerationUsage
+	// Attempts are the provider's answers, in attempt order.
+	Attempts []*GenerationAttempt
 	// CreatedAt is when the generation was submitted.
 	CreatedAt time.Time
 	// UpdatedAt is when the generation last changed.
@@ -72,59 +64,29 @@ type Generation struct {
 	ExpiresAt *time.Time
 }
 
-// GenerationUsage is what one provider call consumed, with the model and effort that actually ran.
-type GenerationUsage struct {
-	Attempt           int16
-	Provider          string
-	Model             string
-	ReasoningEffort   *string
-	InputTokens       int64
-	CachedInputTokens int64
-	CacheWriteTokens  int64
-	OutputTokens      int64
-	ReasoningTokens   int64
+// GenerationAttempt is the provider's answer to one attempt.
+type GenerationAttempt struct {
+	Number int16
+	// Response is the provider's final answer, as it sent it.
+	Response json.RawMessage
 }
 
-// generationRequest is the provider-neutral request a generation stores and its checks send.
-type generationRequest struct {
-	Tier         lib.Tier        `json:"tier"`
-	Instructions string          `json:"instructions"`
-	Input        json.RawMessage `json:"input"`
-	OutputSchema json.RawMessage `json:"outputSchema"`
-}
-
-func newGeneration(generation *dao.Generation, usage []*dao.GenerationUsage) *Generation {
+func newGeneration(generation *dao.Generation, attempts []*dao.GenerationAttempt) *Generation {
 	result := &Generation{
 		ID:        generation.ID,
 		OwnerID:   generation.OwnerID,
-		Purpose:   generation.Purpose,
-		Output:    generation.Output,
+		Provider:  generation.Provider,
 		Error:     generation.Error,
 		Status:    GenerationStatus(generation.Status),
-		Usage:     make([]*GenerationUsage, len(usage)),
+		Attempts:  make([]*GenerationAttempt, len(attempts)),
 		CreatedAt: generation.CreatedAt,
 		UpdatedAt: generation.UpdatedAt,
 		SettledAt: generation.SettledAt,
 		ExpiresAt: generation.ExpiresAt,
 	}
 
-	if generation.Failure != nil {
-		failure := lib.FailureKind(*generation.Failure)
-		result.Failure = &failure
-	}
-
-	for index, attempt := range usage {
-		result.Usage[index] = &GenerationUsage{
-			Attempt:           attempt.Attempt,
-			Provider:          attempt.Provider,
-			Model:             attempt.Model,
-			ReasoningEffort:   attempt.ReasoningEffort,
-			InputTokens:       attempt.InputTokens,
-			CachedInputTokens: attempt.CachedInputTokens,
-			CacheWriteTokens:  attempt.CacheWriteTokens,
-			OutputTokens:      attempt.OutputTokens,
-			ReasoningTokens:   attempt.ReasoningTokens,
-		}
+	for index, attempt := range attempts {
+		result.Attempts[index] = &GenerationAttempt{Number: attempt.Attempt, Response: attempt.Response}
 	}
 
 	return result
