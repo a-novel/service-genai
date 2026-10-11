@@ -609,28 +609,27 @@ func TestGenerationCheckTelemetry(t *testing.T) {
 				require.NoError(t, provider.Shutdown(context.WithoutCancel(t.Context())))
 			})
 
-			check, err := core.NewGenerationCheck(
+			check := core.NewGenerationCheck(
 				core.GenerationCheckConfig{Retention: time.Hour},
-				discardLogger{},
+				coremocks.NewMockGenerationCheckLogger(t),
 				connectors.Registry{testProvider: connectorsmocks.NewMockAsync(t)},
 				transactiontest.NewTransactor(),
 				core.GenerationCheckDaos{
-					BeginStart:   coremocks.NewMockGenerationCheckBeginStartDao(t),
-					ReleaseStart: coremocks.NewMockGenerationCheckReleaseStartDao(t),
-					Record:       coremocks.NewMockGenerationCheckRecordProviderCallDao(t),
-					Settle:       coremocks.NewMockGenerationCheckSettleDao(t),
-					Requeue:      coremocks.NewMockGenerationCheckRequeueDao(t),
-					Attempt:      coremocks.NewMockGenerationCheckAttemptInsertDao(t),
-					Usage:        coremocks.NewMockGenerationCheckUsageInsertDao(t),
-					Get:          coremocks.NewMockGenerationCheckGetDao(t),
+					BeginStart:   coremocks.NewMockGenerationCheckDaoBeginStart(t),
+					ReleaseStart: coremocks.NewMockGenerationCheckDaoReleaseStart(t),
+					Record:       coremocks.NewMockGenerationCheckDaoRecordProviderCall(t),
+					Settle:       coremocks.NewMockGenerationCheckDaoSettle(t),
+					Requeue:      coremocks.NewMockGenerationCheckDaoRequeue(t),
+					Attempt:      coremocks.NewMockGenerationCheckDaoAttemptInsert(t),
+					Usage:        coremocks.NewMockGenerationCheckDaoUsageInsert(t),
+					Get:          coremocks.NewMockGenerationCheckDaoGet(t),
 				},
 			)
-			require.NoError(t, err)
 
 			generation := settledGeneration(dao.GenerationStatusSucceeded)
 			generation.Traceparent = testCase.traceparent
 
-			_, err = check.Exec(
+			_, err := check.Exec(
 				trace.ContextWithSpanContext(t.Context(), testCaller), &core.GenerationCheckRequest{Generation: generation},
 			)
 			require.NoError(t, err)
