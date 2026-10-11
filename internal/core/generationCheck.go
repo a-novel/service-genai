@@ -14,7 +14,7 @@ import (
 	"github.com/a-novel-kit/golib/transaction"
 
 	"github.com/a-novel/service-genai/internal/dao"
-	"github.com/a-novel/service-genai/internal/lib"
+	"github.com/a-novel/service-genai/internal/lib/connectors"
 )
 
 // Dependencies of [GenerationCheck].
@@ -89,7 +89,7 @@ type GenerationCheckRequest struct {
 type GenerationCheck struct {
 	config     GenerationCheckConfig
 	logger     GenerationCheckLogger
-	connectors lib.Connectors
+	registry   connectors.Registry
 	transactor transaction.Transactor
 	daos       GenerationCheckDaos
 }
@@ -97,7 +97,7 @@ type GenerationCheck struct {
 func NewGenerationCheck(
 	config GenerationCheckConfig,
 	logger GenerationCheckLogger,
-	connectors lib.Connectors,
+	registry connectors.Registry,
 	transactor transaction.Transactor,
 	daos GenerationCheckDaos,
 ) (*GenerationCheck, error) {
@@ -111,7 +111,7 @@ func NewGenerationCheck(
 	}
 
 	return &GenerationCheck{
-		config: config, logger: logger, connectors: connectors, transactor: transactor, daos: daos,
+		config: config, logger: logger, registry: registry, transactor: transactor, daos: daos,
 	}, nil
 }
 
@@ -139,7 +139,7 @@ func (service *GenerationCheck) Exec(
 	case generation.StartRequestedAt != nil:
 		checked, err = service.resolveStart(ctx, generation)
 	case generation.CancelRequestedAt != nil:
-		checked, err = service.settle(ctx, generation, &lib.ProviderCall{State: lib.ProviderCallCancelled})
+		checked, err = service.settle(ctx, generation, &connectors.Call{State: connectors.CallCancelled})
 	default:
 		checked, err = service.start(ctx, generation)
 	}
@@ -181,7 +181,7 @@ func (service *GenerationCheck) start(ctx context.Context, generation *dao.Gener
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(start)")
 	defer span.End()
 
-	connector, err := service.connectors.Async(generation.Provider)
+	connector, err := service.registry.Async(generation.Provider)
 	if err != nil {
 		settled, settleErr := service.providerUnavailable(ctx, generation, err)
 		if settleErr != nil {
@@ -219,7 +219,7 @@ func (service *GenerationCheck) start(ctx context.Context, generation *dao.Gener
 		return released, nil
 	}
 
-	call, err := connector.Start(startCtx, &lib.AsyncStartRequest{Payload: intent.Payload})
+	call, err := connector.Start(startCtx, &connectors.AsyncStartRequest{Payload: intent.Payload})
 	if err != nil {
 		failed, failErr := service.failStart(ctx, intent, err)
 		if failErr != nil {
@@ -296,7 +296,7 @@ func (service *GenerationCheck) failStart(
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(failStart)")
 	defer span.End()
 
-	if errors.Is(cause, lib.ErrProviderRetryable) {
+	if errors.Is(cause, connectors.ErrRetryable) {
 		released, err := service.releaseStart(ctx, intent, retryDelay)
 		if err != nil {
 			return nil, otel.ReportError(span, fmt.Errorf("release start: %w", err))
@@ -308,14 +308,14 @@ func (service *GenerationCheck) failStart(
 	failure := failureStartFailed
 
 	var (
-		rejection *lib.ProviderRejectionError
+		rejection *connectors.RejectionError
 		response  json.RawMessage
 	)
 
 	switch {
 	case errors.As(cause, &rejection):
 		failure, response = failureRejected, rejection.Response
-	case errors.Is(cause, lib.ErrProviderStartAmbiguous):
+	case errors.Is(cause, connectors.ErrStartAmbiguous):
 		failure = failureOutcomeUnknown
 	}
 
@@ -357,7 +357,7 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(observe)")
 	defer span.End()
 
-	connector, err := service.connectors.Async(generation.Provider)
+	connector, err := service.registry.Async(generation.Provider)
 	if err != nil {
 		settled, settleErr := service.providerUnavailable(ctx, generation, err)
 		if settleErr != nil {
@@ -367,7 +367,7 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 		return settled, nil
 	}
 
-	var call *lib.ProviderCall
+	var call *connectors.Call
 
 	if generation.CancelRequestedAt != nil {
 		call, err = connector.Cancel(ctx, *generation.ProviderCallID)
@@ -375,7 +375,7 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 		call, err = connector.Get(ctx, *generation.ProviderCallID)
 	}
 
-	if errors.Is(err, lib.ErrProviderRetryable) {
+	if errors.Is(err, connectors.ErrRetryable) {
 		// A transient failure is retried by the next check; the provider span holds the cause.
 		return generation, nil
 	}
@@ -399,7 +399,7 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 		return generation, nil
 	}
 
-	if call.State == lib.ProviderCallFailed && call.Retryable && generation.Attempt < generation.MaxAttempts {
+	if call.State == connectors.CallFailed && call.Retryable && generation.Attempt < generation.MaxAttempts {
 		requeued, requeueErr := service.requeue(ctx, generation, call)
 		if requeueErr != nil {
 			return nil, otel.ReportError(span, requeueErr)
@@ -418,7 +418,7 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 
 // requeue records the failed attempt's answer and usage, and authorizes a fresh call, together.
 func (service *GenerationCheck) requeue(
-	ctx context.Context, generation *dao.Generation, call *lib.ProviderCall,
+	ctx context.Context, generation *dao.Generation, call *connectors.Call,
 ) (*dao.Generation, error) {
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(requeue)")
 	defer span.End()
@@ -460,7 +460,7 @@ func (service *GenerationCheck) requeue(
 // The provider call happened before and outside it: a transaction held open across a call would pin
 // a pooled connection for its whole duration.
 func (service *GenerationCheck) settle(
-	ctx context.Context, generation *dao.Generation, call *lib.ProviderCall,
+	ctx context.Context, generation *dao.Generation, call *connectors.Call,
 ) (*dao.Generation, error) {
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(settle)")
 	defer span.End()
@@ -547,7 +547,7 @@ func (service *GenerationCheck) settleFailure(
 // recordUsage writes the attempt's Usage Record. A call the provider reports no usage for has
 // nothing to count.
 func (service *GenerationCheck) recordUsage(
-	ctx context.Context, generation *dao.Generation, call *lib.ProviderCall,
+	ctx context.Context, generation *dao.Generation, call *connectors.Call,
 ) error {
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(recordUsage)")
 	defer span.End()
@@ -614,7 +614,7 @@ func (service *GenerationCheck) recordAttempt(
 // stopOrphan cancels an accepted call whose generation settled first. Best effort: a failure is
 // logged, and the call runs to completion unread.
 func (service *GenerationCheck) stopOrphan(
-	ctx context.Context, connector lib.AsyncConnector, generation *dao.Generation, callID string,
+	ctx context.Context, connector connectors.Async, generation *dao.Generation, callID string,
 ) {
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(stopOrphan)")
 	defer span.End()
@@ -647,15 +647,15 @@ func (service *GenerationCheck) logFailure(ctx context.Context, generation *dao.
 //
 // A failed call is not a free one: its response carries what it consumed, which is why settle still
 // records it.
-func settleOutcomeOf(call *lib.ProviderCall) (dao.GenerationStatus, *string) {
+func settleOutcomeOf(call *connectors.Call) (dao.GenerationStatus, *string) {
 	switch call.State {
-	case lib.ProviderCallSucceeded:
+	case connectors.CallSucceeded:
 		return dao.GenerationStatusSucceeded, nil
-	case lib.ProviderCallCancelled:
+	case connectors.CallCancelled:
 		return dao.GenerationStatusCancelled, new(generationCancelledReason)
-	case lib.ProviderCallFailed:
+	case connectors.CallFailed:
 		return dao.GenerationStatusFailed, new(failureCallFailed)
-	case lib.ProviderCallRunning:
+	case connectors.CallRunning:
 		fallthrough
 	default:
 		// Unreachable: observe only settles a terminal state. Failing rather than panicking keeps a

@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/a-novel/service-genai/internal/dao"
-	"github.com/a-novel/service-genai/internal/lib"
+	"github.com/a-novel/service-genai/internal/lib/connectors"
 )
 
 var errFoo = errors.New("foo")
@@ -105,21 +105,21 @@ func settledGeneration(status dao.GenerationStatus) *dao.Generation {
 }
 
 // providerCall is the provider's view of the call, with its answer once terminal.
-func providerCall(state lib.ProviderCallState) *lib.ProviderCall {
-	call := &lib.ProviderCall{ID: testCallID, State: state}
+func providerCall(state connectors.CallState) *connectors.Call {
+	call := &connectors.Call{ID: testCallID, State: state}
 	if state.Terminal() {
 		call.Response = testResponse
 		call.Model = testModel
 		call.Class = "high"
-		call.Usage = &lib.ProviderUsage{InputTokens: 1000, CachedInputTokens: 200, OutputTokens: 500, ReasoningTokens: 100}
+		call.Usage = &connectors.Usage{InputTokens: 1000, CachedInputTokens: 200, OutputTokens: 500, ReasoningTokens: 100}
 	}
 
 	return call
 }
 
 // failedCall is a call the provider reports failed.
-func failedCall(retryable bool) *lib.ProviderCall {
-	call := providerCall(lib.ProviderCallFailed)
+func failedCall(retryable bool) *connectors.Call {
+	call := providerCall(connectors.CallFailed)
 	call.Reason = "the model failed"
 	call.Retryable = retryable
 

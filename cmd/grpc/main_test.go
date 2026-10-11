@@ -14,7 +14,7 @@ import (
 
 	"github.com/a-novel/service-genai/internal/config"
 	"github.com/a-novel/service-genai/internal/core"
-	"github.com/a-novel/service-genai/internal/lib"
+	"github.com/a-novel/service-genai/internal/lib/connectors"
 )
 
 type discardLog struct{}
@@ -178,10 +178,10 @@ func TestNewConnectors(t *testing.T) {
 		t.Skip("calls the configured provider; set PROVIDER_CONFORMANCE=true to run it")
 	}
 
-	connectors, err := newConnectors(config.AppPresetDefault)
+	registry, err := newConnectors(config.AppPresetDefault)
 	require.NoError(t, err)
 
-	connector, err := connectors.Async("openai")
+	connector, err := registry.Async("openai")
 	require.NoError(t, err)
 
 	// payload is what a caller sends: its own model, effort, schema and privacy fields. The schema
@@ -216,7 +216,7 @@ func TestNewConnectors(t *testing.T) {
 		}`)
 	}
 
-	await := func(t *testing.T, id string) *lib.ProviderCall {
+	await := func(t *testing.T, id string) *connectors.Call {
 		t.Helper()
 
 		for {
@@ -248,14 +248,14 @@ func TestNewConnectors(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		t.Parallel()
 
-		started, err := connector.Start(t.Context(), &lib.AsyncStartRequest{Payload: payload("gpt-5.6-luna", "low")})
+		started, err := connector.Start(t.Context(), &connectors.AsyncStartRequest{Payload: payload("gpt-5.6-luna", "low")})
 		require.NoError(t, err)
 		// Background mode, with the caller's store: false: the id comes back before the model runs.
 		require.NotEmpty(t, started.ID)
-		require.Equal(t, lib.ProviderCallRunning, started.State)
+		require.Equal(t, connectors.CallRunning, started.State)
 
 		finished := await(t, started.ID)
-		require.Equal(t, lib.ProviderCallSucceeded, finished.State, finished.Reason)
+		require.Equal(t, connectors.CallSucceeded, finished.State, finished.Reason)
 		require.True(t, json.Valid(finished.Response))
 
 		// The usage record needs what ran and what it consumed, on every answered call.
@@ -278,15 +278,15 @@ func TestNewConnectors(t *testing.T) {
 
 		// A cancel that arrives after the call finished must still return the result: the provider
 		// refuses to cancel it, and the connector reads it instead.
-		started, err := connector.Start(t.Context(), &lib.AsyncStartRequest{Payload: payload("gpt-5.6-luna", "low")})
+		started, err := connector.Start(t.Context(), &connectors.AsyncStartRequest{Payload: payload("gpt-5.6-luna", "low")})
 		require.NoError(t, err)
 
 		finished := await(t, started.ID)
-		require.Equal(t, lib.ProviderCallSucceeded, finished.State, finished.Reason)
+		require.Equal(t, connectors.CallSucceeded, finished.State, finished.Reason)
 
 		cancelled, err := connector.Cancel(t.Context(), started.ID)
 		require.NoError(t, err)
-		require.Equal(t, lib.ProviderCallSucceeded, cancelled.State)
+		require.Equal(t, connectors.CallSucceeded, cancelled.State)
 		require.JSONEq(t, output(t, finished.Response), output(t, cancelled.Response))
 	})
 
@@ -294,21 +294,21 @@ func TestNewConnectors(t *testing.T) {
 		t.Parallel()
 
 		// A slow model and effort, so the cancel lands while the call still runs.
-		started, err := connector.Start(t.Context(), &lib.AsyncStartRequest{Payload: payload("gpt-5.6-sol", "high")})
+		started, err := connector.Start(t.Context(), &connectors.AsyncStartRequest{Payload: payload("gpt-5.6-sol", "high")})
 		require.NoError(t, err)
 
 		_, err = connector.Cancel(t.Context(), started.ID)
 		require.NoError(t, err)
-		require.Equal(t, lib.ProviderCallCancelled, await(t, started.ID).State)
+		require.Equal(t, connectors.CallCancelled, await(t, started.ID).State)
 	})
 
 	t.Run("Error/Rejected", func(t *testing.T) {
 		t.Parallel()
 
 		// A request the provider refuses fails before anything runs, with the provider's reason.
-		_, err := connector.Start(t.Context(), &lib.AsyncStartRequest{Payload: payload("no-such-model", "low")})
+		_, err := connector.Start(t.Context(), &connectors.AsyncStartRequest{Payload: payload("no-such-model", "low")})
 
-		var rejection *lib.ProviderRejectionError
+		var rejection *connectors.RejectionError
 
 		require.ErrorAs(t, err, &rejection)
 		require.True(t, json.Valid(rejection.Response))

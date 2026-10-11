@@ -14,8 +14,8 @@ import (
 	"github.com/a-novel/service-genai/internal/core"
 	coremocks "github.com/a-novel/service-genai/internal/core/mocks"
 	"github.com/a-novel/service-genai/internal/dao"
-	"github.com/a-novel/service-genai/internal/lib"
-	libmocks "github.com/a-novel/service-genai/internal/lib/mocks"
+	"github.com/a-novel/service-genai/internal/lib/connectors"
+	connectorsmocks "github.com/a-novel/service-genai/internal/lib/connectors/mocks"
 )
 
 func TestGenerationCheck(t *testing.T) {
@@ -48,10 +48,10 @@ func TestGenerationCheck(t *testing.T) {
 		generation *dao.Generation
 
 		beginStartErr error
-		start         *lib.ProviderCall
+		start         *connectors.Call
 		startErr      error
 		recordErr     error
-		observe       *lib.ProviderCall
+		observe       *connectors.Call
 		observeErr    error
 		settleErr     error
 		attemptErr    error
@@ -85,7 +85,7 @@ func TestGenerationCheck(t *testing.T) {
 			name: "Success/Start",
 
 			generation: pendingGeneration(),
-			start:      providerCall(lib.ProviderCallRunning),
+			start:      providerCall(connectors.CallRunning),
 
 			expectStart:  true,
 			expectRecord: true,
@@ -96,7 +96,7 @@ func TestGenerationCheck(t *testing.T) {
 			name: "Success/StartRateLimited",
 
 			generation: pendingGeneration(),
-			startErr:   lib.ErrProviderRetryable,
+			startErr:   connectors.ErrRetryable,
 
 			expectStart:   true,
 			expectRelease: true,
@@ -107,7 +107,7 @@ func TestGenerationCheck(t *testing.T) {
 			name: "Success/StartRejected",
 
 			generation: pendingGeneration(),
-			startErr:   &lib.ProviderRejectionError{Response: rejectionBody, Err: errFoo},
+			startErr:   &connectors.RejectionError{Response: rejectionBody, Err: errFoo},
 
 			expectStart:   true,
 			expectSettle:  &settle{attempt: 1, status: dao.GenerationStatusFailed, reason: &rejectedMessage},
@@ -118,7 +118,7 @@ func TestGenerationCheck(t *testing.T) {
 			name: "Success/StartRejectedWithoutBody",
 
 			generation: pendingGeneration(),
-			startErr:   &lib.ProviderRejectionError{Err: errFoo},
+			startErr:   &connectors.RejectionError{Err: errFoo},
 
 			expectStart:  true,
 			expectSettle: &settle{attempt: 1, status: dao.GenerationStatusFailed, reason: &rejectedMessage},
@@ -139,7 +139,7 @@ func TestGenerationCheck(t *testing.T) {
 			name: "Success/StartAmbiguous",
 
 			generation: pendingGeneration(),
-			startErr:   lib.ErrProviderStartAmbiguous,
+			startErr:   connectors.ErrStartAmbiguous,
 
 			expectStart:  true,
 			expectSettle: &settle{attempt: 1, status: dao.GenerationStatusFailed, reason: &unknownMessage},
@@ -159,7 +159,7 @@ func TestGenerationCheck(t *testing.T) {
 			name: "Success/OrphanStopped",
 
 			generation: pendingGeneration(),
-			start:      providerCall(lib.ProviderCallRunning),
+			start:      providerCall(connectors.CallRunning),
 			recordErr:  dao.ErrGenerationChanged,
 
 			expectStart:      true,
@@ -215,7 +215,7 @@ func TestGenerationCheck(t *testing.T) {
 			name: "Success/StillRunning",
 
 			generation: runningGeneration(1),
-			observe:    providerCall(lib.ProviderCallRunning),
+			observe:    providerCall(connectors.CallRunning),
 
 			expectStatus: dao.GenerationStatusRunning,
 		},
@@ -223,7 +223,7 @@ func TestGenerationCheck(t *testing.T) {
 			name: "Success/Succeeded",
 
 			generation: runningGeneration(1),
-			observe:    providerCall(lib.ProviderCallSucceeded),
+			observe:    providerCall(connectors.CallSucceeded),
 
 			expectSettle:  &settle{attempt: 1, callID: &callID, status: dao.GenerationStatusSucceeded},
 			expectAttempt: testResponse,
@@ -235,7 +235,7 @@ func TestGenerationCheck(t *testing.T) {
 			name: "Success/AttemptAlreadyRecorded",
 
 			generation: runningGeneration(1),
-			observe:    providerCall(lib.ProviderCallSucceeded),
+			observe:    providerCall(connectors.CallSucceeded),
 			attemptErr: dao.ErrGenerationAttemptExists,
 
 			expectSettle:  &settle{attempt: 1, callID: &callID, status: dao.GenerationStatusSucceeded},
@@ -248,7 +248,7 @@ func TestGenerationCheck(t *testing.T) {
 			name: "Success/Cancelled",
 
 			generation: withCancel(runningGeneration(1)),
-			observe:    providerCall(lib.ProviderCallCancelled),
+			observe:    providerCall(connectors.CallCancelled),
 
 			expectSettle: &settle{
 				attempt: 1, callID: &callID, status: dao.GenerationStatusCancelled, reason: &cancelledReason,
@@ -299,7 +299,7 @@ func TestGenerationCheck(t *testing.T) {
 			name: "Success/TransientObservationFailure",
 
 			generation: runningGeneration(1),
-			observeErr: lib.ErrProviderRetryable,
+			observeErr: connectors.ErrRetryable,
 
 			expectStatus: dao.GenerationStatusRunning,
 		},
@@ -319,7 +319,7 @@ func TestGenerationCheck(t *testing.T) {
 			name: "Success/SettledByAnotherCheck",
 
 			generation: runningGeneration(1),
-			observe:    providerCall(lib.ProviderCallSucceeded),
+			observe:    providerCall(connectors.CallSucceeded),
 			settleErr:  dao.ErrGenerationChanged,
 
 			expectSettle: &settle{attempt: 1, callID: &callID, status: dao.GenerationStatusSucceeded},
@@ -331,7 +331,7 @@ func TestGenerationCheck(t *testing.T) {
 			name: "Error/Record",
 
 			generation: pendingGeneration(),
-			start:      providerCall(lib.ProviderCallRunning),
+			start:      providerCall(connectors.CallRunning),
 			recordErr:  errFoo,
 
 			expectStart:  true,
@@ -344,7 +344,7 @@ func TestGenerationCheck(t *testing.T) {
 			name: "Error/RecordLost",
 
 			generation: pendingGeneration(),
-			start:      providerCall(lib.ProviderCallRunning),
+			start:      providerCall(connectors.CallRunning),
 			recordErr:  errFoo,
 
 			expectStart:      true,
@@ -358,7 +358,7 @@ func TestGenerationCheck(t *testing.T) {
 			name: "Error/Settle",
 
 			generation: runningGeneration(1),
-			observe:    providerCall(lib.ProviderCallSucceeded),
+			observe:    providerCall(connectors.CallSucceeded),
 			settleErr:  errFoo,
 
 			expectSettle: &settle{attempt: 1, callID: &callID, status: dao.GenerationStatusSucceeded},
@@ -369,7 +369,7 @@ func TestGenerationCheck(t *testing.T) {
 			name: "Success/UsageAlreadyRecorded",
 
 			generation: runningGeneration(1),
-			observe:    providerCall(lib.ProviderCallSucceeded),
+			observe:    providerCall(connectors.CallSucceeded),
 			usageErr:   dao.ErrGenerationUsageExists,
 
 			expectSettle:  &settle{attempt: 1, callID: &callID, status: dao.GenerationStatusSucceeded},
@@ -382,7 +382,7 @@ func TestGenerationCheck(t *testing.T) {
 			name: "Error/Usage",
 
 			generation: runningGeneration(1),
-			observe:    providerCall(lib.ProviderCallSucceeded),
+			observe:    providerCall(connectors.CallSucceeded),
 			usageErr:   errFoo,
 
 			expectSettle:  &settle{attempt: 1, callID: &callID, status: dao.GenerationStatusSucceeded},
@@ -395,7 +395,7 @@ func TestGenerationCheck(t *testing.T) {
 			name: "Error/Attempt",
 
 			generation: runningGeneration(1),
-			observe:    providerCall(lib.ProviderCallSucceeded),
+			observe:    providerCall(connectors.CallSucceeded),
 			attemptErr: errFoo,
 
 			expectSettle:  &settle{attempt: 1, callID: &callID, status: dao.GenerationStatusSucceeded},
@@ -410,7 +410,7 @@ func TestGenerationCheck(t *testing.T) {
 
 			generation := testCase.generation
 
-			connector := libmocks.NewMockAsyncConnector(t)
+			connector := connectorsmocks.NewMockAsync(t)
 			beginStart := coremocks.NewMockGenerationCheckBeginStartDao(t)
 			releaseStart := coremocks.NewMockGenerationCheckReleaseStartDao(t)
 			record := coremocks.NewMockGenerationCheckRecordProviderCallDao(t)
@@ -432,7 +432,7 @@ func TestGenerationCheck(t *testing.T) {
 			if testCase.expectStart {
 				// The payload as the caller built it: the connector writes its own envelope.
 				connector.EXPECT().
-					Start(mock.Anything, &lib.AsyncStartRequest{Payload: testPayload}).
+					Start(mock.Anything, &connectors.AsyncStartRequest{Payload: testPayload}).
 					Return(testCase.start, testCase.startErr)
 			}
 
@@ -453,7 +453,7 @@ func TestGenerationCheck(t *testing.T) {
 			}
 
 			if testCase.expectStopOrphan {
-				connector.EXPECT().Cancel(mock.Anything, testCallID).Return(providerCall(lib.ProviderCallCancelled), nil)
+				connector.EXPECT().Cancel(mock.Anything, testCallID).Return(providerCall(connectors.CallCancelled), nil)
 			}
 
 			if testCase.observe != nil || testCase.observeErr != nil {
@@ -535,7 +535,7 @@ func TestGenerationCheck(t *testing.T) {
 			check, err := core.NewGenerationCheck(
 				core.GenerationCheckConfig{Retention: retention},
 				discardLogger{},
-				lib.Connectors{testProvider: connector},
+				connectors.Registry{testProvider: connector},
 				transactiontest.NewTransactor(),
 				core.GenerationCheckDaos{
 					BeginStart: beginStart, ReleaseStart: releaseStart, Record: record, Settle: settleDao,

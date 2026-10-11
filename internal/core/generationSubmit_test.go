@@ -16,8 +16,8 @@ import (
 	"github.com/a-novel/service-genai/internal/core"
 	coremocks "github.com/a-novel/service-genai/internal/core/mocks"
 	"github.com/a-novel/service-genai/internal/dao"
-	"github.com/a-novel/service-genai/internal/lib"
-	libmocks "github.com/a-novel/service-genai/internal/lib/mocks"
+	"github.com/a-novel/service-genai/internal/lib/connectors"
+	connectorsmocks "github.com/a-novel/service-genai/internal/lib/connectors/mocks"
 )
 
 // submitRequest is a valid submission; a case adjusts it.
@@ -46,12 +46,12 @@ func payloadOfSize(size int) func(request *core.GenerationSubmitRequest) {
 }
 
 // testConnectors serve the test provider in the Async mode, and another provider without it.
-func testConnectors(t *testing.T) lib.Connectors {
+func testConnectors(t *testing.T) connectors.Registry {
 	t.Helper()
 
-	return lib.Connectors{
-		testProvider: libmocks.NewMockAsyncConnector(t),
-		"another":    libmocks.NewMockAsyncConnector(t),
+	return connectors.Registry{
+		testProvider: connectorsmocks.NewMockAsync(t),
+		"another":    connectorsmocks.NewMockAsync(t),
 		"sync-only":  struct{}{},
 	}
 }
@@ -275,7 +275,7 @@ func TestGenerationSubmit(t *testing.T) {
 
 			request: submitRequest(func(request *core.GenerationSubmitRequest) { request.Provider = "sync-only" }),
 
-			expectErr: lib.ErrModeUnsupported,
+			expectErr: connectors.ErrModeUnsupported,
 		},
 		{
 			name: "Error/PayloadNotJSON",
