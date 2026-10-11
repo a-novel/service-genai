@@ -20,7 +20,8 @@ var (
 type Caps struct {
 	// Purposes holds the caps of every purpose a caller may submit; any other is refused.
 	Purposes map[string]TierCaps `json:"purposes" yaml:"purposes"`
-	// Global caps one user's usage across every purpose.
+	// Global caps one user across every purpose. Its default tier must set a concurrency, so a user
+	// whose tier is unknown is always bounded.
 	Global TierCaps `json:"global" yaml:"global"`
 }
 
@@ -37,12 +38,15 @@ func (caps TierCaps) For(tier string) Cap {
 	return capOfTier
 }
 
-// Cap is one user tier's limits.
+// Cap is one user tier's limits within a scope: a purpose, or every purpose for the global caps.
 type Cap struct {
-	// Unlimited lifts every limit, written -1 in the file.
+	// Unlimited lifts every limit, concurrency included, written -1 in the file.
 	Unlimited bool
 	// Forbidden allows no usage, written 0 in the file.
 	Forbidden bool
+	// Concurrency is how many generations of the scope one user may have pending or running at
+	// once; -1 lifts it. Nil sets no concurrency limit.
+	Concurrency *int
 	// Windows maps a rolling duration to the usage it allows.
 	Windows map[time.Duration]Limit
 }
@@ -53,7 +57,14 @@ type Limit struct {
 	OutputTokens *int64 `json:"outputTokens" yaml:"outputTokens"` // Nil when the window does not limit output.
 }
 
-// UnmarshalYAML reads a cap written as -1, as 0, or as a map from durations to limits.
+// capFile is a cap as the file writes it when it is not -1 or 0.
+type capFile struct {
+	Concurrency *int             `yaml:"concurrency"`
+	Windows     map[string]Limit `yaml:"windows"`
+}
+
+// UnmarshalYAML reads a cap written as -1, as 0, or as a concurrency and windows from durations to
+// limits.
 func (capOfTier *Cap) UnmarshalYAML(unmarshal func(any) error) error {
 	var scalar int
 
@@ -70,16 +81,17 @@ func (capOfTier *Cap) UnmarshalYAML(unmarshal func(any) error) error {
 		return nil
 	}
 
-	var windows map[string]Limit
+	var written capFile
 
-	err := unmarshal(&windows)
+	err := unmarshal(&written)
 	if err != nil {
-		return fmt.Errorf("decode cap windows: %w", err)
+		return fmt.Errorf("decode cap: %w", err)
 	}
 
-	capOfTier.Windows = make(map[time.Duration]Limit, len(windows))
+	capOfTier.Concurrency = written.Concurrency
+	capOfTier.Windows = make(map[time.Duration]Limit, len(written.Windows))
 
-	for name, limit := range windows {
+	for name, limit := range written.Windows {
 		window, err := time.ParseDuration(name)
 		if err != nil || window <= 0 {
 			return fmt.Errorf("%w: got %q", ErrCapWindow, name)

@@ -38,6 +38,10 @@ type (
 	GenerationSubmitUsageSumDao interface {
 		Exec(ctx context.Context, request *dao.GenerationUsageSumRequest) (*dao.GenerationUsageTotals, error)
 	}
+	// GenerationSubmitCountLiveDao counts a user's pending and running generations.
+	GenerationSubmitCountLiveDao interface {
+		Exec(ctx context.Context, request *dao.GenerationCountLiveRequest) (*dao.GenerationLiveCount, error)
+	}
 	// GenerationSubmitSettleDao fails a generation whose user is over a cap, so nothing starts it.
 	GenerationSubmitSettleDao interface {
 		Exec(ctx context.Context, request *dao.GenerationSettleRequest) (*dao.Generation, error)
@@ -101,6 +105,7 @@ type GenerationSubmitDaos struct {
 	Submit   GenerationSubmitDao
 	Attempts GenerationSubmitAttemptListDao
 	Usage    GenerationSubmitUsageSumDao
+	Live     GenerationSubmitCountLiveDao
 	Settle   GenerationSubmitSettleDao
 }
 
@@ -229,10 +234,10 @@ func (service *GenerationSubmit) validateRequest(request *GenerationSubmitReques
 	return nil
 }
 
-// admit lets a newly created generation start unless its user's usage already reached a cap it
-// answers to: its purpose's, then the global one, for its tier. Nothing is reserved, so a call
-// admitted under a cap runs to the end past it. A refused generation is settled as failed, so no
-// later check starts it.
+// admit lets a newly created generation start unless its user already reached a limit it answers to:
+// its purpose's, then the global one, each counting live generations before summing usage. Nothing is
+// reserved, so a call admitted under a cap runs to the end past it; the concurrency limits bound how
+// many can. A refused generation is settled as failed, so no later check starts it.
 func (service *GenerationSubmit) admit(
 	ctx context.Context, request *GenerationSubmitRequest, generation *dao.Generation,
 ) error {
@@ -264,7 +269,7 @@ func (service *GenerationSubmit) admit(
 	return otel.ReportError(span, fmt.Errorf("%w: %s", ErrUsageCapReached, refusal))
 }
 
-// capReached names the first cap the user's usage already reached, or returns empty when none is.
+// capReached names the first limit the user already reached, or returns empty when none is.
 func (service *GenerationSubmit) capReached(ctx context.Context, request *GenerationSubmitRequest) (string, error) {
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationSubmit(capReached)")
 	defer span.End()
@@ -285,6 +290,20 @@ func (service *GenerationSubmit) capReached(ctx context.Context, request *Genera
 	for _, scope := range scopes {
 		if scope.capOfTier.Forbidden {
 			return scope.name + " allows no usage", nil
+		}
+
+		if limit := scope.capOfTier.Concurrency; limit != nil && *limit >= 0 {
+			live, err := service.daos.Live.Exec(ctx, &dao.GenerationCountLiveRequest{
+				OwnerID: request.OwnerID, Purpose: scope.purpose,
+			})
+			if err != nil {
+				return "", otel.ReportError(span, fmt.Errorf("count live generations: %w", err))
+			}
+
+			// The count includes the generation this submit just created.
+			if live.Count > int64(*limit) {
+				return fmt.Sprintf("%s concurrency: %d generations already pending or running", scope.name, live.Count-1), nil
+			}
 		}
 
 		for _, window := range slices.Sorted(maps.Keys(scope.capOfTier.Windows)) {
@@ -324,6 +343,12 @@ func validateCaps(caps config.Caps) error {
 		return fmt.Errorf("global: %w", err)
 	}
 
+	// A user whose tier is unknown must always be bounded: -1 lifts the limit, but only on purpose.
+	if globalDefault := caps.Global[config.DefaultTier]; globalDefault.Concurrency == nil &&
+		!globalDefault.Unlimited && !globalDefault.Forbidden {
+		return fmt.Errorf("%w: global: the %q tier sets no concurrency", ErrInvalidRequest, config.DefaultTier)
+	}
+
 	return nil
 }
 
@@ -337,8 +362,12 @@ func validateTierCaps(tiers config.TierCaps) error {
 			continue
 		}
 
-		if len(capOfTier.Windows) == 0 {
-			return fmt.Errorf("%w: tier %q declares no window", ErrInvalidRequest, tier)
+		if len(capOfTier.Windows) == 0 && capOfTier.Concurrency == nil {
+			return fmt.Errorf("%w: tier %q declares neither a window nor a concurrency", ErrInvalidRequest, tier)
+		}
+
+		if lo.FromPtr(capOfTier.Concurrency) < -1 {
+			return fmt.Errorf("%w: tier %q allows a concurrency below -1", ErrInvalidRequest, tier)
 		}
 
 		for window, limit := range capOfTier.Windows {

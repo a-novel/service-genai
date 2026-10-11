@@ -2,17 +2,21 @@
 purposes: # Every purpose a caller may submit; any other is refused.
   studio.generation:
     default: # Required: users whose tier is absent or unknown.
-      5h: # A rolling window, as a Go duration.
-        inputTokens: 2000000 # A limit left out does not apply.
-        outputTokens: 200000
-      720h:
-        inputTokens: 50000000
-        outputTokens: 5000000
+      concurrency: 2 # Generations of this purpose one user may have pending or running at once.
+      windows:
+        5h: # A rolling window, as a Go duration.
+          inputTokens: 2000000 # A limit left out does not apply.
+          outputTokens: 200000
+        720h:
+          inputTokens: 50000000
+          outputTokens: 5000000
     admin: -1 # -1 lifts every limit; 0 allows no usage.
 
-global: # One user's usage across every purpose, with the same tiers and windows.
+global: # One user across every purpose, with the same tiers.
   default:
-    720h:
-      inputTokens: 100000000
-      outputTokens: 10000000
+    concurrency: 4 # Required here, so a user whose tier is unknown is always bounded; -1 lifts it.
+    windows:
+      720h:
+        inputTokens: 100000000
+        outputTokens: 10000000
   admin: -1
