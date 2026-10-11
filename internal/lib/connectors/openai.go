@@ -27,6 +27,10 @@ const responsesPath = "responses"
 // readTimeout bounds one read or cancel, so a hung call cannot hold a sweep.
 const readTimeout = 10 * time.Second
 
+// healthCheckTimeout is how long a connection may stay silent before a ping checks it, and how long
+// the ping may go unanswered.
+const healthCheckTimeout = 5 * time.Second
+
 // readOptions make a read a single bounded attempt: the next check is the retry.
 var readOptions = []option.RequestOption{option.WithMaxRetries(0), option.WithRequestTimeout(readTimeout)}
 
@@ -55,10 +59,25 @@ func NewOpenAI(config OpenAIConfig, opts ...option.RequestOption) (*OpenAI, erro
 	}
 
 	opts = append([]option.RequestOption{
-		option.WithBaseURL(config.BaseURL), option.WithAPIKey(config.APIKey),
+		option.WithBaseURL(config.BaseURL), option.WithAPIKey(config.APIKey), option.WithHTTPClient(healthCheckedClient()),
 	}, opts...)
 
 	return &OpenAI{client: openai.NewClient(opts...)}, nil
+}
+
+// healthCheckedClient pings a connection the provider has gone quiet on, and drops it when the ping
+// goes unanswered. Go otherwise keeps sending calls into a dead connection, and each start sent there
+// times out as ambiguous.
+func healthCheckedClient() *http.Client {
+	transport, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		return http.DefaultClient
+	}
+
+	transport = transport.Clone()
+	transport.HTTP2 = &http.HTTP2Config{SendPingTimeout: healthCheckTimeout, PingTimeout: healthCheckTimeout}
+
+	return &http.Client{Transport: transport}
 }
 
 // Start posts the caller's payload in the Async mode.
