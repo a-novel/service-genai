@@ -6,11 +6,13 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
+	"github.com/a-novel/service-genai/internal/config"
 	"github.com/a-novel/service-genai/internal/core"
 	coremocks "github.com/a-novel/service-genai/internal/core/mocks"
 	"github.com/a-novel/service-genai/internal/dao"
@@ -54,6 +56,32 @@ func testAdapters(t *testing.T) lib.Adapters {
 	}
 }
 
+// testCaps declare the test purpose, capped over 5h for the default tier, and a global cap over 720h.
+var testCaps = config.Caps{
+	Purposes: map[string]config.TierCaps{
+		testPurpose: {
+			config.DefaultTier: {Windows: map[time.Duration]config.Limit{5 * time.Hour: {InputTokens: new(int64(1000))}}},
+			"unlimited":        {Unlimited: true},
+			"forbidden":        {Forbidden: true},
+		},
+		"studio.analysis": {config.DefaultTier: {Unlimited: true}},
+	},
+	Global: config.TierCaps{
+		config.DefaultTier: {Windows: map[time.Duration]config.Limit{720 * time.Hour: {OutputTokens: new(int64(500))}}},
+	},
+}
+
+// usageMock is one window sum admission reads, and what it finds.
+type usageMock struct {
+	purpose bool
+	window  time.Duration
+	used    dao.GenerationUsageTotals
+	err     error
+}
+
+// underCaps is the admission of a default-tier user with room left under every cap.
+var underCaps = []usageMock{{purpose: true, window: 5 * time.Hour}, {window: 720 * time.Hour}}
+
 func TestGenerationSubmit(t *testing.T) {
 	t.Parallel()
 
@@ -70,6 +98,11 @@ func TestGenerationSubmit(t *testing.T) {
 		request *core.GenerationSubmitRequest
 
 		daoMock *daoMock
+		// usage lists the window sums admission reads, in order. Only a created generation is admitted.
+		usage []usageMock
+		// expectRefusal settles the created generation as failed for a reached cap.
+		expectRefusal bool
+		settleErr     error
 		// checkErr is what starting a created generation returns. A replay is never started here.
 		checkErr   error
 		attemptErr error
@@ -82,6 +115,7 @@ func TestGenerationSubmit(t *testing.T) {
 
 			request: submitRequest(nil),
 			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration(), Created: true}},
+			usage:   underCaps,
 
 			expectCreated: true,
 		},
@@ -100,6 +134,7 @@ func TestGenerationSubmit(t *testing.T) {
 				request.Payload = json.RawMessage(`{"input": "Tom & Jerry <3>"}`)
 			}),
 			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration(), Created: true}},
+			usage:   underCaps,
 
 			expectCreated: true,
 		},
@@ -108,8 +143,95 @@ func TestGenerationSubmit(t *testing.T) {
 
 			request: submitRequest(payloadOfSize(core.PayloadSizeCeiling)),
 			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration(), Created: true}},
+			usage:   underCaps,
 
 			expectCreated: true,
+		},
+		{
+			// The purpose cap is lifted for this tier; the global one still applies.
+			name: "Success/UnlimitedTier",
+
+			request: submitRequest(func(request *core.GenerationSubmitRequest) { request.UserTier = "unlimited" }),
+			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration(), Created: true}},
+			usage:   []usageMock{{window: 720 * time.Hour}},
+
+			expectCreated: true,
+		},
+		{
+			// A tier the caps do not know answers to the default caps.
+			name: "Success/UnrecognizedTier",
+
+			request: submitRequest(func(request *core.GenerationSubmitRequest) { request.UserTier = "premium" }),
+			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration(), Created: true}},
+			usage:   underCaps,
+
+			expectCreated: true,
+		},
+		{
+			name: "Error/PurposeCapReached",
+
+			request: submitRequest(nil),
+			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration(), Created: true}},
+			usage: []usageMock{
+				{purpose: true, window: 5 * time.Hour, used: dao.GenerationUsageTotals{InputTokens: 1000}},
+			},
+			expectRefusal: true,
+
+			expectErr: core.ErrUsageCapReached,
+		},
+		{
+			name: "Error/GlobalCapReached",
+
+			request: submitRequest(nil),
+			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration(), Created: true}},
+			usage: []usageMock{
+				{purpose: true, window: 5 * time.Hour, used: dao.GenerationUsageTotals{InputTokens: 999}},
+				{window: 720 * time.Hour, used: dao.GenerationUsageTotals{OutputTokens: 500}},
+			},
+			expectRefusal: true,
+
+			expectErr: core.ErrUsageCapReached,
+		},
+		{
+			// Refused before any usage is read.
+			name: "Error/ForbiddenTier",
+
+			request:       submitRequest(func(request *core.GenerationSubmitRequest) { request.UserTier = "forbidden" }),
+			daoMock:       &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration(), Created: true}},
+			expectRefusal: true,
+
+			expectErr: core.ErrUsageCapReached,
+		},
+		{
+			name: "Error/UndeclaredPurpose",
+
+			request: submitRequest(func(request *core.GenerationSubmitRequest) { request.Purpose = "studio.unknown" }),
+
+			expectErr: core.ErrInvalidRequest,
+		},
+		{
+			name: "Error/UsageSum",
+
+			request: submitRequest(nil),
+			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration(), Created: true}},
+			usage:   []usageMock{{purpose: true, window: 5 * time.Hour, err: errFoo}},
+
+			expectErr: errFoo,
+		},
+		{
+			// The refused generation stays pending, and the next check would start it: the caller
+			// must not read this as a refusal.
+			name: "Error/RefusalSettle",
+
+			request: submitRequest(nil),
+			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration(), Created: true}},
+			usage: []usageMock{
+				{purpose: true, window: 5 * time.Hour, used: dao.GenerationUsageTotals{InputTokens: 1000}},
+			},
+			expectRefusal: true,
+			settleErr:     errFoo,
+
+			expectErr: errFoo,
 		},
 		{
 			name: "Error/NoOwner",
@@ -216,6 +338,7 @@ func TestGenerationSubmit(t *testing.T) {
 
 			request:  submitRequest(nil),
 			daoMock:  &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration(), Created: true}},
+			usage:    underCaps,
 			checkErr: errFoo,
 
 			expectErr: errFoo,
@@ -245,7 +368,38 @@ func TestGenerationSubmit(t *testing.T) {
 
 			submitDao := coremocks.NewMockGenerationSubmitDao(t)
 			attemptDao := coremocks.NewMockGenerationSubmitAttemptListDao(t)
+			usageDao := coremocks.NewMockGenerationSubmitUsageSumDao(t)
+			settleDao := coremocks.NewMockGenerationSubmitSettleDao(t)
 			check := coremocks.NewMockGenerationSubmitServiceCheck(t)
+
+			admitted := !testCase.expectRefusal
+
+			for _, usage := range testCase.usage {
+				var purpose *string
+				if usage.purpose {
+					purpose = &testCase.request.Purpose
+				}
+
+				usageDao.EXPECT().
+					Exec(mock.Anything, &dao.GenerationUsageSumRequest{
+						OwnerID: testCase.request.OwnerID, Purpose: purpose, Window: usage.window,
+					}).
+					Return(&usage.used, usage.err)
+
+				admitted = admitted && usage.err == nil
+			}
+
+			if testCase.expectRefusal {
+				settleDao.EXPECT().
+					Exec(mock.Anything, mock.MatchedBy(func(request *dao.GenerationSettleRequest) bool {
+						// Settled before any start, naming the cap, so no later check starts it.
+						return request.ID == testGenerationID && request.Attempt == 0 &&
+							request.StartRequestedAt == nil && request.ProviderCallID == nil &&
+							request.Status == dao.GenerationStatusFailed &&
+							strings.HasPrefix(*request.Error, "usage cap reached: ")
+					})).
+					Return(&dao.Generation{}, testCase.settleErr)
+			}
 
 			if testCase.daoMock != nil {
 				submitDao.EXPECT().
@@ -261,13 +415,15 @@ func TestGenerationSubmit(t *testing.T) {
 					})).
 					Return(testCase.daoMock.resp, testCase.daoMock.err)
 
-				if testCase.daoMock.resp != nil && testCase.daoMock.resp.Created {
+				created := testCase.daoMock.resp != nil && testCase.daoMock.resp.Created
+
+				if created && admitted {
 					check.EXPECT().
 						Exec(mock.Anything, &core.GenerationCheckRequest{Generation: testCase.daoMock.resp.Generation}).
 						Return(testCase.daoMock.resp.Generation, testCase.checkErr)
 				}
 
-				if testCase.daoMock.resp != nil && testCase.checkErr == nil {
+				if testCase.daoMock.resp != nil && testCase.checkErr == nil && (!created || admitted) {
 					attemptDao.EXPECT().
 						Exec(mock.Anything, &dao.GenerationAttemptListRequest{GenerationID: testGenerationID}).
 						Return([]*dao.GenerationAttempt{}, testCase.attemptErr)
@@ -275,7 +431,10 @@ func TestGenerationSubmit(t *testing.T) {
 			}
 
 			service, err := core.NewGenerationSubmit(
-				core.GenerationSubmitConfig{MaxAttempts: maxAttempts}, testAdapters(t), submitDao, attemptDao, check,
+				core.GenerationSubmitConfig{MaxAttempts: maxAttempts, Retention: time.Hour, Caps: testCaps},
+				testAdapters(t),
+				core.GenerationSubmitDaos{Submit: submitDao, Attempts: attemptDao, Usage: usageDao, Settle: settleDao},
+				check,
 			)
 			require.NoError(t, err)
 
@@ -291,6 +450,8 @@ func TestGenerationSubmit(t *testing.T) {
 
 			submitDao.AssertExpectations(t)
 			attemptDao.AssertExpectations(t)
+			usageDao.AssertExpectations(t)
+			settleDao.AssertExpectations(t)
 			check.AssertExpectations(t)
 		})
 	}
@@ -358,10 +519,9 @@ func submittedKey(t *testing.T, request *core.GenerationSubmitRequest) []byte {
 		})
 
 	service, err := core.NewGenerationSubmit(
-		core.GenerationSubmitConfig{MaxAttempts: 1},
+		core.GenerationSubmitConfig{MaxAttempts: 1, Retention: time.Hour, Caps: testCaps},
 		testAdapters(t),
-		submitDao,
-		coremocks.NewMockGenerationSubmitAttemptListDao(t),
+		core.GenerationSubmitDaos{Submit: submitDao},
 		coremocks.NewMockGenerationSubmitServiceCheck(t),
 	)
 	if err != nil {
@@ -374,4 +534,91 @@ func submittedKey(t *testing.T, request *core.GenerationSubmitRequest) []byte {
 	}
 
 	return key
+}
+
+func TestNewGenerationSubmit(t *testing.T) {
+	t.Parallel()
+
+	someLimit := map[time.Duration]config.Limit{time.Hour: {InputTokens: new(int64(1))}}
+
+	testCases := []struct {
+		name string
+
+		caps config.Caps
+
+		expectErr error
+	}{
+		{
+			// The caps built into the image must always pass, or the service cannot start.
+			name: "Success/Embedded",
+
+			caps: config.CapsDefault,
+		},
+		{
+			name: "Error/PurposeWithoutDefault",
+
+			caps: config.Caps{
+				Purposes: map[string]config.TierCaps{testPurpose: {"admin": {Unlimited: true}}},
+				Global:   config.TierCaps{config.DefaultTier: {Windows: someLimit}},
+			},
+
+			expectErr: core.ErrInvalidRequest,
+		},
+		{
+			name: "Error/GlobalWithoutDefault",
+
+			caps: config.Caps{Purposes: map[string]config.TierCaps{testPurpose: {config.DefaultTier: {Windows: someLimit}}}},
+
+			expectErr: core.ErrInvalidRequest,
+		},
+		{
+			// An empty map is neither unlimited nor forbidden: a typo, not a policy.
+			name: "Error/NoWindow",
+
+			caps: config.Caps{
+				Purposes: map[string]config.TierCaps{testPurpose: {config.DefaultTier: {}}},
+				Global:   config.TierCaps{config.DefaultTier: {Windows: someLimit}},
+			},
+
+			expectErr: core.ErrInvalidRequest,
+		},
+		{
+			name: "Error/LimitsNothing",
+
+			caps: config.Caps{
+				Purposes: map[string]config.TierCaps{testPurpose: {config.DefaultTier: {
+					Windows: map[time.Duration]config.Limit{time.Hour: {}},
+				}}},
+				Global: config.TierCaps{config.DefaultTier: {Windows: someLimit}},
+			},
+
+			expectErr: core.ErrInvalidRequest,
+		},
+		{
+			name: "Error/NegativeLimit",
+
+			caps: config.Caps{
+				Purposes: map[string]config.TierCaps{testPurpose: {config.DefaultTier: {
+					Windows: map[time.Duration]config.Limit{time.Hour: {OutputTokens: new(int64(-1))}},
+				}}},
+				Global: config.TierCaps{config.DefaultTier: {Windows: someLimit}},
+			},
+
+			expectErr: core.ErrInvalidRequest,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := core.NewGenerationSubmit(
+				core.GenerationSubmitConfig{MaxAttempts: 1, Retention: time.Hour, Caps: testCase.caps},
+				testAdapters(t),
+				core.GenerationSubmitDaos{},
+				coremocks.NewMockGenerationSubmitServiceCheck(t),
+			)
+			require.ErrorIs(t, err, testCase.expectErr)
+		})
+	}
 }
