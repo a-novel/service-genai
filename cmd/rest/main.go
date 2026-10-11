@@ -6,13 +6,12 @@ import (
 	"context"
 	"io"
 	"log"
-	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/samber/lo"
 
 	"github.com/a-novel-kit/golib/downtime"
@@ -105,32 +104,18 @@ func main() {
 	// ROUTER
 	// =================================================================================================================
 
-	router := httpf.NewRouter(cfg.Rest, httpf.RouterOptions{
-		Otel:          cfg.Otel,
-		Logger:        cfg.RestLogger,
-		DowntimeStart: cfg.App.DowntimeStart,
-		Liveness:      "/ping",
-		Methods:       []string{http.MethodHead, http.MethodGet, http.MethodPost},
-	})
+	router := httpf.NewRouter(cfg.Rest, cfg.Otel, cfg.RestLogger, cfg.App.DowntimeStart)
 
-	// Probes reach /ping without a budget.
 	router.Get("/ping", handlerPing.ServeHTTP)
-
-	router.Group(func(api chi.Router) {
-		api.Use(httpf.NewLimits(cfg.Rest).Standard())
-
-		api.Post("/webhooks/{provider}", handlerNotify.ServeHTTP)
-	})
+	router.Post("/webhooks/{provider}", handlerNotify.ServeHTTP)
 
 	// =================================================================================================================
 	// RUN
 	// =================================================================================================================
 
-	httpServer := httpf.NewServer(ctx, cfg.Rest, router)
+	log.Println("Starting REST server on :" + strconv.Itoa(cfg.Rest.Port))
 
-	log.Println("Starting REST server on " + httpServer.Addr)
-
-	err := httpf.Serve(ctx, httpServer, cfg.Rest.Timeouts.Shutdown)
+	err := httpf.ListenAndServe(ctx, cfg.Rest, router)
 
 	stop()
 
