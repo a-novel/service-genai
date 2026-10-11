@@ -1,15 +1,23 @@
 package servicegenai_test
 
 import (
+	"context"
+	"net"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/grpc/test/bufconn"
 
+	"github.com/a-novel-kit/golib/grpcf"
 	golibproto "github.com/a-novel-kit/golib/grpcf/proto/gen"
 
 	"github.com/a-novel/service-genai/internal/config/env"
@@ -54,15 +62,68 @@ func submit(t *testing.T, client servicegenai.Client, owner string) *servicegena
 func TestClient(t *testing.T) {
 	t.Parallel()
 
-	client := newClient(t)
+	t.Run("Success/RemoteCalls", func(t *testing.T) {
+		t.Parallel()
 
-	_, err := client.UnaryEcho(t.Context(), &golibproto.UnaryEchoRequest{})
-	require.NoError(t, err)
+		client := newClient(t)
 
-	response, err := client.Status(t.Context(), &servicegenai.StatusRequest{})
-	require.NoError(t, err)
-	require.NotNil(t, response.GetPostgres())
-	require.NotNil(t, response.GetQueue())
+		_, err := client.UnaryEcho(t.Context(), &golibproto.UnaryEchoRequest{})
+		require.NoError(t, err)
+
+		response, err := client.Status(t.Context(), &servicegenai.StatusRequest{})
+		require.NoError(t, err)
+		require.NotNil(t, response.GetPostgres())
+		require.NotNil(t, response.GetQueue())
+	})
+
+	t.Run("Success/PropagatesTraceContext", func(t *testing.T) {
+		t.Parallel()
+
+		// golib's otel.Init installs this propagator in every service; the default one sends nothing.
+		otel.SetTextMapPropagator(propagation.TraceContext{})
+
+		received := make(chan []string, 1)
+		server := grpc.NewServer(grpc.UnaryInterceptor(func(
+			ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler,
+		) (any, error) {
+			md, _ := metadata.FromIncomingContext(ctx)
+			received <- md.Get("traceparent")
+
+			return handler(ctx, req)
+		}))
+		grpcf.RegisterEchoServers(server)
+
+		listener := bufconn.Listen(1 << 16)
+		go func() { _ = server.Serve(listener) }()
+
+		defer server.Stop()
+
+		client, err := servicegenai.NewClient(
+			"passthrough:///bufconn",
+			grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+				return listener.DialContext(ctx)
+			}),
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+		)
+		require.NoError(t, err)
+
+		defer client.Close()
+
+		caller := trace.NewSpanContext(trace.SpanContextConfig{
+			TraceID:    trace.TraceID{1},
+			SpanID:     trace.SpanID{1},
+			TraceFlags: trace.FlagsSampled,
+		})
+
+		_, err = client.UnaryEcho(
+			trace.ContextWithSpanContext(t.Context(), caller), &golibproto.UnaryEchoRequest{},
+		)
+		require.NoError(t, err)
+
+		traceparent := <-received
+		require.Len(t, traceparent, 1)
+		require.Contains(t, traceparent[0], caller.TraceID().String())
+	})
 }
 
 // The submit contract against a running service: a resend of the same request replays it, any other
