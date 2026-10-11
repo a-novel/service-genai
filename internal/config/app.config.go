@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/a-novel-kit/golib/grpcf"
 	"github.com/a-novel-kit/golib/logging"
 	"github.com/a-novel-kit/golib/otel"
 	"github.com/a-novel-kit/golib/postgres"
@@ -25,16 +26,6 @@ type Main struct {
 	// DowntimeStart is when a planned downtime starts; nil when none is planned. From then until
 	// it is removed, the service refuses work and leaves its database alone.
 	DowntimeStart *time.Time `json:"downtimeStart" yaml:"downtimeStart"`
-}
-
-// Grpc holds the gRPC server configuration.
-type Grpc struct {
-	// Port on which the gRPC server listens for incoming requests.
-	Port int `json:"port" yaml:"port"`
-	// Ping is the refresh interval for the gRPC server's internal health check.
-	Ping time.Duration `json:"ping" yaml:"ping"`
-	// Shutdown bounds graceful RPC drain before remaining calls are stopped.
-	Shutdown time.Duration `json:"shutdown" yaml:"shutdown"`
 }
 
 // Sweep holds the settings of the loop that checks generations nobody polled.
@@ -69,7 +60,7 @@ type App struct {
 	// App holds the core application identity.
 	App Main `json:"app" yaml:"app"`
 	// Grpc holds the gRPC server configuration.
-	Grpc Grpc `json:"grpc" yaml:"grpc"`
+	Grpc grpcf.ServerConfig `json:"grpc" yaml:"grpc"`
 	// Generations holds how generations are run and kept.
 	Generations Generations `json:"generations" yaml:"generations"`
 	// Sweep configures the loop that checks generations nobody polled.

@@ -1,18 +1,14 @@
 services:
   postgres:
-    image: "${DATABASE_IMAGE:?DATABASE_IMAGE is required}"
+    image: "${DATABASE_IMAGE:-service-genai-database:ci}"
     ports:
       - "5432:5432"
     environment:
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
-    healthcheck:
-      test: ["CMD", "pg_isready"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
   standalone-grpc:
-    image: "${STANDALONE_GRPC_IMAGE:?STANDALONE_GRPC_IMAGE is required}"
+    profiles: ["grpc"]
+    image: "${STANDALONE_GRPC_IMAGE:-service-genai-standalone-grpc:ci}"
     ports:
       - "8080:8080"
     depends_on:

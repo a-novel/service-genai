@@ -6,6 +6,7 @@ import (
 
 	"github.com/a-novel-kit/golib/config"
 	"github.com/a-novel-kit/golib/downtime"
+	"github.com/a-novel-kit/golib/grpcf"
 )
 
 // prefix is prepended to every configuration variable name that this package reads.
@@ -21,8 +22,6 @@ func getEnv(name string) string {
 const (
 	AppNameDefault = "service-genai"
 
-	GrpcPortDefault = 8080
-	GrpcDefaultPing = time.Second * 5
 	// GrpcTimeoutShutdownDefault fits inside the ten seconds Cloud Run allows between SIGTERM and
 	// SIGKILL, so an in-flight check finishes before the process is killed.
 	GrpcTimeoutShutdownDefault = 8 * time.Second
@@ -74,10 +73,7 @@ var (
 	appName = getEnv("APP_NAME")
 	otel    = getEnv("OTEL")
 
-	grpcPort            = getEnv("GRPC_PORT")
-	grpcUrl             = getEnv("GRPC_URL")
-	grpcPing            = getEnv("GRPC_PING")
-	grpcTimeoutShutdown = getEnv("GRPC_TIMEOUT_SHUTDOWN")
+	grpcUrl = getEnv("GRPC_URL")
 
 	openAIAPIKey  = getEnv("OPENAI_API_KEY")
 	openAIBaseURL = getEnv("OPENAI_BASE_URL")
@@ -127,17 +123,12 @@ var (
 	// See: https://opentelemetry.io/
 	Otel = config.LoadEnv(otel, false, config.BoolParser)
 
-	// GrpcPort is the port on which the gRPC server listens for incoming requests.
-	GrpcPort = config.LoadEnv(grpcPort, GrpcPortDefault, config.IntParser)
 	// GrpcUrl is the URL of the gRPC service, typically <host>:<port>.
 	GrpcUrl = grpcUrl
-	// GrpcPing is the refresh interval for the gRPC server's internal health check.
-	GrpcPing = config.LoadEnv(grpcPing, GrpcDefaultPing, config.DurationParser)
-
-	// GrpcTimeoutShutdown bounds graceful RPC drain before remaining calls are stopped.
-	GrpcTimeoutShutdown = config.LoadEnv(
-		grpcTimeoutShutdown, GrpcTimeoutShutdownDefault, config.DurationParser,
-	)
+	// Grpc configures the gRPC server from the GRPC_* variables.
+	Grpc = grpcf.LoadServerConfig(getEnv, grpcf.ServerConfig{
+		Port: grpcf.ServerConfigDefault.Port, Shutdown: GrpcTimeoutShutdownDefault,
+	})
 
 	// OpenAIAPIKey authenticates the OpenAI connector. The only credential this service holds, and the
 	// reason no caller holds one.
