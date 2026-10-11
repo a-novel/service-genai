@@ -12,6 +12,7 @@ import (
 
 	"github.com/a-novel/service-genai/internal/core"
 	genaiv0 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v0"
+	"github.com/a-novel/service-genai/internal/lib"
 )
 
 // GrpcGenerationSubmitService is the service dependency of [GrpcGenerationSubmit].
@@ -42,18 +43,19 @@ func (handler *GrpcGenerationSubmit) GenerationSubmit(
 	}
 
 	result, err := handler.service.Exec(ctx, &core.GenerationSubmitRequest{
-		OwnerID:      ownerID,
-		Purpose:      request.GetPurpose(),
-		Tier:         generationTiers[request.GetTier()],
-		Instructions: request.GetInstructions(),
-		Input:        request.GetInput(),
-		OutputSchema: request.GetOutputSchema(),
-		Variant:      request.GetVariant(),
+		OwnerID:  ownerID,
+		Provider: request.GetProvider(),
+		Payload:  request.GetPayload(),
+		Variant:  request.GetVariant(),
 	})
 
 	// The reason names the caller's own fields and limits, so it tells the caller what to fix.
 	if errors.Is(err, core.ErrInvalidRequest) {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	if errors.Is(err, lib.ErrModeUnsupported) {
+		return nil, status.Error(codes.Unimplemented, "the provider does not support the Async mode")
 	}
 
 	if err != nil {
