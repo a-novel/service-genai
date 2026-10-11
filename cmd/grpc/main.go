@@ -76,20 +76,18 @@ func main() {
 	// =================================================================================================================
 
 	daoGet := dao.NewGenerationGet()
-	daoUsageList := dao.NewGenerationUsageList()
+	daoAttemptList := dao.NewGenerationAttemptList()
 
 	// =================================================================================================================
 	// SERVICES
 	// =================================================================================================================
 
-	provider := lo.Must(newProvider(cfg.Provider))
+	adapters := lo.Must(newAdapters(cfg))
 
 	serviceCheck := lo.Must(core.NewGenerationCheck(
-		core.GenerationCheckConfig{
-			Retention: cfg.Retention, ProviderName: cfg.Provider.Name, ProviderEpoch: cfg.Provider.Epoch,
-		},
+		core.GenerationCheckConfig{Retention: cfg.Retention},
 		cfg.Log,
-		provider,
+		adapters,
 		postgres.NewTransactor(nil),
 		core.GenerationCheckDaos{
 			BeginStart:   dao.NewGenerationBeginStart(),
@@ -97,39 +95,36 @@ func main() {
 			Record:       dao.NewGenerationRecordProviderCall(),
 			Settle:       dao.NewGenerationSettle(),
 			Requeue:      dao.NewGenerationRequeue(),
-			Restart:      dao.NewGenerationRestart(),
-			Usage:        dao.NewGenerationUsageInsert(),
+			Attempt:      dao.NewGenerationAttemptInsert(),
 			Get:          daoGet,
 		},
 	))
 
 	serviceSubmit := lo.Must(core.NewGenerationSubmit(
 		core.GenerationSubmitConfig{MaxAttempts: cfg.MaxAttempts},
+		adapters,
 		dao.NewGenerationSubmit(),
-		daoUsageList,
+		daoAttemptList,
 		serviceCheck,
 	))
 	serviceGet := lo.Must(core.NewGenerationGet(
-		core.GenerationGetConfig{CheckInterval: cfg.CheckInterval, ProviderEpoch: cfg.Provider.Epoch},
+		core.GenerationGetConfig{CheckInterval: cfg.CheckInterval},
 		daoGet,
 		dao.NewGenerationElectCheck(),
-		daoUsageList,
+		daoAttemptList,
 		serviceCheck,
 	))
 	serviceCancel := lo.Must(core.NewGenerationCancel(
 		core.GenerationCancelConfig{Retention: cfg.Retention},
 		dao.NewGenerationRequestCancel(),
 		daoGet,
-		daoUsageList,
+		daoAttemptList,
 		serviceCheck,
 	))
 	serviceQueueDepth := core.NewQueueDepth(dao.NewGenerationQueueDepth())
-	serviceTierList := core.NewTierList(providerTiers(cfg.Provider))
 
 	sweep := lo.Must(core.NewGenerationSweep(
-		core.GenerationSweepConfig{
-			Interval: cfg.Sweep.Interval, BatchSize: cfg.Sweep.BatchSize, ProviderEpoch: cfg.Provider.Epoch,
-		},
+		core.GenerationSweepConfig{Interval: cfg.Sweep.Interval, BatchSize: cfg.Sweep.BatchSize},
 		dao.NewGenerationSweep(),
 		serviceCheck,
 	))
@@ -142,7 +137,6 @@ func main() {
 	handlerSubmit := handlers.NewGrpcGenerationSubmit(serviceSubmit)
 	handlerGet := handlers.NewGrpcGenerationGet(serviceGet)
 	handlerCancel := handlers.NewGrpcGenerationCancel(serviceCancel)
-	handlerTierList := handlers.NewGrpcTierList(serviceTierList)
 
 	// =================================================================================================================
 	// SERVER
@@ -186,7 +180,6 @@ func main() {
 	genaiv0.RegisterGenerationSubmitServiceServer(server, handlerSubmit)
 	genaiv0.RegisterGenerationGetServiceServer(server, handlerGet)
 	genaiv0.RegisterGenerationCancelServiceServer(server, handlerCancel)
-	genaiv0.RegisterTierListServiceServer(server, handlerTierList)
 
 	reflection.Register(server)
 
@@ -309,27 +302,13 @@ func observeLoop(ctx context.Context, name string, loop func()) (err error) {
 	return otel.ReportError(span, fmt.Errorf("%s: %w", name, errLoopExitedUnexpectedly))
 }
 
-// newProvider builds the adapter the server runs. The conformance check builds it the same way, so
-// what the check proves is what the server runs.
-func newProvider(provider config.Provider) (*lib.OpenAI, error) {
-	return lib.NewOpenAI(lib.OpenAIConfig{
-		BaseURL: provider.BaseURL, APIKey: provider.APIKey, Tiers: providerTiers(provider),
-	})
-}
-
-// providerTiers converts the configured bindings to the adapter's. A name that is not a Tier is
-// dropped; a Tier left unbound fails the adapter's construction.
-func providerTiers(provider config.Provider) map[lib.Tier]lib.TierBinding {
-	tiers := make(map[lib.Tier]lib.TierBinding, len(provider.Tiers))
-
-	for name, binding := range provider.Tiers {
-		tiers[lib.Tier(name)] = lib.TierBinding{
-			Model:           binding.Model,
-			ReasoningEffort: binding.ReasoningEffort,
-			MaxInputTokens:  binding.MaxInputTokens,
-			MaxOutputTokens: binding.MaxOutputTokens,
-		}
+// newAdapters builds the adapters the server runs, named by the provider each serves. The
+// conformance check builds them the same way, so what the check proves is what the server runs.
+func newAdapters(cfg config.App) (lib.Adapters, error) {
+	openAI, err := lib.NewOpenAI(lib.OpenAIConfig{BaseURL: cfg.OpenAI.BaseURL, APIKey: cfg.OpenAI.APIKey})
+	if err != nil {
+		return nil, fmt.Errorf("openai: %w", err)
 	}
 
-	return tiers
+	return lib.Adapters{"openai": openAI}, nil
 }
