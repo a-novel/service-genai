@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"iter"
 	"time"
 )
@@ -46,6 +47,10 @@ var (
 	// ErrStreamUnavailable means the provider no longer streams the operation, or never did: its
 	// result is read with [Async.Get].
 	ErrStreamUnavailable = errors.New("provider does not stream this operation")
+	// ErrNotificationInvalid means a notification did not come from the provider.
+	ErrNotificationInvalid = errors.New("notification failed verification")
+	// ErrNotificationIgnored means a notification reports nothing this service acts on.
+	ErrNotificationIgnored = errors.New("notification ignored")
 )
 
 // RejectionError is a start the provider refused outright. Nothing ran, so nothing was paid.
@@ -154,9 +159,43 @@ type StreamEvent struct {
 	Terminal bool
 }
 
+// A Notifications reads the provider's notifications that its operations ended, so the service
+// checks them without waiting for a poll. Verifying them is the connector's: only a notification
+// that comes from the provider names an operation.
+type Notifications interface {
+	// Notification verifies a notification and names the operation it concerns. [ErrModeUnsupported]
+	// means the connector has no means to verify one.
+	Notification(ctx context.Context, request *NotificationRequest) (*Notification, error)
+}
+
+// NotificationRequest is a notification as the provider sent it.
+type NotificationRequest struct {
+	// Body is the notification's body, as received: a signature covers its exact bytes.
+	Body []byte
+	// Header holds the notification's headers, which carry its signature.
+	Header map[string][]string
+}
+
+// Notification names the operation a notification concerns.
+type Notification struct {
+	// CallID identifies the operation that ended.
+	CallID string
+}
+
 // Registry names the connector serving each provider. A connector offers a mode by implementing the
 // mode's interface, so what a provider supports is decided by its code and cannot be misdeclared.
 type Registry map[string]any
+
+// NewRegistry builds the connectors the service runs, named by the provider each serves. Every
+// entrypoint and the conformance check build them here, so what the check proves is what runs.
+func NewRegistry(openAI OpenAIConfig) (Registry, error) {
+	connector, err := NewOpenAI(openAI)
+	if err != nil {
+		return nil, fmt.Errorf("openai: %w", err)
+	}
+
+	return Registry{"openai": connector}, nil
+}
 
 // Streaming returns the connector serving the provider in the Streaming mode.
 func (registry Registry) Streaming(provider string) (Streaming, error) {
@@ -171,6 +210,21 @@ func (registry Registry) Streaming(provider string) (Streaming, error) {
 	}
 
 	return streaming, nil
+}
+
+// Notifications returns the connector reading the provider's notifications.
+func (registry Registry) Notifications(provider string) (Notifications, error) {
+	connector, ok := registry[provider]
+	if !ok {
+		return nil, ErrProviderUnknown
+	}
+
+	notifications, ok := connector.(Notifications)
+	if !ok {
+		return nil, ErrModeUnsupported
+	}
+
+	return notifications, nil
 }
 
 // Async returns the connector running the provider's calls in the Async mode.

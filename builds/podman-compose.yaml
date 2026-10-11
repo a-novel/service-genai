@@ -61,6 +61,26 @@ services:
     networks:
       - api
 
+  service-genai-rest:
+    profiles: ["rest"]
+    build:
+      context: ..
+      dockerfile: ./builds/rest.Dockerfile
+    ports:
+      - "${REST_PORT}:8080"
+    depends_on:
+      postgres-genai:
+        condition: service_healthy
+      service-genai-migrations:
+        condition: service_completed_successfully
+    environment:
+      POSTGRES_DSN: postgres://postgres:postgres@postgres-genai:5432/postgres?sslmode=disable
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-placeholder}"
+      # Unset, the server answers every notification 404: no provider reaches a local stack anyway.
+      OPENAI_WEBHOOK_SECRET: "${OPENAI_WEBHOOK_SECRET:-}"
+    networks:
+      - api
+
 networks:
   api:
 

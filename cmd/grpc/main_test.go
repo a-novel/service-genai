@@ -141,7 +141,9 @@ func TestNewConnectors(t *testing.T) {
 		t.Skip("calls the configured provider; set PROVIDER_CONFORMANCE=true to run it")
 	}
 
-	registry, err := newConnectors(config.AppPresetDefault)
+	registry, err := connectors.NewRegistry(connectors.OpenAIConfig{
+		BaseURL: config.AppPresetDefault.OpenAI.BaseURL, APIKey: config.AppPresetDefault.OpenAI.APIKey,
+	})
 	require.NoError(t, err)
 
 	connector, err := registry.Async("openai")

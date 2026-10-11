@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/a-novel-kit/golib/grpcf"
+	"github.com/a-novel-kit/golib/httpf"
 	"github.com/a-novel-kit/golib/logging"
 	"github.com/a-novel-kit/golib/otel"
 	"github.com/a-novel-kit/golib/postgres"
@@ -53,6 +54,8 @@ type OpenAI struct {
 	APIKey string `json:"-" yaml:"-"`
 	// BaseURL is the Responses API endpoint.
 	BaseURL string `json:"baseURL" yaml:"baseURL"`
+	// WebhookSecret verifies OpenAI's webhook notifications. Empty, none is read.
+	WebhookSecret string `json:"-" yaml:"-"`
 }
 
 // App is the complete configuration consumed by the service at startup.
@@ -61,6 +64,8 @@ type App struct {
 	App Main `json:"app" yaml:"app"`
 	// Grpc holds the gRPC server configuration.
 	Grpc grpcf.ServerConfig `json:"grpc" yaml:"grpc"`
+	// Rest holds the configuration of the REST server providers post their notifications to.
+	Rest httpf.ServerConfig `json:"rest" yaml:"rest"`
 	// Generations holds how generations are run and kept.
 	Generations Generations `json:"generations" yaml:"generations"`
 	// Sweep configures the loop that checks generations nobody polled.
@@ -75,6 +80,8 @@ type App struct {
 	Logger logging.Log `json:"logger" yaml:"logger"`
 	// GrpcLogger configures the gRPC request logging middleware.
 	GrpcLogger logging.RPCConfig `json:"grpclogger" yaml:"grpclogger"`
+	// RestLogger configures the REST request logging middleware.
+	RestLogger logging.HTTPConfig `json:"restLogger" yaml:"restLogger"`
 	// Postgres configures the PostgreSQL connection.
 	Postgres postgres.Config `json:"postgres" yaml:"postgres"`
 }

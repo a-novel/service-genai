@@ -1,6 +1,9 @@
 package connectors_test
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net"
@@ -805,6 +808,100 @@ func TestOpenAI(t *testing.T) {
 				require.Equal(t, testCase.expectSequences, sequences)
 				require.Equal(t, "/responses/resp_1", testCase.script.lastPath)
 				require.Equal(t, testCase.expectQuery, testCase.script.lastQuery)
+			})
+		}
+	})
+
+	// Notifications are verified with the endpoint's signing secret, as the Standard Webhooks
+	// specification signs them, before they name any call.
+	t.Run("Notification", func(t *testing.T) {
+		t.Parallel()
+
+		key := []byte("test-signing-key-of-32-bytes-long")
+		secret := "whsec_" + base64.StdEncoding.EncodeToString(key)
+
+		// sign returns the headers OpenAI sends with a body.
+		sign := func(body string) map[string][]string {
+			id, timestamp := "evt_1", strconv.FormatInt(time.Now().Unix(), 10)
+
+			mac := hmac.New(sha256.New, key)
+			mac.Write([]byte(id + "." + timestamp + "." + body))
+
+			return map[string][]string{
+				"Webhook-Id":        {id},
+				"Webhook-Timestamp": {timestamp},
+				"Webhook-Signature": {"v1," + base64.StdEncoding.EncodeToString(mac.Sum(nil))},
+			}
+		}
+
+		event := func(kind string) string {
+			return `{"id": "evt_1", "object": "event", "created_at": 1760000000, "type": "` + kind +
+				`", "data": {"id": "resp_1"}}`
+		}
+
+		testCases := []struct {
+			name string
+
+			secret string
+			body   string
+			header map[string][]string
+
+			expect    *connectors.Notification
+			expectErr error
+		}{
+			{
+				name: "Success",
+
+				secret: secret,
+				body:   event("response.completed"),
+				header: sign(event("response.completed")),
+
+				expect: &connectors.Notification{CallID: "resp_1"},
+			},
+			{
+				// The endpoint may be subscribed to more than responses.
+				name: "Error/Ignored",
+
+				secret: secret,
+				body:   event("batch.completed"),
+				header: sign(event("batch.completed")),
+
+				expectErr: connectors.ErrNotificationIgnored,
+			},
+			{
+				name: "Error/BadSignature",
+
+				secret: secret,
+				body:   event("response.completed"),
+				header: sign(event("response.failed")),
+
+				expectErr: connectors.ErrNotificationInvalid,
+			},
+			{
+				// Without the signing secret, nothing can be verified, so nothing is read.
+				name: "Error/NoSecret",
+
+				body:   event("response.completed"),
+				header: sign(event("response.completed")),
+
+				expectErr: connectors.ErrModeUnsupported,
+			},
+		}
+
+		for _, testCase := range testCases {
+			t.Run(testCase.name, func(t *testing.T) {
+				t.Parallel()
+
+				provider, err := connectors.NewOpenAI(connectors.OpenAIConfig{
+					BaseURL: "https://provider.test/v1", APIKey: "test-key", WebhookSecret: testCase.secret,
+				})
+				require.NoError(t, err)
+
+				notification, err := provider.Notification(t.Context(), &connectors.NotificationRequest{
+					Body: []byte(testCase.body), Header: testCase.header,
+				})
+				require.ErrorIs(t, err, testCase.expectErr)
+				require.Equal(t, testCase.expect, notification)
 			})
 		}
 	})
