@@ -1,6 +1,7 @@
 package env
 
 import (
+	"net/http"
 	"os"
 	"time"
 
@@ -19,13 +20,14 @@ func getEnv(name string) string {
 	return os.Getenv(prefix + name)
 }
 
-// restDefault keeps golib's REST defaults but for two. The drain fits Cloud Run's kill window, as the
-// gRPC server's does. The rate limit lets a provider's burst of notifications through, since they
-// all come from its few addresses.
+// restDefault keeps golib's REST defaults but for three. The drain fits Cloud Run's kill window, as
+// the gRPC server's does. The rate limit lets a provider's burst of notifications through, since they
+// all come from its few addresses. The routes only read and receive notifications.
 var restDefault = func() httpf.ServerConfig {
 	defaults := httpf.ServerConfigDefault
 	defaults.Timeouts.Shutdown = GrpcTimeoutShutdownDefault
-	defaults.RateLimit = httpf.Rate{Requests: RestRateLimitDefault, Window: time.Second}
+	defaults.RateLimit = config.Must(httpf.ParseRate("500/1s"))
+	defaults.Cors.AllowedMethods = []string{http.MethodHead, http.MethodGet, http.MethodPost}
 
 	return defaults
 }()
@@ -37,8 +39,6 @@ const (
 	// GrpcTimeoutShutdownDefault fits inside the ten seconds Cloud Run allows between SIGTERM and
 	// SIGKILL, so an in-flight check finishes before the process is killed.
 	GrpcTimeoutShutdownDefault = 8 * time.Second
-	// RestRateLimitDefault is how many notifications per second one address may post.
-	RestRateLimitDefault = 500
 
 	// CheckIntervalDefault is how long a check stays fresh: however often callers poll a generation,
 	// it reaches the provider at most once per interval.

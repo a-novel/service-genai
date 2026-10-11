@@ -161,16 +161,12 @@ func main() {
 	// SERVER
 	// =================================================================================================================
 
-	// During a planned downtime, only liveness answers; the logger records the refusals. A stopping
-	// server waits for its handlers, so none still runs once the database closes.
-	server := grpcf.NewServer(grpcf.ServerOptions{
-		Otel:          cfg.Otel,
-		Logger:        cfg.GrpcLogger,
-		DowntimeStart: cfg.App.DowntimeStart,
-		BaseContext: func(rpCtx context.Context) context.Context {
-			return postgres.TransferContext(ctx, rpCtx)
-		},
-	}, grpc.WaitForHandlers(true))
+	ctxInterceptor := func(rpCtx context.Context) context.Context {
+		return postgres.TransferContext(ctx, rpCtx)
+	}
+
+	// A stopping server waits for its handlers, so none still runs once the database closes.
+	server := grpcf.NewServer(cfg.Otel, cfg.GrpcLogger, cfg.App.DowntimeStart, ctxInterceptor, grpc.WaitForHandlers(true))
 
 	healthcheck := grpcf.RegisterEchoServers(server)
 	healthcheck.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
@@ -201,7 +197,7 @@ func main() {
 		ctx,
 		beginShutdown,
 		func(ctx context.Context) error {
-			return grpcf.Serve(ctx, server, fmt.Sprintf("0.0.0.0:%d", cfg.Grpc.Port), cfg.Grpc.Shutdown)
+			return grpcf.ListenAndServe(ctx, cfg.Grpc, server)
 		},
 		func(ctx context.Context) error {
 			return observeLoop(ctx, "generation-sweep", func() {

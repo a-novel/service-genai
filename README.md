@@ -158,19 +158,21 @@ gRPC server:
 
 REST server (image `rest`). Every notification comes from the provider's few addresses, so the rate limit is sized for the provider's bursts, not for a visitor.
 
-| Name                       | Description                                                                                             | Default         |
-| -------------------------- | ------------------------------------------------------------------------------------------------------- | --------------- |
-| `REST_PORT`                | Port the server listens on.                                                                             | `8080`          |
-| `REST_MAX_REQUEST_SIZE`    | Maximum request body size, in bytes. A notification carries an event, not the result.                   | `16384` (16KiB) |
-| `REST_CLIENT_IP_HEADER`    | Header a trusted proxy sets to the visitor IP. Set it only when every request comes through that proxy. | TCP peer        |
-| `REST_RATE_LIMITS_ENABLED` | Rate-limit each visitor on every route but `/ping`. Turn off only in test stacks.                       | `true`          |
-| `REST_RATE_LIMIT`          | Requests each visitor sends to each route, as `<requests>/<window>`.                                    | `500/1s`        |
-| `REST_TIMEOUT_READ`        | Read timeout.                                                                                           | `15s`           |
-| `REST_TIMEOUT_READ_HEADER` | Header read timeout.                                                                                    | `3s`            |
-| `REST_TIMEOUT_WRITE`       | Write timeout.                                                                                          | `30s`           |
-| `REST_TIMEOUT_IDLE`        | Idle keep-alive timeout.                                                                                | `60s`           |
-| `REST_TIMEOUT_REQUEST`     | Per-request timeout.                                                                                    | `60s`           |
-| `REST_TIMEOUT_SHUTDOWN`    | Graceful shutdown budget. Keep it under the orchestrator's kill delay.                                  | `8s`            |
+| Name                        | Description                                                                                             | Default         |
+| --------------------------- | ------------------------------------------------------------------------------------------------------- | --------------- |
+| `REST_PORT`                 | Port the server listens on.                                                                             | `8080`          |
+| `REST_MAX_REQUEST_SIZE`     | Maximum request body size, in bytes. A notification carries an event, not the result.                   | `16384` (16KiB) |
+| `REST_CLIENT_IP_HEADER`     | Header a trusted proxy sets to the visitor IP. Set it only when every request comes through that proxy. | TCP peer        |
+| `REST_LIVENESS_PATH`        | Ping path, which still answers during a planned downtime and skips the rate limit.                      | `/ping`         |
+| `REST_RATE_LIMITS_ENABLED`  | Rate-limit each visitor on every route but `/ping`. Turn off only in test stacks.                       | `true`          |
+| `REST_RATE_LIMIT`           | Requests each visitor sends to each route, as `<requests>/<window>`.                                    | `500/1s`        |
+| `REST_CORS_ALLOWED_METHODS` | CORS allowed methods, comma-separated.                                                                  | `HEAD,GET,POST` |
+| `REST_TIMEOUT_READ`         | Read timeout.                                                                                           | `15s`           |
+| `REST_TIMEOUT_READ_HEADER`  | Header read timeout.                                                                                    | `3s`            |
+| `REST_TIMEOUT_WRITE`        | Write timeout.                                                                                          | `30s`           |
+| `REST_TIMEOUT_IDLE`         | Idle keep-alive timeout.                                                                                | `60s`           |
+| `REST_TIMEOUT_REQUEST`      | Per-request timeout.                                                                                    | `60s`           |
+| `REST_TIMEOUT_SHUTDOWN`     | Graceful shutdown budget. Keep it under the orchestrator's kill delay.                                  | `8s`            |
 
 Database connection pool (server images). The limits are **per process**: keep `POSTGRES_MAX_OPEN_CONNS` × the maximum replica count × 2, which covers a rollout's overlap, plus the migration job, under the database's `max_connections`. The server's sessions also give up on the database side: a statement after 9 seconds, a lock wait after 5, and a transaction left idle after 30.
 
