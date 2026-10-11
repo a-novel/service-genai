@@ -1,17 +1,16 @@
 package core
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"maps"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/samber/lo"
@@ -19,6 +18,7 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 
 	"github.com/a-novel-kit/golib/otel"
+	"github.com/a-novel-kit/golib/transaction"
 
 	"github.com/a-novel/service-genai/internal/config"
 	"github.com/a-novel/service-genai/internal/dao"
@@ -45,11 +45,6 @@ type GenerationSubmitDaoCountLive interface {
 	Exec(ctx context.Context, request *dao.GenerationCountLiveRequest) (*dao.GenerationLiveCount, error)
 }
 
-// GenerationSubmitDaoSettle fails a generation whose user is over a cap, so nothing starts it.
-type GenerationSubmitDaoSettle interface {
-	Exec(ctx context.Context, request *dao.GenerationSettleRequest) (*dao.Generation, error)
-}
-
 // GenerationSubmitServiceCheck starts a newly recorded generation.
 type GenerationSubmitServiceCheck interface {
 	Exec(ctx context.Context, request *GenerationCheckRequest) (*dao.Generation, error)
@@ -59,8 +54,6 @@ type GenerationSubmitServiceCheck interface {
 type GenerationSubmitConfig struct {
 	// MaxAttempts caps the provider calls a generation gets when a call fails retryably.
 	MaxAttempts int16
-	// Retention is how long a settled generation's user content survives before the purge.
-	Retention time.Duration
 	// Caps declares every purpose and the usage it allows.
 	Caps config.Caps
 }
@@ -99,6 +92,7 @@ type GenerationSubmitResult struct {
 type GenerationSubmit struct {
 	config       GenerationSubmitConfig
 	registry     connectors.Registry
+	transactor   transaction.Transactor
 	daos         GenerationSubmitDaos
 	serviceCheck GenerationSubmitServiceCheck
 }
@@ -109,17 +103,19 @@ type GenerationSubmitDaos struct {
 	Attempts GenerationSubmitDaoAttemptList
 	Usage    GenerationSubmitDaoUsageSum
 	Live     GenerationSubmitDaoCountLive
-	Settle   GenerationSubmitDaoSettle
 }
 
 // NewGenerationSubmit returns a new GenerationSubmit service.
 func NewGenerationSubmit(
 	config GenerationSubmitConfig,
 	registry connectors.Registry,
+	transactor transaction.Transactor,
 	daos GenerationSubmitDaos,
 	serviceCheck GenerationSubmitServiceCheck,
 ) *GenerationSubmit {
-	return &GenerationSubmit{config: config, registry: registry, daos: daos, serviceCheck: serviceCheck}
+	return &GenerationSubmit{
+		config: config, registry: registry, transactor: transactor, daos: daos, serviceCheck: serviceCheck,
+	}
 }
 
 func (service *GenerationSubmit) Exec(
@@ -149,20 +145,37 @@ func (service *GenerationSubmit) Exec(
 	carrier := propagation.MapCarrier{}
 	propagation.TraceContext{}.Inject(ctx, carrier)
 
-	result, err := service.daos.Submit.Exec(ctx, &dao.GenerationSubmitRequest{
-		// Minted here so the created and replayed cases can be told apart without a second
-		// round-trip. uuidv7 keeps the table's index locality under insert churn.
-		ID:          uuid.Must(uuid.NewV7()),
-		OwnerID:     request.OwnerID,
-		Purpose:     request.Purpose,
-		Provider:    request.Provider,
-		RequestKey:  key,
-		Payload:     request.Payload,
-		MaxAttempts: service.config.MaxAttempts,
-		Traceparent: lo.EmptyableToPtr(carrier.Get("traceparent")),
+	var result *dao.GenerationSubmitResult
+
+	// Recording and admission commit together, so a generation is never recorded unless admitted:
+	// nothing can start one that was refused, or left behind by a failure.
+	err = service.transactor.WithinTx(ctx, func(ctx context.Context) error {
+		var err error
+
+		result, err = service.daos.Submit.Exec(ctx, &dao.GenerationSubmitRequest{
+			// Minted here so the created and replayed cases can be told apart without a second
+			// round-trip. uuidv7 keeps the table's index locality under insert churn.
+			ID:          uuid.Must(uuid.NewV7()),
+			OwnerID:     request.OwnerID,
+			Purpose:     request.Purpose,
+			Provider:    request.Provider,
+			RequestKey:  key,
+			Payload:     request.Payload,
+			MaxAttempts: service.config.MaxAttempts,
+			Traceparent: lo.EmptyableToPtr(carrier.Get("traceparent")),
+		})
+		if err != nil {
+			return fmt.Errorf("submit generation: %w", err)
+		}
+
+		if !result.Created {
+			return nil
+		}
+
+		return service.admit(ctx, request)
 	})
 	if err != nil {
-		return nil, otel.ReportError(span, fmt.Errorf("submit generation: %w", err))
+		return nil, otel.ReportError(span, err)
 	}
 
 	span.SetAttributes(attribute.String("generation.id", result.Generation.ID.String()))
@@ -170,11 +183,6 @@ func (service *GenerationSubmit) Exec(
 	generation := result.Generation
 
 	if result.Created {
-		err = service.admit(ctx, request, generation)
-		if err != nil {
-			return nil, otel.ReportError(span, err)
-		}
-
 		generation, err = service.serviceCheck.Exec(ctx, &GenerationCheckRequest{Generation: generation})
 		if err != nil {
 			return nil, otel.ReportError(span, fmt.Errorf("start generation: %w", err))
@@ -233,44 +241,12 @@ func (service *GenerationSubmit) validateRequest(request *GenerationSubmitReques
 	return nil
 }
 
-// admit lets a newly created generation start unless its user already reached a limit it answers to:
-// its purpose's, then the global one, each counting live generations before summing usage. Nothing is
+// admit refuses a newly created generation whose user already reached a limit it answers to: its
+// purpose's, then the global one, each counting live generations before summing usage. Nothing is
 // reserved, so a call admitted under a cap runs to the end past it; the concurrency limits bound how
-// many can. A refused generation is settled as failed, so no later check starts it.
-func (service *GenerationSubmit) admit(
-	ctx context.Context, request *GenerationSubmitRequest, generation *dao.Generation,
-) error {
+// many can.
+func (service *GenerationSubmit) admit(ctx context.Context, request *GenerationSubmitRequest) error {
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationSubmit(admit)")
-	defer span.End()
-
-	refusal, err := service.capReached(ctx, request)
-	if err != nil {
-		return otel.ReportError(span, err)
-	}
-
-	if refusal == "" {
-		return nil
-	}
-
-	message := ErrUsageCapReached.Error() + ": " + refusal
-
-	_, err = service.daos.Settle.Exec(ctx, &dao.GenerationSettleRequest{
-		ID:        generation.ID,
-		Attempt:   generation.Attempt,
-		Status:    dao.GenerationStatusFailed,
-		Error:     &message,
-		Retention: service.config.Retention,
-	})
-	if err != nil {
-		return otel.ReportError(span, fmt.Errorf("settle refused generation: %w", err))
-	}
-
-	return otel.ReportError(span, fmt.Errorf("%w: %s", ErrUsageCapReached, refusal))
-}
-
-// capReached names the first limit the user already reached, or returns empty when none is.
-func (service *GenerationSubmit) capReached(ctx context.Context, request *GenerationSubmitRequest) (string, error) {
-	ctx, span := otel.Tracer().Start(ctx, "core.GenerationSubmit(capReached)")
 	defer span.End()
 
 	scopes := []struct {
@@ -288,7 +264,7 @@ func (service *GenerationSubmit) capReached(ctx context.Context, request *Genera
 
 	for _, scope := range scopes {
 		if scope.capOfTier.Forbidden {
-			return scope.name + " allows no usage", nil
+			return otel.ReportError(span, fmt.Errorf("%w: %s allows no usage", ErrUsageCapReached, scope.name))
 		}
 
 		if limit := scope.capOfTier.Concurrency; limit != nil && *limit >= 0 {
@@ -296,12 +272,15 @@ func (service *GenerationSubmit) capReached(ctx context.Context, request *Genera
 				OwnerID: request.OwnerID, Purpose: scope.purpose,
 			})
 			if err != nil {
-				return "", otel.ReportError(span, fmt.Errorf("count live generations: %w", err))
+				return otel.ReportError(span, fmt.Errorf("count live generations: %w", err))
 			}
 
 			// The count includes the generation this submit just created.
 			if live.Count > int64(*limit) {
-				return fmt.Sprintf("%s concurrency: %d generations already pending or running", scope.name, live.Count-1), nil
+				return otel.ReportError(span, fmt.Errorf(
+					"%w: %s concurrency: %d generations already pending or running",
+					ErrUsageCapReached, scope.name, live.Count-1,
+				))
 			}
 		}
 
@@ -312,16 +291,16 @@ func (service *GenerationSubmit) capReached(ctx context.Context, request *Genera
 				OwnerID: request.OwnerID, Purpose: scope.purpose, Window: window,
 			})
 			if err != nil {
-				return "", otel.ReportError(span, fmt.Errorf("sum usage: %w", err))
+				return otel.ReportError(span, fmt.Errorf("sum usage: %w", err))
 			}
 
 			if reached(limit.InputTokens, used.InputTokens) || reached(limit.OutputTokens, used.OutputTokens) {
-				return fmt.Sprintf("%s over %s", scope.name, window), nil
+				return otel.ReportError(span, fmt.Errorf("%w: %s over %s", ErrUsageCapReached, scope.name, window))
 			}
 		}
 	}
 
-	return "", nil
+	return nil
 }
 
 func reached(limit *int64, used int64) bool {
@@ -330,7 +309,7 @@ func reached(limit *int64, used int64) bool {
 
 // requestKeyTag versions what the request key covers. Changing the construction changes the tag, so
 // a key of one version never matches a key of another.
-const requestKeyTag = "a-novel/genai/request-key/v2"
+const requestKeyTag = "a-novel/genai/request-key/v3"
 
 // asyncMode names the Async mode in the request key, so the same payload submitted in another mode
 // is another request.
@@ -343,7 +322,10 @@ const asyncMode = "async"
 // the payload is canonicalized, so formatting or key order cannot split one request into two. The
 // key never leaves the generation row: it fingerprints user content, and is purged with it.
 func requestKey(request *GenerationSubmitRequest) ([]byte, error) {
-	payload, err := canonicalJSON(request.Payload)
+	// Sorted members and no insignificant whitespace. Numbers keep their literal form.
+	payload := slices.Clone(request.Payload)
+
+	err := payload.Format(jsontext.ReorderRawObjects(true))
 	if err != nil {
 		return nil, fmt.Errorf("canonicalize payload: %w", err)
 	}
@@ -364,36 +346,4 @@ func requestKey(request *GenerationSubmitRequest) ([]byte, error) {
 	}
 
 	return digest.Sum(nil), nil
-}
-
-// canonicalJSON re-encodes a JSON value with sorted object keys and no insignificant whitespace.
-// Numbers keep their literal form.
-func canonicalJSON(value json.RawMessage) ([]byte, error) {
-	decoder := json.NewDecoder(bytes.NewReader(value))
-	decoder.UseNumber()
-
-	var decoded any
-
-	err := decoder.Decode(&decoded)
-	if err != nil {
-		return nil, fmt.Errorf("decode: %w", err)
-	}
-
-	return encodeJSON(decoded)
-}
-
-// encodeJSON encodes without escaping <, > and &, so the canonical form keeps the caller's
-// characters.
-func encodeJSON(value any) ([]byte, error) {
-	var buffer bytes.Buffer
-
-	encoder := json.NewEncoder(&buffer)
-	encoder.SetEscapeHTML(false)
-
-	err := encoder.Encode(value)
-	if err != nil {
-		return nil, fmt.Errorf("encode: %w", err)
-	}
-
-	return bytes.TrimSuffix(buffer.Bytes(), []byte("\n")), nil
 }

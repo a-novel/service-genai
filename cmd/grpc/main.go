@@ -111,16 +111,14 @@ func main() {
 		},
 	)
 	serviceSubmit := core.NewGenerationSubmit(
-		core.GenerationSubmitConfig{
-			MaxAttempts: cfg.Generations.MaxAttempts, Retention: cfg.Generations.Retention, Caps: cfg.Caps,
-		},
+		core.GenerationSubmitConfig{MaxAttempts: cfg.Generations.MaxAttempts, Caps: cfg.Caps},
 		registry,
+		postgres.NewTransactor(nil),
 		core.GenerationSubmitDaos{
 			Submit:   daoSubmit,
 			Attempts: daoAttemptList,
 			Usage:    daoUsageSum,
 			Live:     daoCountLive,
-			Settle:   daoSettle,
 		},
 		serviceCheck,
 	)
