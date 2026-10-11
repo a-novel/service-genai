@@ -56,14 +56,6 @@ type GenerationSubmitServiceCheck interface {
 	Exec(ctx context.Context, request *GenerationCheckRequest) (*dao.Generation, error)
 }
 
-// GenerationSubmitConfig is what a [GenerationSubmit] needs to run.
-type GenerationSubmitConfig struct {
-	// MaxAttempts caps the provider calls a generation gets when a call fails retryably.
-	MaxAttempts int16
-	// Caps declares every purpose and the usage it allows.
-	Caps config.Caps
-}
-
 // GenerationSubmitRequest holds the parameters for a [GenerationSubmit.Exec] call.
 type GenerationSubmitRequest struct {
 	// OwnerID is the user the generation acts for, supplied by a caller that already verified it.
@@ -99,32 +91,42 @@ type GenerationSubmitResult struct {
 // as it stands, without checking it: the caller polls it next, and the poll checks it. A failed or
 // cancelled generation does not count, so resending its request runs it again.
 type GenerationSubmit struct {
-	config       GenerationSubmitConfig
-	registry     connectors.Registry
-	transactor   transaction.Transactor
-	daos         GenerationSubmitDaos
-	serviceCheck GenerationSubmitServiceCheck
-}
-
-// GenerationSubmitDaos are the data-access dependencies of a [GenerationSubmit].
-type GenerationSubmitDaos struct {
-	Submit   GenerationSubmitDao
-	Attempts GenerationSubmitDaoAttemptList
-	Usage    GenerationSubmitDaoUsageSum
-	Live     GenerationSubmitDaoCountLive
-	Payload  GenerationSubmitDaoPayloadInsert
+	dao              GenerationSubmitDao
+	daoAttemptList   GenerationSubmitDaoAttemptList
+	daoUsageSum      GenerationSubmitDaoUsageSum
+	daoCountLive     GenerationSubmitDaoCountLive
+	daoPayloadInsert GenerationSubmitDaoPayloadInsert
+	serviceCheck     GenerationSubmitServiceCheck
+	registry         connectors.Registry
+	transactor       transaction.Transactor
+	generations      config.Generations
+	caps             config.Caps
 }
 
 // NewGenerationSubmit returns a new GenerationSubmit service.
 func NewGenerationSubmit(
-	config GenerationSubmitConfig,
+	dao GenerationSubmitDao,
+	daoAttemptList GenerationSubmitDaoAttemptList,
+	daoUsageSum GenerationSubmitDaoUsageSum,
+	daoCountLive GenerationSubmitDaoCountLive,
+	daoPayloadInsert GenerationSubmitDaoPayloadInsert,
+	serviceCheck GenerationSubmitServiceCheck,
 	registry connectors.Registry,
 	transactor transaction.Transactor,
-	daos GenerationSubmitDaos,
-	serviceCheck GenerationSubmitServiceCheck,
+	generations config.Generations,
+	caps config.Caps,
 ) *GenerationSubmit {
 	return &GenerationSubmit{
-		config: config, registry: registry, transactor: transactor, daos: daos, serviceCheck: serviceCheck,
+		dao:              dao,
+		daoAttemptList:   daoAttemptList,
+		daoUsageSum:      daoUsageSum,
+		daoCountLive:     daoCountLive,
+		daoPayloadInsert: daoPayloadInsert,
+		serviceCheck:     serviceCheck,
+		registry:         registry,
+		transactor:       transactor,
+		generations:      generations,
+		caps:             caps,
 	}
 }
 
@@ -165,7 +167,7 @@ func (service *GenerationSubmit) Exec(
 	err = service.transactor.WithinTx(ctx, func(ctx context.Context) error {
 		var err error
 
-		result, err = service.daos.Submit.Exec(ctx, &dao.GenerationSubmitRequest{
+		result, err = service.dao.Exec(ctx, &dao.GenerationSubmitRequest{
 			// Minted here so the created and replayed cases can be told apart without a second
 			// round-trip. uuidv7 keeps the table's index locality under insert churn.
 			ID:          uuid.Must(uuid.NewV7()),
@@ -173,7 +175,7 @@ func (service *GenerationSubmit) Exec(
 			Purpose:     request.Purpose,
 			Provider:    request.Provider,
 			RequestKey:  key,
-			MaxAttempts: service.config.MaxAttempts,
+			MaxAttempts: service.generations.MaxAttempts,
 			Traceparent: lo.EmptyableToPtr(carrier.Get("traceparent")),
 			Streamed:    request.Stream,
 		})
@@ -191,7 +193,7 @@ func (service *GenerationSubmit) Exec(
 		}
 
 		// Stored only once admitted, so neither a replay nor a refusal sends the payload over.
-		_, err = service.daos.Payload.Exec(ctx, &dao.GenerationPayloadInsertRequest{
+		_, err = service.daoPayloadInsert.Exec(ctx, &dao.GenerationPayloadInsertRequest{
 			GenerationID: result.Generation.ID, Payload: request.Payload,
 		})
 		if err != nil {
@@ -224,7 +226,7 @@ func (service *GenerationSubmit) Exec(
 	var attempts []*dao.GenerationAttempt
 
 	if mayHaveAttempts(generation) {
-		attempts, err = service.daos.Attempts.Exec(ctx, &dao.GenerationAttemptListRequest{GenerationID: generation.ID})
+		attempts, err = service.daoAttemptList.Exec(ctx, &dao.GenerationAttemptListRequest{GenerationID: generation.ID})
 		if err != nil {
 			return nil, otel.ReportError(span, fmt.Errorf("list attempts: %w", err))
 		}
@@ -244,7 +246,7 @@ func (service *GenerationSubmit) validateRequest(request *GenerationSubmitReques
 		return errors.Join(err, ErrInvalidRequest)
 	}
 
-	if _, declared := service.config.Caps.Purposes[request.Purpose]; !declared {
+	if _, declared := service.caps.Purposes[request.Purpose]; !declared {
 		return fmt.Errorf("%w: purpose %q is not declared in the caps", ErrInvalidRequest, request.Purpose)
 	}
 
@@ -297,9 +299,9 @@ func (service *GenerationSubmit) admit(ctx context.Context, request *GenerationS
 		{
 			name:      fmt.Sprintf("purpose %q", request.Purpose),
 			purpose:   &request.Purpose,
-			capOfTier: service.config.Caps.Purposes[request.Purpose].For(request.UserTier),
+			capOfTier: service.caps.Purposes[request.Purpose].For(request.UserTier),
 		},
-		{name: "global", capOfTier: service.config.Caps.Global.For(request.UserTier)},
+		{name: "global", capOfTier: service.caps.Global.For(request.UserTier)},
 	}
 
 	for _, scope := range scopes {
@@ -308,7 +310,7 @@ func (service *GenerationSubmit) admit(ctx context.Context, request *GenerationS
 		}
 
 		if limit := scope.capOfTier.Concurrency; limit != nil && *limit >= 0 {
-			live, err := service.daos.Live.Exec(ctx, &dao.GenerationCountLiveRequest{
+			live, err := service.daoCountLive.Exec(ctx, &dao.GenerationCountLiveRequest{
 				OwnerID: request.OwnerID, Purpose: scope.purpose, UnknownOutcomeWindow: unknownOutcomeHold,
 			})
 			if err != nil {
@@ -327,7 +329,7 @@ func (service *GenerationSubmit) admit(ctx context.Context, request *GenerationS
 		for _, window := range slices.Sorted(maps.Keys(scope.capOfTier.Windows)) {
 			limit := scope.capOfTier.Windows[window]
 
-			used, err := service.daos.Usage.Exec(ctx, &dao.GenerationUsageSumRequest{
+			used, err := service.daoUsageSum.Exec(ctx, &dao.GenerationUsageSumRequest{
 				OwnerID: request.OwnerID, Purpose: scope.purpose, Window: window,
 			})
 			if err != nil {

@@ -4,13 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/a-novel-kit/golib/otel"
 
+	"github.com/a-novel/service-genai/internal/config"
 	"github.com/a-novel/service-genai/internal/dao"
 )
 
@@ -34,12 +34,6 @@ type GenerationCancelServiceCheck interface {
 	Exec(ctx context.Context, request *GenerationCheckRequest) (*dao.Generation, error)
 }
 
-// GenerationCancelConfig is what a [GenerationCancel] needs to run.
-type GenerationCancelConfig struct {
-	// Retention is how long a settled generation's user content survives before the purge.
-	Retention time.Duration
-}
-
 // GenerationCancelRequest holds the parameters for a [GenerationCancel.Exec] call.
 type GenerationCancelRequest struct {
 	// ID identifies the generation to stop.
@@ -55,23 +49,27 @@ type GenerationCancelRequest struct {
 // free one. One whose start is in flight is only marked, and the next check stops it. One already
 // settled is returned as it stands, so a cancel that lost a race or is retried still succeeds.
 type GenerationCancel struct {
-	config         GenerationCancelConfig
 	dao            GenerationCancelDao
 	daoGet         GenerationCancelDaoGet
 	daoAttemptList GenerationCancelDaoAttemptList
 	serviceCheck   GenerationCancelServiceCheck
+	generations    config.Generations
 }
 
 // NewGenerationCancel returns a new GenerationCancel service.
 func NewGenerationCancel(
-	config GenerationCancelConfig,
 	dao GenerationCancelDao,
 	daoGet GenerationCancelDaoGet,
 	daoAttemptList GenerationCancelDaoAttemptList,
 	serviceCheck GenerationCancelServiceCheck,
+	generations config.Generations,
 ) *GenerationCancel {
 	return &GenerationCancel{
-		config: config, dao: dao, daoGet: daoGet, daoAttemptList: daoAttemptList, serviceCheck: serviceCheck,
+		dao:            dao,
+		daoGet:         daoGet,
+		daoAttemptList: daoAttemptList,
+		serviceCheck:   serviceCheck,
+		generations:    generations,
 	}
 }
 
@@ -95,7 +93,7 @@ func (service *GenerationCancel) Exec(
 		ID:        request.ID,
 		OwnerID:   request.OwnerID,
 		Error:     generationCancelledReason,
-		Retention: service.config.Retention,
+		Retention: service.generations.Retention,
 	})
 
 	if errors.Is(err, dao.ErrGenerationNotCancellable) {

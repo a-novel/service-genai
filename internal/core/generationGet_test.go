@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
+	"github.com/a-novel/service-genai/internal/config"
 	"github.com/a-novel/service-genai/internal/core"
 	coremocks "github.com/a-novel/service-genai/internal/core/mocks"
 	"github.com/a-novel/service-genai/internal/dao"
@@ -204,8 +205,7 @@ func TestGenerationGet(t *testing.T) {
 			}
 
 			service := core.NewGenerationGet(
-				core.GenerationGetConfig{CheckInterval: checkInterval},
-				getDao, electDao, attemptDao, check,
+				getDao, electDao, attemptDao, check, config.Generations{CheckInterval: checkInterval},
 			)
 
 			result, err := service.Exec(t.Context(), testCase.request)

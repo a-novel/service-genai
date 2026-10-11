@@ -4,13 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/a-novel-kit/golib/otel"
 
+	"github.com/a-novel/service-genai/internal/config"
 	"github.com/a-novel/service-genai/internal/dao"
 )
 
@@ -34,13 +34,6 @@ type GenerationGetServiceCheck interface {
 	Exec(ctx context.Context, request *GenerationCheckRequest) (*dao.Generation, error)
 }
 
-// GenerationGetConfig is what a [GenerationGet] needs to run.
-type GenerationGetConfig struct {
-	// CheckInterval is how long a check stays fresh. However often callers poll, a generation reaches
-	// the provider at most once per interval.
-	CheckInterval time.Duration
-}
-
 // GenerationGetRequest holds the parameters for a [GenerationGet.Exec] call.
 type GenerationGetRequest struct {
 	// ID identifies the generation to read.
@@ -53,23 +46,27 @@ type GenerationGetRequest struct {
 //
 // A caller's polls are what keep its generation fresh: there is no worker following it.
 type GenerationGet struct {
-	config         GenerationGetConfig
 	dao            GenerationGetDao
 	daoElectCheck  GenerationGetDaoElectCheck
 	daoAttemptList GenerationGetDaoAttemptList
 	serviceCheck   GenerationGetServiceCheck
+	generations    config.Generations
 }
 
 // NewGenerationGet returns a new GenerationGet service.
 func NewGenerationGet(
-	config GenerationGetConfig,
 	dao GenerationGetDao,
 	daoElectCheck GenerationGetDaoElectCheck,
 	daoAttemptList GenerationGetDaoAttemptList,
 	serviceCheck GenerationGetServiceCheck,
+	generations config.Generations,
 ) *GenerationGet {
 	return &GenerationGet{
-		config: config, dao: dao, daoElectCheck: daoElectCheck, daoAttemptList: daoAttemptList, serviceCheck: serviceCheck,
+		dao:            dao,
+		daoElectCheck:  daoElectCheck,
+		daoAttemptList: daoAttemptList,
+		serviceCheck:   serviceCheck,
+		generations:    generations,
 	}
 }
 
@@ -89,7 +86,7 @@ func (service *GenerationGet) Exec(ctx context.Context, request *GenerationGetRe
 
 	// Electing first spares a read: an elected poll gets the generation from the election itself.
 	generation, err := service.daoElectCheck.Exec(ctx, &dao.GenerationElectCheckRequest{
-		ID: request.ID, OwnerID: request.OwnerID, Interval: service.config.CheckInterval,
+		ID: request.ID, OwnerID: request.OwnerID, Interval: service.generations.CheckInterval,
 	})
 
 	switch {

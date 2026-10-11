@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
+	"github.com/a-novel/service-genai/internal/config"
 	"github.com/a-novel/service-genai/internal/core"
 	coremocks "github.com/a-novel/service-genai/internal/core/mocks"
 	"github.com/a-novel/service-genai/internal/dao"
@@ -162,7 +163,7 @@ func TestGenerationCancel(t *testing.T) {
 			}
 
 			service := core.NewGenerationCancel(
-				core.GenerationCancelConfig{Retention: retention}, cancelDao, getDao, attemptDao, check,
+				cancelDao, getDao, attemptDao, check, config.Generations{Retention: retention},
 			)
 
 			result, err := service.Exec(t.Context(), testCase.request)

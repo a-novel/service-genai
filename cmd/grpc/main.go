@@ -97,55 +97,36 @@ func main() {
 	}))
 
 	serviceCheck := core.NewGenerationCheck(
-		core.GenerationCheckConfig{Retention: cfg.Generations.Retention},
-		cfg.Logger,
+		daoBeginStart,
+		daoReleaseStart,
+		daoRecordProviderCall,
+		daoSettle,
+		daoRequeue,
+		daoAttemptInsert,
+		daoUsageInsert,
+		daoGet,
 		registry,
 		postgres.NewTransactor(nil),
-		core.GenerationCheckDaos{
-			BeginStart:   daoBeginStart,
-			ReleaseStart: daoReleaseStart,
-			Record:       daoRecordProviderCall,
-			Settle:       daoSettle,
-			Requeue:      daoRequeue,
-			Attempt:      daoAttemptInsert,
-			Usage:        daoUsageInsert,
-			Get:          daoGet,
-		},
+		cfg.Logger,
+		cfg.Generations,
 	)
 	serviceSubmit := core.NewGenerationSubmit(
-		core.GenerationSubmitConfig{MaxAttempts: cfg.Generations.MaxAttempts, Caps: cfg.Caps},
+		daoSubmit,
+		daoAttemptList,
+		daoUsageSum,
+		daoCountLive,
+		daoPayloadInsert,
+		serviceCheck,
 		registry,
 		postgres.NewTransactor(nil),
-		core.GenerationSubmitDaos{
-			Submit:   daoSubmit,
-			Attempts: daoAttemptList,
-			Usage:    daoUsageSum,
-			Live:     daoCountLive,
-			Payload:  daoPayloadInsert,
-		},
-		serviceCheck,
+		cfg.Generations,
+		cfg.Caps,
 	)
-	serviceGet := core.NewGenerationGet(
-		core.GenerationGetConfig{CheckInterval: cfg.Generations.CheckInterval},
-		daoGet,
-		daoElectCheck,
-		daoAttemptList,
-		serviceCheck,
-	)
-	serviceCancel := core.NewGenerationCancel(
-		core.GenerationCancelConfig{Retention: cfg.Generations.Retention},
-		daoRequestCancel,
-		daoGet,
-		daoAttemptList,
-		serviceCheck,
-	)
+	serviceGet := core.NewGenerationGet(daoGet, daoElectCheck, daoAttemptList, serviceCheck, cfg.Generations)
+	serviceCancel := core.NewGenerationCancel(daoRequestCancel, daoGet, daoAttemptList, serviceCheck, cfg.Generations)
 	serviceStream := core.NewGenerationStream(daoGet, registry)
 	serviceQueueDepth := core.NewGenerationQueueDepth(daoQueueDepth)
-	serviceSweep := core.NewGenerationSweep(
-		core.GenerationSweepConfig{Interval: cfg.Sweep.Interval, BatchSize: cfg.Sweep.BatchSize},
-		daoSweep,
-		serviceCheck,
-	)
+	serviceSweep := core.NewGenerationSweep(daoSweep, serviceCheck, cfg.Sweep)
 
 	// =================================================================================================================
 	// HANDLERS
