@@ -249,4 +249,39 @@ func TestClient(t *testing.T) {
 			status.Convert(err).Message(),
 		)
 	})
+
+	// The stream RPC end to end. This stack's provider refuses every start, so no call ever begins.
+	t.Run("GenerationStream", func(t *testing.T) {
+		t.Parallel()
+
+		client := newClient(t)
+
+		owner := uuid.Must(uuid.NewV7()).String()
+
+		// A polled generation was not created to be streamed.
+		polled := submit(t, client, owner)
+
+		stream, err := client.GenerationStream(t.Context(), &servicegenai.GenerationStreamRequest{
+			Id: polled.GetId(), OwnerId: owner,
+		})
+		require.NoError(t, err)
+
+		_, err = stream.Recv()
+		require.Equal(t, codes.FailedPrecondition, status.Code(err))
+
+		// A streamed one whose call the provider never began has nothing to stream yet.
+		request := submitRequest(owner)
+		request.Stream = true
+
+		streamed, err := client.GenerationSubmit(t.Context(), request)
+		require.NoError(t, err)
+
+		stream, err = client.GenerationStream(t.Context(), &servicegenai.GenerationStreamRequest{
+			Id: streamed.GetGeneration().GetId(), OwnerId: owner,
+		})
+		require.NoError(t, err)
+
+		_, err = stream.Recv()
+		require.Equal(t, codes.FailedPrecondition, status.Code(err))
+	})
 }

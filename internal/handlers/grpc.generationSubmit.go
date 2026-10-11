@@ -50,6 +50,7 @@ func (handler *GrpcGenerationSubmit) GenerationSubmit(
 		Provider: request.GetProvider(),
 		Payload:  request.GetPayload(),
 		Variant:  request.GetVariant(),
+		Stream:   request.GetStream(),
 	})
 
 	// The reason names the caller's own fields and limits, so it tells the caller what to fix.
@@ -63,7 +64,7 @@ func (handler *GrpcGenerationSubmit) GenerationSubmit(
 	}
 
 	if errors.Is(err, connectors.ErrModeUnsupported) {
-		return nil, status.Error(codes.Unimplemented, "the provider does not support the Async mode")
+		return nil, status.Error(codes.Unimplemented, "the provider does not support the requested mode")
 	}
 
 	if err != nil {

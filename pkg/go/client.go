@@ -27,6 +27,8 @@ type (
 	GenerationGetResponse    = genaiv0.GenerationGetResponse
 	GenerationCancelRequest  = genaiv0.GenerationCancelRequest
 	GenerationCancelResponse = genaiv0.GenerationCancelResponse
+	GenerationStreamRequest  = genaiv0.GenerationStreamRequest
+	GenerationStreamResponse = genaiv0.GenerationStreamResponse
 
 	Generation        = genaiv0.Generation
 	GenerationStatus  = genaiv0.GenerationStatus
@@ -84,6 +86,12 @@ type Client interface {
 	GenerationCancel(
 		ctx context.Context, req *GenerationCancelRequest, opts ...grpc.CallOption,
 	) (*GenerationCancelResponse, error)
+	// GenerationStream forwards the provider's events of a generation submitted with stream, until
+	// the terminal one. After a disconnect, open a new stream after the last sequence number
+	// received; once the provider no longer streams the generation (FAILED_PRECONDITION), poll it.
+	GenerationStream(
+		ctx context.Context, req *GenerationStreamRequest, opts ...grpc.CallOption,
+	) (grpc.ServerStreamingClient[GenerationStreamResponse], error)
 
 	// Close releases the underlying gRPC connection. Call it once the client is
 	// no longer needed.
@@ -96,6 +104,7 @@ type client struct {
 	genaiv0.GenerationSubmitServiceClient
 	genaiv0.GenerationGetServiceClient
 	genaiv0.GenerationCancelServiceClient
+	genaiv0.GenerationStreamServiceClient
 
 	conn *grpc.ClientConn
 }
@@ -128,6 +137,7 @@ func NewClient(addr string, opts ...grpc.DialOption) (Client, error) {
 		GenerationSubmitServiceClient: genaiv0.NewGenerationSubmitServiceClient(conn),
 		GenerationGetServiceClient:    genaiv0.NewGenerationGetServiceClient(conn),
 		GenerationCancelServiceClient: genaiv0.NewGenerationCancelServiceClient(conn),
+		GenerationStreamServiceClient: genaiv0.NewGenerationStreamServiceClient(conn),
 		conn:                          conn,
 	}, nil
 }
