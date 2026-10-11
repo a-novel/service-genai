@@ -16,8 +16,8 @@ import (
 	"github.com/a-novel/service-genai/internal/core"
 	coremocks "github.com/a-novel/service-genai/internal/core/mocks"
 	"github.com/a-novel/service-genai/internal/dao"
-	"github.com/a-novel/service-genai/internal/lib"
-	libmocks "github.com/a-novel/service-genai/internal/lib/mocks"
+	"github.com/a-novel/service-genai/internal/lib/connectors"
+	connectorsmocks "github.com/a-novel/service-genai/internal/lib/connectors/mocks"
 )
 
 // submitRequest is a valid submission; a case adjusts it.
@@ -45,13 +45,13 @@ func payloadOfSize(size int) func(request *core.GenerationSubmitRequest) {
 	}
 }
 
-// testAdapters serve the test provider in the Async mode, and another provider without it.
-func testAdapters(t *testing.T) lib.Adapters {
+// testConnectors serve the test provider in the Async mode, and another provider without it.
+func testConnectors(t *testing.T) connectors.Registry {
 	t.Helper()
 
-	return lib.Adapters{
-		testProvider: libmocks.NewMockAsyncAdapter(t),
-		"another":    libmocks.NewMockAsyncAdapter(t),
+	return connectors.Registry{
+		testProvider: connectorsmocks.NewMockAsync(t),
+		"another":    connectorsmocks.NewMockAsync(t),
 		"sync-only":  struct{}{},
 	}
 }
@@ -275,7 +275,7 @@ func TestGenerationSubmit(t *testing.T) {
 
 			request: submitRequest(func(request *core.GenerationSubmitRequest) { request.Provider = "sync-only" }),
 
-			expectErr: lib.ErrModeUnsupported,
+			expectErr: connectors.ErrModeUnsupported,
 		},
 		{
 			name: "Error/PayloadNotJSON",
@@ -432,7 +432,7 @@ func TestGenerationSubmit(t *testing.T) {
 
 			service, err := core.NewGenerationSubmit(
 				core.GenerationSubmitConfig{MaxAttempts: maxAttempts, Retention: time.Hour, Caps: testCaps},
-				testAdapters(t),
+				testConnectors(t),
 				core.GenerationSubmitDaos{Submit: submitDao, Attempts: attemptDao, Usage: usageDao, Settle: settleDao},
 				check,
 			)
@@ -520,7 +520,7 @@ func submittedKey(t *testing.T, request *core.GenerationSubmitRequest) []byte {
 
 	service, err := core.NewGenerationSubmit(
 		core.GenerationSubmitConfig{MaxAttempts: 1, Retention: time.Hour, Caps: testCaps},
-		testAdapters(t),
+		testConnectors(t),
 		core.GenerationSubmitDaos{Submit: submitDao},
 		coremocks.NewMockGenerationSubmitServiceCheck(t),
 	)
@@ -614,7 +614,7 @@ func TestNewGenerationSubmit(t *testing.T) {
 
 			_, err := core.NewGenerationSubmit(
 				core.GenerationSubmitConfig{MaxAttempts: 1, Retention: time.Hour, Caps: testCase.caps},
-				testAdapters(t),
+				testConnectors(t),
 				core.GenerationSubmitDaos{},
 				coremocks.NewMockGenerationSubmitServiceCheck(t),
 			)

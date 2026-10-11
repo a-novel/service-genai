@@ -141,10 +141,10 @@ var (
 		grpcTimeoutShutdown, GrpcTimeoutShutdownDefault, config.DurationParser,
 	)
 
-	// OpenAIAPIKey authenticates the OpenAI adapter. The only credential this service holds, and the
+	// OpenAIAPIKey authenticates the OpenAI connector. The only credential this service holds, and the
 	// reason no caller holds one.
 	OpenAIAPIKey = openAIAPIKey
-	// OpenAIBaseURL is the Responses API endpoint the OpenAI adapter calls.
+	// OpenAIBaseURL is the Responses API endpoint the OpenAI connector calls.
 	OpenAIBaseURL = config.LoadEnv(openAIBaseURL, OpenAIBaseURLDefault, config.StringParser)
 
 	// CheckInterval is how long a check stays fresh.

@@ -1,4 +1,4 @@
-package lib_test
+package connectors_test
 
 import (
 	"encoding/json"
@@ -16,7 +16,7 @@ import (
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 
-	"github.com/a-novel/service-genai/internal/lib"
+	"github.com/a-novel/service-genai/internal/lib/connectors"
 )
 
 // scriptedProvider stands in for the Responses API. It records the last request so the composition
@@ -56,19 +56,19 @@ func (script *scriptedProvider) serve(t *testing.T) *httptest.Server {
 	return server
 }
 
-// testConfig points the adapter at the given endpoint.
-func testConfig(baseURL string) lib.OpenAIConfig {
-	return lib.OpenAIConfig{BaseURL: baseURL, APIKey: "test-key"}
+// testConfig points the connector at the given endpoint.
+func testConfig(baseURL string) connectors.OpenAIConfig {
+	return connectors.OpenAIConfig{BaseURL: baseURL, APIKey: "test-key"}
 }
 
-func newTestProvider(t *testing.T, script *scriptedProvider) *lib.OpenAI {
+func newTestProvider(t *testing.T, script *scriptedProvider) *connectors.OpenAI {
 	t.Helper()
 
 	server := script.serve(t)
 
 	// MaxRetries(0) so a scripted 5xx surfaces as one classified error instead of the SDK's own
 	// retry loop deciding first.
-	provider, err := lib.NewOpenAI(
+	provider, err := connectors.NewOpenAI(
 		testConfig(server.URL), option.WithHTTPClient(server.Client()), option.WithMaxRetries(0),
 	)
 	if err != nil {
@@ -82,8 +82,8 @@ func newTestProvider(t *testing.T, script *scriptedProvider) *lib.OpenAI {
 const testPayload = `{"model": "gpt-5.6-terra", "input": "a & b", ` +
 	`"text": {"format": {"type": "json_schema", "schema": {"properties": {"z": {}, "a": {}}}}}}`
 
-func testStartRequest() *lib.AsyncStartRequest {
-	return &lib.AsyncStartRequest{Payload: json.RawMessage(testPayload)}
+func testStartRequest() *connectors.AsyncStartRequest {
+	return &connectors.AsyncStartRequest{Payload: json.RawMessage(testPayload)}
 }
 
 // response builds a Responses API body around the given status and extra fields.
@@ -113,8 +113,8 @@ func TestOpenAI(t *testing.T) {
 
 		script *scriptedProvider
 
-		expectState lib.ProviderCallState
-		expectUsage *lib.ProviderUsage
+		expectState connectors.CallState
+		expectUsage *connectors.Usage
 		expectTier  string
 		// expectModel and expectClass default to the scripted response's own.
 		expectModel     string
@@ -132,7 +132,7 @@ func TestOpenAI(t *testing.T) {
 
 			script: &scriptedProvider{status: http.StatusOK, body: response("completed", "")},
 
-			expectState: lib.ProviderCallSucceeded,
+			expectState: connectors.CallSucceeded,
 		},
 		{
 			// What actually ran and what it consumed, read off the response for metering.
@@ -140,8 +140,8 @@ func TestOpenAI(t *testing.T) {
 
 			script: &scriptedProvider{status: http.StatusOK, body: response("completed", testUsage)},
 
-			expectState: lib.ProviderCallSucceeded,
-			expectUsage: &lib.ProviderUsage{
+			expectState: connectors.CallSucceeded,
+			expectUsage: &connectors.Usage{
 				InputTokens: 1000, CachedInputTokens: 200, CacheWriteTokens: 300, OutputTokens: 500, ReasoningTokens: 100,
 			},
 			expectTier:      "flex",
@@ -154,7 +154,7 @@ func TestOpenAI(t *testing.T) {
 			script: &scriptedProvider{status: http.StatusOK, body: `{"id": "resp_1", "status": "completed", ` +
 				`"model": "gpt-5.6-luna-2026-01-01", "created_at": 1760000000}`},
 
-			expectState: lib.ProviderCallSucceeded,
+			expectState: connectors.CallSucceeded,
 			expectModel: "gpt-5.6-luna-2026-01-01",
 			expectClass: "none",
 		},
@@ -164,8 +164,8 @@ func TestOpenAI(t *testing.T) {
 
 			script: &scriptedProvider{status: http.StatusOK, body: response("cancelled", testUsage)},
 
-			expectState: lib.ProviderCallCancelled,
-			expectUsage: &lib.ProviderUsage{
+			expectState: connectors.CallCancelled,
+			expectUsage: &connectors.Usage{
 				InputTokens: 1000, CachedInputTokens: 200, CacheWriteTokens: 300, OutputTokens: 500, ReasoningTokens: 100,
 			},
 			expectTier:      "flex",
@@ -178,7 +178,7 @@ func TestOpenAI(t *testing.T) {
 
 			script: &scriptedProvider{status: http.StatusOK, body: response("queued", "")},
 
-			expectState: lib.ProviderCallRunning,
+			expectState: connectors.CallRunning,
 		},
 		{
 			// A refusal is an answer: the caller reads it from the response.
@@ -186,7 +186,7 @@ func TestOpenAI(t *testing.T) {
 
 			script: &scriptedProvider{status: http.StatusOK, body: response("completed", testRefusal)},
 
-			expectState: lib.ProviderCallSucceeded,
+			expectState: connectors.CallSucceeded,
 		},
 		{
 			// The output stopped at the caller's own max_output_tokens. Finished, and the caller's to read.
@@ -196,7 +196,7 @@ func TestOpenAI(t *testing.T) {
 				"incomplete", `"incomplete_details": {"reason": "max_output_tokens"}`,
 			)},
 
-			expectState: lib.ProviderCallSucceeded,
+			expectState: connectors.CallSucceeded,
 		},
 		{
 			name: "Success/RetryableFailure",
@@ -205,7 +205,7 @@ func TestOpenAI(t *testing.T) {
 				"failed", `"error": {"code": "server_error", "message": "the model failed"}`,
 			)},
 
-			expectState:     lib.ProviderCallFailed,
+			expectState:     connectors.CallFailed,
 			expectReason:    "the model failed",
 			expectRetryable: true,
 		},
@@ -216,7 +216,7 @@ func TestOpenAI(t *testing.T) {
 				"failed", `"error": {"code": "invalid_prompt", "message": "the prompt was rejected"}`,
 			)},
 
-			expectState:  lib.ProviderCallFailed,
+			expectState:  connectors.CallFailed,
 			expectReason: "the prompt was rejected",
 		},
 		{
@@ -224,7 +224,7 @@ func TestOpenAI(t *testing.T) {
 
 			script: &scriptedProvider{status: http.StatusOK, body: response("cancelled", "")},
 
-			expectState: lib.ProviderCallCancelled,
+			expectState: connectors.CallCancelled,
 		},
 		{
 			// Nothing was accepted, so another start costs nothing.
@@ -232,14 +232,14 @@ func TestOpenAI(t *testing.T) {
 
 			script: &scriptedProvider{status: http.StatusTooManyRequests, body: `{"error":{"message":"slow down"}}`},
 
-			expectErr: lib.ErrProviderRetryable,
+			expectErr: connectors.ErrRetryable,
 		},
 		{
 			name: "Error/ProviderFaultIsAmbiguous",
 
 			script: &scriptedProvider{status: http.StatusBadGateway, body: `{"error":{"message":"bad gateway"}}`},
 
-			expectErr: lib.ErrProviderStartAmbiguous,
+			expectErr: connectors.ErrStartAmbiguous,
 		},
 		{
 			// Retrying cannot help until an operator adds credit, so the generation fails with the body.
@@ -292,10 +292,10 @@ func TestOpenAI(t *testing.T) {
 			call, err := provider.Start(t.Context(), testStartRequest())
 
 			if testCase.expectRejection {
-				var rejection *lib.ProviderRejectionError
+				var rejection *connectors.RejectionError
 
 				require.ErrorAs(t, err, &rejection)
-				require.NotErrorIs(t, err, lib.ErrProviderRetryable)
+				require.NotErrorIs(t, err, connectors.ErrRetryable)
 
 				if testCase.expectBody == "" {
 					require.Empty(t, rejection.Response)
@@ -355,7 +355,7 @@ func TestOpenAI(t *testing.T) {
 	}
 }
 
-// The adapter writes the fields the Async mode owns and forwards everything else as the caller wrote
+// The connector writes the fields the Async mode owns and forwards everything else as the caller wrote
 // it.
 func TestOpenAIRequest(t *testing.T) {
 	t.Parallel()
@@ -387,7 +387,7 @@ func TestOpenAIRequest(t *testing.T) {
 			script := &scriptedProvider{status: http.StatusOK, body: response("queued", "")}
 			provider := newTestProvider(t, script)
 
-			_, err := provider.Start(t.Context(), &lib.AsyncStartRequest{Payload: json.RawMessage(testCase.payload)})
+			_, err := provider.Start(t.Context(), &connectors.AsyncStartRequest{Payload: json.RawMessage(testCase.payload)})
 			require.NoError(t, err)
 			require.Equal(t, "/responses", script.lastPath)
 
@@ -420,7 +420,7 @@ func TestNewOpenAI(t *testing.T) {
 	testCases := []struct {
 		name string
 
-		config lib.OpenAIConfig
+		config connectors.OpenAIConfig
 
 		expectErr error
 	}{
@@ -434,14 +434,14 @@ func TestNewOpenAI(t *testing.T) {
 
 			config: testConfig(""),
 
-			expectErr: lib.ErrProviderNotConfigured,
+			expectErr: connectors.ErrNotConfigured,
 		},
 		{
 			name: "Error/NoAPIKey",
 
-			config: lib.OpenAIConfig{BaseURL: "https://provider.test/v1"},
+			config: connectors.OpenAIConfig{BaseURL: "https://provider.test/v1"},
 
-			expectErr: lib.ErrProviderNotConfigured,
+			expectErr: connectors.ErrNotConfigured,
 		},
 	}
 
@@ -449,7 +449,7 @@ func TestNewOpenAI(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			_, err := lib.NewOpenAI(testCase.config)
+			_, err := connectors.NewOpenAI(testCase.config)
 			require.ErrorIs(t, err, testCase.expectErr)
 		})
 	}
@@ -463,7 +463,7 @@ func TestOpenAIGet(t *testing.T) {
 
 		script *scriptedProvider
 
-		expectState lib.ProviderCallState
+		expectState connectors.CallState
 		expectErr   error
 	}{
 		{
@@ -471,7 +471,7 @@ func TestOpenAIGet(t *testing.T) {
 
 			script: &scriptedProvider{status: http.StatusOK, body: response("completed", "")},
 
-			expectState: lib.ProviderCallSucceeded,
+			expectState: connectors.CallSucceeded,
 		},
 		{
 			// Gone past the provider's retention window: not something another read fixes.
@@ -484,7 +484,7 @@ func TestOpenAIGet(t *testing.T) {
 
 			script: &scriptedProvider{status: http.StatusBadGateway, body: `{"error":{"message":"bad gateway"}}`},
 
-			expectErr: lib.ErrProviderRetryable,
+			expectErr: connectors.ErrRetryable,
 		},
 		{
 			// Refused credentials are this service's configuration, not the operation's fate: once the
@@ -493,7 +493,7 @@ func TestOpenAIGet(t *testing.T) {
 
 			script: &scriptedProvider{status: http.StatusUnauthorized, body: `{"error":{"message":"bad key"}}`},
 
-			expectErr: lib.ErrProviderRetryable,
+			expectErr: connectors.ErrRetryable,
 		},
 	}
 
@@ -511,7 +511,7 @@ func TestOpenAIGet(t *testing.T) {
 				if testCase.expectErr != nil {
 					require.ErrorIs(t, err, testCase.expectErr)
 				} else {
-					require.NotErrorIs(t, err, lib.ErrProviderRetryable)
+					require.NotErrorIs(t, err, connectors.ErrRetryable)
 				}
 
 				return
@@ -533,7 +533,7 @@ func TestOpenAICancel(t *testing.T) {
 
 		script *scriptedProvider
 
-		expectState lib.ProviderCallState
+		expectState connectors.CallState
 		// expectPath is the last path requested, the cancel itself unless stated.
 		expectPath string
 		expectErr  error
@@ -543,7 +543,7 @@ func TestOpenAICancel(t *testing.T) {
 
 			script: &scriptedProvider{status: http.StatusOK, body: response("cancelled", "")},
 
-			expectState: lib.ProviderCallCancelled,
+			expectState: connectors.CallCancelled,
 		},
 		{
 			// OpenAI refuses to cancel a finished response; its result is read instead, so a paid
@@ -558,7 +558,7 @@ func TestOpenAICancel(t *testing.T) {
 				},
 			},
 
-			expectState: lib.ProviderCallSucceeded,
+			expectState: connectors.CallSucceeded,
 			expectPath:  "/responses/resp_1",
 		},
 		{
@@ -566,7 +566,7 @@ func TestOpenAICancel(t *testing.T) {
 
 			script: &scriptedProvider{status: http.StatusBadGateway, body: `{"error":{"message":"bad gateway"}}`},
 
-			expectErr: lib.ErrProviderRetryable,
+			expectErr: connectors.ErrRetryable,
 		},
 	}
 
@@ -605,13 +605,13 @@ func TestOpenAIStartTimeoutIsAmbiguous(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	provider, err := lib.NewOpenAI(
+	provider, err := connectors.NewOpenAI(
 		testConfig(server.URL), option.WithHTTPClient(server.Client()), option.WithRequestTimeout(time.Second),
 	)
 	require.NoError(t, err)
 
 	_, err = provider.Start(t.Context(), testStartRequest())
-	require.ErrorIs(t, err, lib.ErrProviderStartAmbiguous)
+	require.ErrorIs(t, err, connectors.ErrStartAmbiguous)
 	require.Equal(t, int32(1), requests.Load())
 }
 
@@ -621,11 +621,11 @@ func TestOpenAITransportFailure(t *testing.T) {
 	t.Parallel()
 
 	// A port nothing listens on.
-	provider, err := lib.NewOpenAI(testConfig("https://127.0.0.1:1"), option.WithMaxRetries(0))
+	provider, err := connectors.NewOpenAI(testConfig("https://127.0.0.1:1"), option.WithMaxRetries(0))
 	require.NoError(t, err)
 
 	_, err = provider.Start(t.Context(), testStartRequest())
-	require.ErrorIs(t, err, lib.ErrProviderRetryable)
+	require.ErrorIs(t, err, connectors.ErrRetryable)
 }
 
 // A start whose deadline passes before the request leaves, here during a TLS handshake that never
@@ -668,13 +668,13 @@ func TestOpenAIStartStalledBeforeSending(t *testing.T) {
 		}
 	}()
 
-	provider, err := lib.NewOpenAI(
+	provider, err := connectors.NewOpenAI(
 		testConfig("https://"+listener.Addr().String()), option.WithRequestTimeout(500*time.Millisecond),
 	)
 	require.NoError(t, err)
 
 	_, err = provider.Start(t.Context(), testStartRequest())
-	require.ErrorIs(t, err, lib.ErrProviderRetryable)
+	require.ErrorIs(t, err, connectors.ErrRetryable)
 }
 
 // An unknown status is polled again rather than settled: settling on a state this service does not
@@ -686,6 +686,6 @@ func TestOpenAIUnknownStatus(t *testing.T) {
 
 	call, err := provider.Start(t.Context(), testStartRequest())
 	require.NoError(t, err)
-	require.Equal(t, lib.ProviderCallRunning, call.State)
+	require.Equal(t, connectors.CallRunning, call.State)
 	require.False(t, call.State.Terminal())
 }

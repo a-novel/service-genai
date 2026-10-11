@@ -1,4 +1,4 @@
-package lib
+package connectors
 
 import (
 	"bytes"
@@ -30,10 +30,10 @@ const readTimeout = 10 * time.Second
 // readOptions make a read a single bounded attempt: the next check is the retry.
 var readOptions = []option.RequestOption{option.WithMaxRetries(0), option.WithRequestTimeout(readTimeout)}
 
-// ErrProviderNotConfigured is returned when the adapter has no endpoint or no credentials.
-var ErrProviderNotConfigured = errors.New("provider base URL and API key are required")
+// ErrNotConfigured is returned when the connector has no endpoint or no credentials.
+var ErrNotConfigured = errors.New("provider base URL and API key are required")
 
-// OpenAIConfig is how the adapter reaches the Responses API. Any endpoint serving it fits.
+// OpenAIConfig is how the connector reaches the Responses API. Any endpoint serving it fits.
 type OpenAIConfig struct {
 	BaseURL string
 	APIKey  string
@@ -51,7 +51,7 @@ type OpenAI struct {
 // environment.
 func NewOpenAI(config OpenAIConfig, opts ...option.RequestOption) (*OpenAI, error) {
 	if config.BaseURL == "" || config.APIKey == "" {
-		return nil, ErrProviderNotConfigured
+		return nil, ErrNotConfigured
 	}
 
 	opts = append([]option.RequestOption{
@@ -66,8 +66,8 @@ func NewOpenAI(config OpenAIConfig, opts ...option.RequestOption) (*OpenAI, erro
 // background makes crash-safety possible: the call returns an identifier immediately, so a restarted
 // check resumes an operation already paid for. stream is off, because the result is read back by
 // polling.
-func (provider *OpenAI) Start(ctx context.Context, request *AsyncStartRequest) (*ProviderCall, error) {
-	ctx, span := otel.Tracer().Start(ctx, "lib.OpenAI.Start")
+func (provider *OpenAI) Start(ctx context.Context, request *AsyncStartRequest) (*Call, error) {
+	ctx, span := otel.Tracer().Start(ctx, "connectors.OpenAI.Start")
 	defer span.End()
 
 	body, err := asyncEnvelope(request.Payload)
@@ -95,8 +95,8 @@ func (provider *OpenAI) Start(ctx context.Context, request *AsyncStartRequest) (
 }
 
 // Get reads an operation, and is also the re-attach path.
-func (provider *OpenAI) Get(ctx context.Context, id string) (*ProviderCall, error) {
-	ctx, span := otel.Tracer().Start(ctx, "lib.OpenAI.Get")
+func (provider *OpenAI) Get(ctx context.Context, id string) (*Call, error) {
+	ctx, span := otel.Tracer().Start(ctx, "connectors.OpenAI.Get")
 	defer span.End()
 
 	span.SetAttributes(attribute.String("provider.call_id", id))
@@ -110,8 +110,8 @@ func (provider *OpenAI) Get(ctx context.Context, id string) (*ProviderCall, erro
 }
 
 // Cancel stops an operation so an abandoned generation stops costing.
-func (provider *OpenAI) Cancel(ctx context.Context, id string) (*ProviderCall, error) {
-	ctx, span := otel.Tracer().Start(ctx, "lib.OpenAI.Cancel")
+func (provider *OpenAI) Cancel(ctx context.Context, id string) (*Call, error) {
+	ctx, span := otel.Tracer().Start(ctx, "connectors.OpenAI.Cancel")
 	defer span.End()
 
 	span.SetAttributes(attribute.String("provider.call_id", id))
@@ -174,18 +174,18 @@ func encodeJSON(value any) (json.RawMessage, error) {
 //
 // A completed or incomplete response is finished: an output cut at the caller's max_output_tokens,
 // or a refusal, is the caller's to read.
-func providerCallOf(response *responses.Response) *ProviderCall {
-	call := &ProviderCall{ID: response.ID, State: ProviderCallRunning}
+func providerCallOf(response *responses.Response) *Call {
+	call := &Call{ID: response.ID, State: CallRunning}
 
 	switch response.Status {
 	case responses.ResponseStatusCompleted, responses.ResponseStatusIncomplete:
-		call.State = ProviderCallSucceeded
+		call.State = CallSucceeded
 	case responses.ResponseStatusFailed:
-		call.State = ProviderCallFailed
+		call.State = CallFailed
 		call.Reason = response.Error.Message
 		call.Retryable = retryableFailure(response.Error.Code)
 	case responses.ResponseStatusCancelled:
-		call.State = ProviderCallCancelled
+		call.State = CallCancelled
 	case responses.ResponseStatusQueued, responses.ResponseStatusInProgress:
 	default:
 		// An unknown status is treated as still running rather than terminal: polling again is
@@ -218,7 +218,7 @@ func providerCallOf(response *responses.Response) *ProviderCall {
 	// Zero tokens is a real answer and not a missing one, so presence is decided by the provider
 	// reporting the field.
 	if response.Usage.JSON.TotalTokens.Valid() {
-		call.Usage = &ProviderUsage{
+		call.Usage = &Usage{
 			InputTokens:       response.Usage.InputTokens,
 			CachedInputTokens: response.Usage.InputTokensDetails.CachedTokens,
 			CacheWriteTokens:  response.Usage.InputTokensDetails.CacheWriteTokens,
@@ -258,10 +258,10 @@ func classifyOpenAIStartError(err error, sent bool) error {
 		// A request that never fully left cannot have been accepted, whatever stopped it: a refused
 		// or timed-out dial, a stalled handshake, the start deadline.
 		if !sent {
-			return fmt.Errorf("%w: %w", ErrProviderRetryable, err)
+			return fmt.Errorf("%w: %w", ErrRetryable, err)
 		}
 
-		return fmt.Errorf("%w: %w", ErrProviderStartAmbiguous, err)
+		return fmt.Errorf("%w: %w", ErrStartAmbiguous, err)
 	}
 
 	err = withProviderMessage(err, apiErr)
@@ -269,15 +269,15 @@ func classifyOpenAIStartError(err error, sent bool) error {
 	switch status := apiErr.StatusCode; {
 	case status == http.StatusTooManyRequests && apiErr.Code == "insufficient_quota":
 		// Retrying cannot help until an operator adds credit, so the caller gets an answer instead.
-		return &ProviderRejectionError{Response: errorBody(apiErr), Err: err}
+		return &RejectionError{Response: errorBody(apiErr), Err: err}
 	case status == http.StatusTooManyRequests:
-		return fmt.Errorf("%w: %w", ErrProviderRetryable, err)
+		return fmt.Errorf("%w: %w", ErrRetryable, err)
 	case status == http.StatusRequestTimeout, status >= http.StatusInternalServerError:
-		return fmt.Errorf("%w: %w", ErrProviderStartAmbiguous, err)
+		return fmt.Errorf("%w: %w", ErrStartAmbiguous, err)
 	}
 
 	// The request itself, the credentials, the permissions or the model: nothing ran.
-	return &ProviderRejectionError{Response: errorBody(apiErr), Err: err}
+	return &RejectionError{Response: errorBody(apiErr), Err: err}
 }
 
 // errorBody restores the body the provider sent, which the SDK unwraps to its error object. Empty
@@ -306,7 +306,7 @@ func classifyOpenAIError(err error) error {
 
 	if !errors.As(err, &apiErr) {
 		// No HTTP response at all: a dial failure, a timeout, a reset connection.
-		return fmt.Errorf("%w: %w", ErrProviderRetryable, err)
+		return fmt.Errorf("%w: %w", ErrRetryable, err)
 	}
 
 	err = withProviderMessage(err, apiErr)
@@ -317,7 +317,7 @@ func classifyOpenAIError(err error) error {
 		status == http.StatusUnauthorized,
 		status == http.StatusForbidden,
 		status >= http.StatusInternalServerError:
-		return fmt.Errorf("%w: %w", ErrProviderRetryable, err)
+		return fmt.Errorf("%w: %w", ErrRetryable, err)
 	}
 
 	return fmt.Errorf("provider rejected the request: %w", err)

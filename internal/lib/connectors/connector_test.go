@@ -1,4 +1,4 @@
-package lib_test
+package connectors_test
 
 import (
 	"context"
@@ -6,21 +6,21 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/a-novel/service-genai/internal/lib"
+	"github.com/a-novel/service-genai/internal/lib/connectors"
 )
 
-// syncOnly is an adapter without the Async mode.
+// syncOnly is a connector without the Async mode.
 type syncOnly struct{}
 
 func (syncOnly) Call(context.Context) {}
 
-func TestAdapters(t *testing.T) {
+func TestConnectors(t *testing.T) {
 	t.Parallel()
 
-	openAI, err := lib.NewOpenAI(lib.OpenAIConfig{BaseURL: "https://provider.test/v1", APIKey: "test-key"})
+	openAI, err := connectors.NewOpenAI(connectors.OpenAIConfig{BaseURL: "https://provider.test/v1", APIKey: "test-key"})
 	require.NoError(t, err)
 
-	adapters := lib.Adapters{"openai": openAI, "sync-only": syncOnly{}}
+	registry := connectors.Registry{"openai": openAI, "sync-only": syncOnly{}}
 
 	testCases := []struct {
 		name string
@@ -39,14 +39,14 @@ func TestAdapters(t *testing.T) {
 
 			provider: "another",
 
-			expectErr: lib.ErrProviderUnknown,
+			expectErr: connectors.ErrProviderUnknown,
 		},
 		{
 			name: "Error/ModeUnsupported",
 
 			provider: "sync-only",
 
-			expectErr: lib.ErrModeUnsupported,
+			expectErr: connectors.ErrModeUnsupported,
 		},
 	}
 
@@ -54,16 +54,16 @@ func TestAdapters(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			adapter, err := adapters.Async(testCase.provider)
+			connector, err := registry.Async(testCase.provider)
 			require.ErrorIs(t, err, testCase.expectErr)
 
 			if testCase.expectErr != nil {
-				require.Nil(t, adapter)
+				require.Nil(t, connector)
 
 				return
 			}
 
-			require.Same(t, openAI, adapter)
+			require.Same(t, openAI, connector)
 		})
 	}
 }

@@ -102,7 +102,7 @@ func TestClientGenerationSubmit(t *testing.T) {
 	require.True(t, rerun.GetCreated())
 	require.NotEqual(t, created.GetGeneration().GetId(), rerun.GetGeneration().GetId())
 
-	// A provider no adapter serves cannot run anything.
+	// A provider no connector serves cannot run anything.
 	unknown := submitRequest(owner)
 	unknown.Provider = "unknown"
 	_, err = client.GenerationSubmit(t.Context(), unknown)

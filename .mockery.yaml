@@ -1,9 +1,9 @@
 packages:
-  github.com/a-novel/service-genai/internal/lib:
+  github.com/a-novel/service-genai/internal/lib/connectors:
     config:
       all: true
-      pkgname: libmocks
-      dir: internal/lib/mocks
+      pkgname: connectorsmocks
+      dir: internal/lib/connectors/mocks
       filename: mocks.go
   github.com/a-novel/service-genai/internal/core:
     config:

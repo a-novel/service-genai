@@ -38,7 +38,7 @@ import (
 	"github.com/a-novel/service-genai/internal/dao"
 	"github.com/a-novel/service-genai/internal/handlers"
 	genaiv0 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v0"
-	"github.com/a-novel/service-genai/internal/lib"
+	"github.com/a-novel/service-genai/internal/lib/connectors"
 )
 
 var (
@@ -82,12 +82,12 @@ func main() {
 	// SERVICES
 	// =================================================================================================================
 
-	adapters := lo.Must(newAdapters(cfg))
+	registry := lo.Must(newConnectors(cfg))
 
 	serviceCheck := lo.Must(core.NewGenerationCheck(
 		core.GenerationCheckConfig{Retention: cfg.Retention},
 		cfg.Log,
-		adapters,
+		registry,
 		postgres.NewTransactor(nil),
 		core.GenerationCheckDaos{
 			BeginStart:   dao.NewGenerationBeginStart(),
@@ -103,7 +103,7 @@ func main() {
 
 	serviceSubmit := lo.Must(core.NewGenerationSubmit(
 		core.GenerationSubmitConfig{MaxAttempts: cfg.MaxAttempts, Retention: cfg.Retention, Caps: cfg.Caps},
-		adapters,
+		registry,
 		core.GenerationSubmitDaos{
 			Submit:   dao.NewGenerationSubmit(),
 			Attempts: daoAttemptList,
@@ -307,13 +307,13 @@ func observeLoop(ctx context.Context, name string, loop func()) (err error) {
 	return otel.ReportError(span, fmt.Errorf("%s: %w", name, errLoopExitedUnexpectedly))
 }
 
-// newAdapters builds the adapters the server runs, named by the provider each serves. The
+// newConnectors builds the connectors the server runs, named by the provider each serves. The
 // conformance check builds them the same way, so what the check proves is what the server runs.
-func newAdapters(cfg config.App) (lib.Adapters, error) {
-	openAI, err := lib.NewOpenAI(lib.OpenAIConfig{BaseURL: cfg.OpenAI.BaseURL, APIKey: cfg.OpenAI.APIKey})
+func newConnectors(cfg config.App) (connectors.Registry, error) {
+	openAI, err := connectors.NewOpenAI(connectors.OpenAIConfig{BaseURL: cfg.OpenAI.BaseURL, APIKey: cfg.OpenAI.APIKey})
 	if err != nil {
 		return nil, fmt.Errorf("openai: %w", err)
 	}
 
-	return lib.Adapters{"openai": openAI}, nil
+	return connectors.Registry{"openai": openAI}, nil
 }
