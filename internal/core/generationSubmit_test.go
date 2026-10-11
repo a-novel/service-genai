@@ -45,13 +45,13 @@ func payloadOfSize(size int) func(request *core.GenerationSubmitRequest) {
 	}
 }
 
-// testAdapters serve the test provider in the Async mode, and another provider without it.
-func testAdapters(t *testing.T) lib.Adapters {
+// testConnectors serve the test provider in the Async mode, and another provider without it.
+func testConnectors(t *testing.T) lib.Connectors {
 	t.Helper()
 
-	return lib.Adapters{
-		testProvider: libmocks.NewMockAsyncAdapter(t),
-		"another":    libmocks.NewMockAsyncAdapter(t),
+	return lib.Connectors{
+		testProvider: libmocks.NewMockAsyncConnector(t),
+		"another":    libmocks.NewMockAsyncConnector(t),
 		"sync-only":  struct{}{},
 	}
 }
@@ -432,7 +432,7 @@ func TestGenerationSubmit(t *testing.T) {
 
 			service, err := core.NewGenerationSubmit(
 				core.GenerationSubmitConfig{MaxAttempts: maxAttempts, Retention: time.Hour, Caps: testCaps},
-				testAdapters(t),
+				testConnectors(t),
 				core.GenerationSubmitDaos{Submit: submitDao, Attempts: attemptDao, Usage: usageDao, Settle: settleDao},
 				check,
 			)
@@ -520,7 +520,7 @@ func submittedKey(t *testing.T, request *core.GenerationSubmitRequest) []byte {
 
 	service, err := core.NewGenerationSubmit(
 		core.GenerationSubmitConfig{MaxAttempts: 1, Retention: time.Hour, Caps: testCaps},
-		testAdapters(t),
+		testConnectors(t),
 		core.GenerationSubmitDaos{Submit: submitDao},
 		coremocks.NewMockGenerationSubmitServiceCheck(t),
 	)
@@ -614,7 +614,7 @@ func TestNewGenerationSubmit(t *testing.T) {
 
 			_, err := core.NewGenerationSubmit(
 				core.GenerationSubmitConfig{MaxAttempts: 1, Retention: time.Hour, Caps: testCase.caps},
-				testAdapters(t),
+				testConnectors(t),
 				core.GenerationSubmitDaos{},
 				coremocks.NewMockGenerationSubmitServiceCheck(t),
 			)

@@ -38,7 +38,7 @@ type Sweep struct {
 	BatchSize int `json:"batchSize" yaml:"batchSize"`
 }
 
-// OpenAI holds how the OpenAI adapter reaches the Responses API.
+// OpenAI holds how the OpenAI connector reaches the Responses API.
 type OpenAI struct {
 	// APIKey authenticates against OpenAI. The only credential this service holds.
 	APIKey string `json:"-" yaml:"-"`

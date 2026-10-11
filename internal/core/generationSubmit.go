@@ -66,7 +66,7 @@ type GenerationSubmitRequest struct {
 	Purpose string `validate:"required,notblank,max=255"`
 	// UserTier selects the caps the user answers to. Empty or unrecognized, it selects the default.
 	UserTier string `validate:"max=255"`
-	// Provider names the service to run the call on. It must have an adapter offering the Async
+	// Provider names the service to run the call on. It must have a connector offering the Async
 	// mode.
 	Provider string `validate:"required"`
 	// Payload is the provider's own request, built by the caller: a JSON object this service
@@ -90,10 +90,10 @@ type GenerationSubmitResult struct {
 // as it stands, without checking it: the caller polls it next, and the poll checks it. A failed or
 // cancelled generation does not count, so resending its request runs it again.
 type GenerationSubmit struct {
-	config   GenerationSubmitConfig
-	adapters lib.Adapters
-	daos     GenerationSubmitDaos
-	check    GenerationSubmitServiceCheck
+	config     GenerationSubmitConfig
+	connectors lib.Connectors
+	daos       GenerationSubmitDaos
+	check      GenerationSubmitServiceCheck
 }
 
 // GenerationSubmitDaos are the data-access dependencies of a [GenerationSubmit].
@@ -106,7 +106,7 @@ type GenerationSubmitDaos struct {
 
 func NewGenerationSubmit(
 	config GenerationSubmitConfig,
-	adapters lib.Adapters,
+	connectors lib.Connectors,
 	daos GenerationSubmitDaos,
 	check GenerationSubmitServiceCheck,
 ) (*GenerationSubmit, error) {
@@ -120,7 +120,7 @@ func NewGenerationSubmit(
 		return nil, fmt.Errorf("caps: %w", err)
 	}
 
-	return &GenerationSubmit{config: config, adapters: adapters, daos: daos, check: check}, nil
+	return &GenerationSubmit{config: config, connectors: connectors, daos: daos, check: check}, nil
 }
 
 func (service *GenerationSubmit) Exec(
@@ -217,7 +217,7 @@ func (service *GenerationSubmit) validateRequest(request *GenerationSubmitReques
 		return fmt.Errorf("%w: payload is not a valid I-JSON object (RFC 7493)", ErrInvalidRequest)
 	}
 
-	_, err = service.adapters.Async(request.Provider)
+	_, err = service.connectors.Async(request.Provider)
 	if errors.Is(err, lib.ErrProviderUnknown) {
 		return fmt.Errorf("%w: %w: %q", ErrInvalidRequest, err, request.Provider)
 	}

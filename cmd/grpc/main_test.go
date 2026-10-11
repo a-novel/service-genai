@@ -168,20 +168,20 @@ func TestRunLoopContinuesAfterUnitFailure(t *testing.T) {
 	require.GreaterOrEqual(t, calls.Load(), int32(3))
 }
 
-// TestNewAdapters checks the adapters the server builds against the Async mode's requirements in
+// TestNewConnectors checks the connectors the server builds against the Async mode's requirements in
 // docs/providers.md. It calls the provider and costs money, so it runs only when PROVIDER_CONFORMANCE
-// is true. Run it before changing an adapter or the account it reaches.
-func TestNewAdapters(t *testing.T) {
+// is true. Run it before changing a connector or the account it reaches.
+func TestNewConnectors(t *testing.T) {
 	t.Parallel()
 
 	if os.Getenv("PROVIDER_CONFORMANCE") != "true" {
 		t.Skip("calls the configured provider; set PROVIDER_CONFORMANCE=true to run it")
 	}
 
-	adapters, err := newAdapters(config.AppPresetDefault)
+	connectors, err := newConnectors(config.AppPresetDefault)
 	require.NoError(t, err)
 
-	adapter, err := adapters.Async("openai")
+	connector, err := connectors.Async("openai")
 	require.NoError(t, err)
 
 	// payload is what a caller sends: its own model, effort, schema and privacy fields. The schema
@@ -220,7 +220,7 @@ func TestNewAdapters(t *testing.T) {
 		t.Helper()
 
 		for {
-			call, err := adapter.Get(t.Context(), id)
+			call, err := connector.Get(t.Context(), id)
 			require.NoError(t, err)
 
 			if call.State.Terminal() {
@@ -248,7 +248,7 @@ func TestNewAdapters(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		t.Parallel()
 
-		started, err := adapter.Start(t.Context(), &lib.AsyncStartRequest{Payload: payload("gpt-5.6-luna", "low")})
+		started, err := connector.Start(t.Context(), &lib.AsyncStartRequest{Payload: payload("gpt-5.6-luna", "low")})
 		require.NoError(t, err)
 		// Background mode, with the caller's store: false: the id comes back before the model runs.
 		require.NotEmpty(t, started.ID)
@@ -268,7 +268,7 @@ func TestNewAdapters(t *testing.T) {
 		// Re-attach: the sweep reads an unpolled result within one interval, so it must outlive one.
 		time.Sleep(core.SweepIntervalCeiling)
 
-		again, err := adapter.Get(t.Context(), started.ID)
+		again, err := connector.Get(t.Context(), started.ID)
 		require.NoError(t, err, "result gone %s after it finished", core.SweepIntervalCeiling)
 		require.JSONEq(t, output(t, finished.Response), output(t, again.Response))
 	})
@@ -277,14 +277,14 @@ func TestNewAdapters(t *testing.T) {
 		t.Parallel()
 
 		// A cancel that arrives after the call finished must still return the result: the provider
-		// refuses to cancel it, and the adapter reads it instead.
-		started, err := adapter.Start(t.Context(), &lib.AsyncStartRequest{Payload: payload("gpt-5.6-luna", "low")})
+		// refuses to cancel it, and the connector reads it instead.
+		started, err := connector.Start(t.Context(), &lib.AsyncStartRequest{Payload: payload("gpt-5.6-luna", "low")})
 		require.NoError(t, err)
 
 		finished := await(t, started.ID)
 		require.Equal(t, lib.ProviderCallSucceeded, finished.State, finished.Reason)
 
-		cancelled, err := adapter.Cancel(t.Context(), started.ID)
+		cancelled, err := connector.Cancel(t.Context(), started.ID)
 		require.NoError(t, err)
 		require.Equal(t, lib.ProviderCallSucceeded, cancelled.State)
 		require.JSONEq(t, output(t, finished.Response), output(t, cancelled.Response))
@@ -294,10 +294,10 @@ func TestNewAdapters(t *testing.T) {
 		t.Parallel()
 
 		// A slow model and effort, so the cancel lands while the call still runs.
-		started, err := adapter.Start(t.Context(), &lib.AsyncStartRequest{Payload: payload("gpt-5.6-sol", "high")})
+		started, err := connector.Start(t.Context(), &lib.AsyncStartRequest{Payload: payload("gpt-5.6-sol", "high")})
 		require.NoError(t, err)
 
-		_, err = adapter.Cancel(t.Context(), started.ID)
+		_, err = connector.Cancel(t.Context(), started.ID)
 		require.NoError(t, err)
 		require.Equal(t, lib.ProviderCallCancelled, await(t, started.ID).State)
 	})
@@ -306,7 +306,7 @@ func TestNewAdapters(t *testing.T) {
 		t.Parallel()
 
 		// A request the provider refuses fails before anything runs, with the provider's reason.
-		_, err := adapter.Start(t.Context(), &lib.AsyncStartRequest{Payload: payload("no-such-model", "low")})
+		_, err := connector.Start(t.Context(), &lib.AsyncStartRequest{Payload: payload("no-such-model", "low")})
 
 		var rejection *lib.ProviderRejectionError
 

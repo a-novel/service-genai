@@ -30,7 +30,7 @@ func TestGenerationCheck(t *testing.T) {
 	startFailedMessage := "the provider call could not be started"
 	rejectedMessage := "the provider rejected the request"
 	callFailedMessage := "the provider failed the call"
-	unavailableMessage := "no adapter serves the generation's provider"
+	unavailableMessage := "no connector serves the generation's provider"
 
 	rejectionBody := json.RawMessage(`{"error":{"message":"bad model"}}`)
 
@@ -169,7 +169,7 @@ func TestGenerationCheck(t *testing.T) {
 			expectStatus:     dao.GenerationStatusSucceeded,
 		},
 		{
-			// A deployment dropped the provider's adapter: nothing can run the generation any more.
+			// A deployment dropped the provider's connector: nothing can run the generation any more.
 			name: "Success/ProviderUnavailable",
 
 			generation: withProvider(pendingGeneration(), "gone"),
@@ -410,7 +410,7 @@ func TestGenerationCheck(t *testing.T) {
 
 			generation := testCase.generation
 
-			adapter := libmocks.NewMockAsyncAdapter(t)
+			connector := libmocks.NewMockAsyncConnector(t)
 			beginStart := coremocks.NewMockGenerationCheckBeginStartDao(t)
 			releaseStart := coremocks.NewMockGenerationCheckReleaseStartDao(t)
 			record := coremocks.NewMockGenerationCheckRecordProviderCallDao(t)
@@ -430,8 +430,8 @@ func TestGenerationCheck(t *testing.T) {
 			}
 
 			if testCase.expectStart {
-				// The payload as the caller built it: the adapter writes its own envelope.
-				adapter.EXPECT().
+				// The payload as the caller built it: the connector writes its own envelope.
+				connector.EXPECT().
 					Start(mock.Anything, &lib.AsyncStartRequest{Payload: testPayload}).
 					Return(testCase.start, testCase.startErr)
 			}
@@ -453,14 +453,14 @@ func TestGenerationCheck(t *testing.T) {
 			}
 
 			if testCase.expectStopOrphan {
-				adapter.EXPECT().Cancel(mock.Anything, testCallID).Return(providerCall(lib.ProviderCallCancelled), nil)
+				connector.EXPECT().Cancel(mock.Anything, testCallID).Return(providerCall(lib.ProviderCallCancelled), nil)
 			}
 
 			if testCase.observe != nil || testCase.observeErr != nil {
 				if generation.CancelRequestedAt != nil {
-					adapter.EXPECT().Cancel(mock.Anything, testCallID).Return(testCase.observe, testCase.observeErr)
+					connector.EXPECT().Cancel(mock.Anything, testCallID).Return(testCase.observe, testCase.observeErr)
 				} else {
-					adapter.EXPECT().Get(mock.Anything, testCallID).Return(testCase.observe, testCase.observeErr)
+					connector.EXPECT().Get(mock.Anything, testCallID).Return(testCase.observe, testCase.observeErr)
 				}
 			}
 
@@ -535,7 +535,7 @@ func TestGenerationCheck(t *testing.T) {
 			check, err := core.NewGenerationCheck(
 				core.GenerationCheckConfig{Retention: retention},
 				discardLogger{},
-				lib.Adapters{testProvider: adapter},
+				lib.Connectors{testProvider: connector},
 				transactiontest.NewTransactor(),
 				core.GenerationCheckDaos{
 					BeginStart: beginStart, ReleaseStart: releaseStart, Record: record, Settle: settleDao,
@@ -554,7 +554,7 @@ func TestGenerationCheck(t *testing.T) {
 			}
 
 			for _, assertable := range []interface{ AssertExpectations(t mock.TestingT) bool }{
-				adapter, beginStart, releaseStart, record, settleDao, requeue, attempt, usage, get,
+				connector, beginStart, releaseStart, record, settleDao, requeue, attempt, usage, get,
 			} {
 				assertable.AssertExpectations(t)
 			}

@@ -12,8 +12,8 @@ No process holds a generation. A **check** looks at one generation and applies w
 
 | Generation                                        | Transition                                                                                                                                  |
 | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| Its provider has no adapter any more              | Settle `failed`: nothing can run or read its calls.                                                                                         |
-| Pending, due, not cancelled                       | Record start intent, send the payload through the adapter, record the call's id.                                                            |
+| Its provider has no connector any more            | Settle `failed`: nothing can run or read its calls.                                                                                         |
+| Pending, due, not cancelled                       | Record start intent, send the payload through the connector, record the call's id.                                                          |
 | Provider call known                               | Ask the provider once (cancel it if requested). Settle with its answer when terminal, or requeue a retryable failure while attempts remain. |
 | Start intent without an id, older than 30 seconds | Settle `failed`: the provider may have accepted the call, so its outcome is unknown. Nothing restarts it.                                   |
 | Pending with cancellation requested               | Settle `cancelled`.                                                                                                                         |
@@ -30,6 +30,6 @@ Two losses remain, both rare. A hard kill (SIGKILL, out of memory, host loss) in
 
 ## Providers and keys
 
-A generation runs on the provider named in its submission, through that provider's adapter, until it settles. Its payload is in that provider's format, so it never moves to another provider.
+A generation runs on the provider named in its submission, through that provider's connector, until it settles. Its payload is in that provider's format, so it never moves to another provider.
 
-Rotating the OpenAI key within one account changes `OPENAI_API_KEY` alone: calls in flight stay readable, and nothing is lost. Pointing the adapter at another account or endpoint abandons the calls in flight, since the new credentials cannot read the old account's operations: their next check settles them as lost, and a resend pays again. Make that change while nothing runs, or accept the cost. A deployment that drops an adapter fails the generations still running on its provider.
+Rotating the OpenAI key within one account changes `OPENAI_API_KEY` alone: calls in flight stay readable, and nothing is lost. Pointing the connector at another account or endpoint abandons the calls in flight, since the new credentials cannot read the old account's operations: their next check settles them as lost, and a resend pays again. Make that change while nothing runs, or accept the cost. A deployment that drops a connector fails the generations still running on its provider.

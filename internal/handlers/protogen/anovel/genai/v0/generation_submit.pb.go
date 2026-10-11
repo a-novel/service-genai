@@ -34,7 +34,7 @@ type GenerationSubmitRequest struct {
 	Provider string `protobuf:"bytes,11,opt,name=provider,proto3" json:"provider,omitempty"`
 	// Payload is the provider's own request body: a JSON object the caller builds, which this service
 	// forwards without reading. Required, at most 3,688,000 bytes, and I-JSON (RFC 7493): valid UTF-8,
-	// no unpaired surrogates, no duplicate names in an object. The provider's adapter sets the fields
+	// no unpaired surrogates, no duplicate names in an object. The provider's connector sets the fields
 	// the Async mode needs, such as OpenAI's background and stream, over the payload's own values.
 	Payload []byte `protobuf:"bytes,12,opt,name=payload,proto3" json:"payload,omitempty"`
 	// UserTier is the usage tier the caller assigns its user, such as "premium". It selects the caps

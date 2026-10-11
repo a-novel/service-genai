@@ -24,7 +24,7 @@ It is an execution service, not a proxy. The caller holds no connection while th
 
 Five things shape the contract:
 
-**The caller builds the request.** A submission names why it is made (its `purpose`, in the caller's own vocabulary) and a provider (`openai` today), and carries the payload: the provider's own request body, as raw JSON. The model, the prompt, the output schema, the limits and the privacy fields such as `store` belong to the caller. The provider's adapter writes only the fields the execution mode needs, and authenticates with the platform's only provider credential. Calls run in the Async mode: the provider accepts the call and runs it on its side while the caller polls.
+**The caller builds the request.** A submission names why it is made (its `purpose`, in the caller's own vocabulary) and a provider (`openai` today), and carries the payload: the provider's own request body, as raw JSON. The model, the prompt, the output schema, the limits and the privacy fields such as `store` belong to the caller. The provider's connector writes only the fields the execution mode needs, and authenticates with the platform's only provider credential. Calls run in the Async mode: the provider accepts the call and runs it on its side while the caller polls.
 
 **A resend is a replay.** The service derives each generation's key from its owner, its purpose, its provider and its payload, so a caller that lost its connection or crashed sends the same request again and gets the same generation back, running or finished. It keeps no key of its own; the same bytes are the same call. A failed or cancelled generation is not served again: resending its request runs it from scratch. To ask for another result of a request that succeeded, send it with the next `variant`.
 
@@ -127,9 +127,9 @@ Every variable is read from the process environment. Names can be globally prefi
 | `OPENAI_API_KEY`       | OpenAI credential. **Required; inject it as a secret.** The server refuses to start without it. No caller holds one.          | `grpc`, `standalone-grpc` |
 
 <details>
-<summary>Optional configuration (OpenAI adapter, checks, retention, gRPC, connection pool, OpenTelemetry)</summary>
+<summary>Optional configuration (OpenAI connector, checks, retention, gRPC, connection pool, OpenTelemetry)</summary>
 
-OpenAI adapter (images `grpc`, `standalone-grpc`). The endpoint must meet the [provider requirements](./docs/providers.md), which a conformance check verifies. The OpenAI SDK also reads `OPENAI_ORG_ID`, `OPENAI_PROJECT_ID` and `OPENAI_CUSTOM_HEADERS` from the environment, never prefixed; leave them unset unless the account needs them.
+OpenAI connector (images `grpc`, `standalone-grpc`). The endpoint must meet the [provider requirements](./docs/providers.md), which a conformance check verifies. The OpenAI SDK also reads `OPENAI_ORG_ID`, `OPENAI_PROJECT_ID` and `OPENAI_CUSTOM_HEADERS` from the environment, never prefixed; leave them unset unless the account needs them.
 
 | Name              | Description             | Default                      |
 | ----------------- | ----------------------- | ---------------------------- |

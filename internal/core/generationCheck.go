@@ -89,7 +89,7 @@ type GenerationCheckRequest struct {
 type GenerationCheck struct {
 	config     GenerationCheckConfig
 	logger     GenerationCheckLogger
-	adapters   lib.Adapters
+	connectors lib.Connectors
 	transactor transaction.Transactor
 	daos       GenerationCheckDaos
 }
@@ -97,7 +97,7 @@ type GenerationCheck struct {
 func NewGenerationCheck(
 	config GenerationCheckConfig,
 	logger GenerationCheckLogger,
-	adapters lib.Adapters,
+	connectors lib.Connectors,
 	transactor transaction.Transactor,
 	daos GenerationCheckDaos,
 ) (*GenerationCheck, error) {
@@ -111,7 +111,7 @@ func NewGenerationCheck(
 	}
 
 	return &GenerationCheck{
-		config: config, logger: logger, adapters: adapters, transactor: transactor, daos: daos,
+		config: config, logger: logger, connectors: connectors, transactor: transactor, daos: daos,
 	}, nil
 }
 
@@ -158,7 +158,7 @@ func (service *GenerationCheck) Exec(
 	return checked, nil
 }
 
-// providerUnavailable settles a generation no adapter runs any more, as a deployment that drops a
+// providerUnavailable settles a generation no connector runs any more, as a deployment that drops a
 // provider leaves it: it cannot progress.
 func (service *GenerationCheck) providerUnavailable(
 	ctx context.Context, generation *dao.Generation, cause error,
@@ -181,7 +181,7 @@ func (service *GenerationCheck) start(ctx context.Context, generation *dao.Gener
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(start)")
 	defer span.End()
 
-	adapter, err := service.adapters.Async(generation.Provider)
+	connector, err := service.connectors.Async(generation.Provider)
 	if err != nil {
 		settled, settleErr := service.providerUnavailable(ctx, generation, err)
 		if settleErr != nil {
@@ -219,7 +219,7 @@ func (service *GenerationCheck) start(ctx context.Context, generation *dao.Gener
 		return released, nil
 	}
 
-	call, err := adapter.Start(startCtx, &lib.AsyncStartRequest{Payload: intent.Payload})
+	call, err := connector.Start(startCtx, &lib.AsyncStartRequest{Payload: intent.Payload})
 	if err != nil {
 		failed, failErr := service.failStart(ctx, intent, err)
 		if failErr != nil {
@@ -239,7 +239,7 @@ func (service *GenerationCheck) start(ctx context.Context, generation *dao.Gener
 		// The generation settled while the start was in flight, or the write failed and may not have
 		// landed. An accepted call the generation does not carry belongs to nothing.
 		if errors.Is(err, dao.ErrGenerationChanged) || !service.carriesCall(ctx, intent, call.ID) {
-			service.stopOrphan(ctx, adapter, intent, call.ID)
+			service.stopOrphan(ctx, connector, intent, call.ID)
 		}
 
 		return nil, otel.ReportError(span, fmt.Errorf("record provider call: %w", err))
@@ -357,7 +357,7 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(observe)")
 	defer span.End()
 
-	adapter, err := service.adapters.Async(generation.Provider)
+	connector, err := service.connectors.Async(generation.Provider)
 	if err != nil {
 		settled, settleErr := service.providerUnavailable(ctx, generation, err)
 		if settleErr != nil {
@@ -370,9 +370,9 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 	var call *lib.ProviderCall
 
 	if generation.CancelRequestedAt != nil {
-		call, err = adapter.Cancel(ctx, *generation.ProviderCallID)
+		call, err = connector.Cancel(ctx, *generation.ProviderCallID)
 	} else {
-		call, err = adapter.Get(ctx, *generation.ProviderCallID)
+		call, err = connector.Get(ctx, *generation.ProviderCallID)
 	}
 
 	if errors.Is(err, lib.ErrProviderRetryable) {
@@ -614,7 +614,7 @@ func (service *GenerationCheck) recordAttempt(
 // stopOrphan cancels an accepted call whose generation settled first. Best effort: a failure is
 // logged, and the call runs to completion unread.
 func (service *GenerationCheck) stopOrphan(
-	ctx context.Context, adapter lib.AsyncAdapter, generation *dao.Generation, callID string,
+	ctx context.Context, connector lib.AsyncConnector, generation *dao.Generation, callID string,
 ) {
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(stopOrphan)")
 	defer span.End()
@@ -622,7 +622,7 @@ func (service *GenerationCheck) stopOrphan(
 	cancelCtx, cancel := context.WithTimeout(ctx, persistenceTimeout)
 	defer cancel()
 
-	_, err := adapter.Cancel(cancelCtx, callID)
+	_, err := connector.Cancel(cancelCtx, callID)
 	if err != nil {
 		service.logger.Err(ctx, fmt.Sprintf(
 			"generation %s attempt %d: stop orphaned provider call %s: %v",
@@ -686,5 +686,5 @@ const (
 	failureStartFailed         = "the provider call could not be started"
 	failureCallFailed          = "the provider failed the call"
 	failureRejected            = "the provider rejected the request"
-	failureProviderUnavailable = "no adapter serves the generation's provider"
+	failureProviderUnavailable = "no connector serves the generation's provider"
 )

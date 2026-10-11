@@ -30,10 +30,10 @@ const readTimeout = 10 * time.Second
 // readOptions make a read a single bounded attempt: the next check is the retry.
 var readOptions = []option.RequestOption{option.WithMaxRetries(0), option.WithRequestTimeout(readTimeout)}
 
-// ErrProviderNotConfigured is returned when the adapter has no endpoint or no credentials.
+// ErrProviderNotConfigured is returned when the connector has no endpoint or no credentials.
 var ErrProviderNotConfigured = errors.New("provider base URL and API key are required")
 
-// OpenAIConfig is how the adapter reaches the Responses API. Any endpoint serving it fits.
+// OpenAIConfig is how the connector reaches the Responses API. Any endpoint serving it fits.
 type OpenAIConfig struct {
 	BaseURL string
 	APIKey  string

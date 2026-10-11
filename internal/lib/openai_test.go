@@ -56,7 +56,7 @@ func (script *scriptedProvider) serve(t *testing.T) *httptest.Server {
 	return server
 }
 
-// testConfig points the adapter at the given endpoint.
+// testConfig points the connector at the given endpoint.
 func testConfig(baseURL string) lib.OpenAIConfig {
 	return lib.OpenAIConfig{BaseURL: baseURL, APIKey: "test-key"}
 }
@@ -355,7 +355,7 @@ func TestOpenAI(t *testing.T) {
 	}
 }
 
-// The adapter writes the fields the Async mode owns and forwards everything else as the caller wrote
+// The connector writes the fields the Async mode owns and forwards everything else as the caller wrote
 // it.
 func TestOpenAIRequest(t *testing.T) {
 	t.Parallel()

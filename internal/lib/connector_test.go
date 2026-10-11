@@ -9,18 +9,18 @@ import (
 	"github.com/a-novel/service-genai/internal/lib"
 )
 
-// syncOnly is an adapter without the Async mode.
+// syncOnly is a connector without the Async mode.
 type syncOnly struct{}
 
 func (syncOnly) Call(context.Context) {}
 
-func TestAdapters(t *testing.T) {
+func TestConnectors(t *testing.T) {
 	t.Parallel()
 
 	openAI, err := lib.NewOpenAI(lib.OpenAIConfig{BaseURL: "https://provider.test/v1", APIKey: "test-key"})
 	require.NoError(t, err)
 
-	adapters := lib.Adapters{"openai": openAI, "sync-only": syncOnly{}}
+	connectors := lib.Connectors{"openai": openAI, "sync-only": syncOnly{}}
 
 	testCases := []struct {
 		name string
@@ -54,16 +54,16 @@ func TestAdapters(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			adapter, err := adapters.Async(testCase.provider)
+			connector, err := connectors.Async(testCase.provider)
 			require.ErrorIs(t, err, testCase.expectErr)
 
 			if testCase.expectErr != nil {
-				require.Nil(t, adapter)
+				require.Nil(t, connector)
 
 				return
 			}
 
-			require.Same(t, openAI, adapter)
+			require.Same(t, openAI, connector)
 		})
 	}
 }

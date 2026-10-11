@@ -1,5 +1,5 @@
-// Package lib holds the provider adapters: the one place in the platform that talks to a generative
-// AI provider. An adapter owns everything provider-specific; the rest of the service sees only the
+// Package lib holds the provider connectors: the one place in the platform that talks to a generative
+// AI provider. A connector owns everything provider-specific; the rest of the service sees only the
 // mode interfaces declared here.
 package lib
 
@@ -39,9 +39,9 @@ var (
 	// ErrProviderStartAmbiguous means the provider may have accepted paid work without returning its
 	// ID.
 	ErrProviderStartAmbiguous = errors.New("provider start outcome is ambiguous")
-	// ErrProviderUnknown is returned for a provider no adapter serves.
+	// ErrProviderUnknown is returned for a provider no connector serves.
 	ErrProviderUnknown = errors.New("unknown provider")
-	// ErrModeUnsupported is returned for a provider whose adapter does not offer the mode.
+	// ErrModeUnsupported is returned for a provider whose connector does not offer the mode.
 	ErrModeUnsupported = errors.New("provider does not support this mode")
 )
 
@@ -99,17 +99,17 @@ type ProviderCall struct {
 	Retryable bool
 }
 
-// AsyncStartRequest is the input to [AsyncAdapter.Start].
+// AsyncStartRequest is the input to [AsyncConnector.Start].
 type AsyncStartRequest struct {
-	// Payload is the provider's own request, built by the caller. The adapter writes the fields the
+	// Payload is the provider's own request, built by the caller. The connector writes the fields the
 	// Async mode needs over it and reads nothing else.
 	Payload json.RawMessage
 }
 
-// An AsyncAdapter runs calls in the Async mode: the provider accepts a call and runs it on its side,
+// An AsyncConnector runs calls in the Async mode: the provider accepts a call and runs it on its side,
 // and the service reads it back by id. Three operations are all a check needs, which is what lets
 // any provider with an asynchronous API offer the mode.
-type AsyncAdapter interface {
+type AsyncConnector interface {
 	// Start begins an operation and returns as soon as the provider accepts it, without waiting for
 	// the model. The returned ID must be recorded before anything else happens. An
 	// [ErrProviderStartAmbiguous] outcome cannot safely be retried as a new operation.
@@ -121,18 +121,18 @@ type AsyncAdapter interface {
 	Cancel(ctx context.Context, id string) (*ProviderCall, error)
 }
 
-// Adapters names the adapter serving each provider. An adapter offers a mode by implementing the
+// Connectors names the connector serving each provider. A connector offers a mode by implementing the
 // mode's interface, so what a provider supports is decided by its code and cannot be misdeclared.
-type Adapters map[string]any
+type Connectors map[string]any
 
-// Async returns the adapter running the provider's calls in the Async mode.
-func (adapters Adapters) Async(provider string) (AsyncAdapter, error) {
-	adapter, ok := adapters[provider]
+// Async returns the connector running the provider's calls in the Async mode.
+func (connectors Connectors) Async(provider string) (AsyncConnector, error) {
+	connector, ok := connectors[provider]
 	if !ok {
 		return nil, ErrProviderUnknown
 	}
 
-	async, ok := adapter.(AsyncAdapter)
+	async, ok := connector.(AsyncConnector)
 	if !ok {
 		return nil, ErrModeUnsupported
 	}
