@@ -9,6 +9,8 @@ import (
 
 	"github.com/samber/lo"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/a-novel-kit/golib/otel"
 	"github.com/a-novel-kit/golib/transaction"
@@ -119,10 +121,21 @@ func NewGenerationCheck(
 func (service *GenerationCheck) Exec(
 	ctx context.Context, request *GenerationCheckRequest,
 ) (*dao.Generation, error) {
-	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck")
-	defer span.End()
-
 	generation := request.Generation
+
+	// The sweep, or a poll from another request, links back to the request that submitted the
+	// generation. A missing or unreadable trace context extracts as the caller's own, so no link.
+	var options []trace.SpanStartOption
+
+	submitter := trace.SpanContextFromContext(propagation.TraceContext{}.Extract(
+		ctx, propagation.MapCarrier{"traceparent": lo.FromPtr(generation.Traceparent)},
+	))
+	if submitter.TraceID() != trace.SpanContextFromContext(ctx).TraceID() {
+		options = append(options, trace.WithLinks(trace.Link{SpanContext: submitter}))
+	}
+
+	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck", options...)
+	defer span.End()
 
 	span.SetAttributes(attribute.String("generation.id", generation.ID.String()))
 

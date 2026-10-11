@@ -1,13 +1,19 @@
 package core_test
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/a-novel-kit/golib/transaction/transactiontest"
 
@@ -558,6 +564,97 @@ func TestGenerationCheck(t *testing.T) {
 			} {
 				assertable.AssertExpectations(t)
 			}
+		})
+	}
+}
+
+//nolint:paralleltest // Replaces the process-wide tracer provider while checks run.
+func TestGenerationCheckTelemetry(t *testing.T) {
+	submitter := "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+	inCallerTrace := fmt.Sprintf("00-%s-%s-01", testCaller.TraceID(), trace.SpanID{2})
+
+	testCases := []struct {
+		name string
+
+		traceparent *string
+
+		expectLink *string
+	}{
+		{
+			// The sweep, or a poll from another request, links back to the submission.
+			name: "Success/LinksTheSubmittingRequest",
+
+			traceparent: &submitter,
+
+			expectLink: new("0af7651916cd43dd8448eb211c80319c"),
+		},
+		{
+			// The check already runs in the submitting trace, so a link would point at itself.
+			name: "Success/SameTrace",
+
+			traceparent: &inCallerTrace,
+		},
+		{
+			name: "Success/SubmittedOutsideATrace",
+		},
+		{
+			name: "Success/UnreadableTraceContext",
+
+			traceparent: new("not-a-traceparent"),
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			recorder := tracetest.NewSpanRecorder()
+			provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+			previous := otel.GetTracerProvider()
+
+			otel.SetTracerProvider(provider)
+			t.Cleanup(func() {
+				otel.SetTracerProvider(previous)
+				require.NoError(t, provider.Shutdown(context.WithoutCancel(t.Context())))
+			})
+
+			check, err := core.NewGenerationCheck(
+				core.GenerationCheckConfig{Retention: time.Hour},
+				discardLogger{},
+				connectors.Registry{testProvider: connectorsmocks.NewMockAsync(t)},
+				transactiontest.NewTransactor(),
+				core.GenerationCheckDaos{
+					BeginStart:   coremocks.NewMockGenerationCheckBeginStartDao(t),
+					ReleaseStart: coremocks.NewMockGenerationCheckReleaseStartDao(t),
+					Record:       coremocks.NewMockGenerationCheckRecordProviderCallDao(t),
+					Settle:       coremocks.NewMockGenerationCheckSettleDao(t),
+					Requeue:      coremocks.NewMockGenerationCheckRequeueDao(t),
+					Attempt:      coremocks.NewMockGenerationCheckAttemptInsertDao(t),
+					Usage:        coremocks.NewMockGenerationCheckUsageInsertDao(t),
+					Get:          coremocks.NewMockGenerationCheckGetDao(t),
+				},
+			)
+			require.NoError(t, err)
+
+			generation := settledGeneration(dao.GenerationStatusSucceeded)
+			generation.Traceparent = testCase.traceparent
+
+			_, err = check.Exec(
+				trace.ContextWithSpanContext(t.Context(), testCaller), &core.GenerationCheckRequest{Generation: generation},
+			)
+			require.NoError(t, err)
+
+			spans := recorder.Ended()
+			require.Len(t, spans, 1)
+			require.Equal(t, "core.GenerationCheck", spans[0].Name())
+
+			if testCase.expectLink == nil {
+				require.Empty(t, spans[0].Links())
+
+				return
+			}
+
+			require.Len(t, spans[0].Links(), 1)
+			require.Equal(t, *testCase.expectLink, spans[0].Links()[0].SpanContext.TraceID().String())
+			require.True(t, spans[0].Links()[0].SpanContext.IsRemote())
 		})
 	}
 }

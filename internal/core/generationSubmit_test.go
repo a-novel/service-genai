@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/a-novel/service-genai/internal/config"
 	"github.com/a-novel/service-genai/internal/core"
@@ -517,7 +518,10 @@ func TestGenerationSubmit(t *testing.T) {
 							string(request.Payload) == string(testCase.request.Payload) &&
 							request.MaxAttempts == maxAttempts &&
 							len(request.RequestKey) == 32 &&
-							request.ID != uuid.Nil
+							request.ID != uuid.Nil &&
+							// A later check links back to the submitting request through it.
+							request.Traceparent != nil &&
+							strings.Contains(*request.Traceparent, testCaller.TraceID().String())
 					})).
 					Return(testCase.daoMock.resp, testCase.daoMock.err)
 
@@ -544,7 +548,7 @@ func TestGenerationSubmit(t *testing.T) {
 			)
 			require.NoError(t, err)
 
-			result, err := service.Exec(t.Context(), testCase.request)
+			result, err := service.Exec(trace.ContextWithSpanContext(t.Context(), testCaller), testCase.request)
 			require.ErrorIs(t, err, testCase.expectErr)
 
 			if testCase.expectErr != nil {
