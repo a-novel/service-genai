@@ -19,6 +19,8 @@ const (
 	// testProvider is the provider the generations under test run on.
 	testProvider = "openai"
 	testPurpose  = "studio.generation"
+	// testModel is the snapshot a provider reports running.
+	testModel = "a-model-2026-01-01"
 )
 
 var (
@@ -107,6 +109,8 @@ func providerCall(state lib.ProviderCallState) *lib.ProviderCall {
 	call := &lib.ProviderCall{ID: testCallID, State: state}
 	if state.Terminal() {
 		call.Response = testResponse
+		call.Model = testModel
+		call.Usage = &lib.ProviderUsage{InputTokens: 1000, CachedInputTokens: 200, OutputTokens: 500, ReasoningTokens: 100}
 	}
 
 	return call

@@ -55,6 +55,7 @@ func TestGenerationCheck(t *testing.T) {
 		observeErr    error
 		settleErr     error
 		attemptErr    error
+		usageErr      error
 
 		expectStart      bool
 		expectRelease    bool
@@ -64,7 +65,9 @@ func TestGenerationCheck(t *testing.T) {
 		expectRequeue    bool
 		// expectAttempt is the provider answer the attempt records, if any.
 		expectAttempt json.RawMessage
-		expectReread  bool
+		// expectUsage records what the observed call consumed.
+		expectUsage  bool
+		expectReread bool
 		// rereadAs is what the re-read finds, a settled generation unless stated.
 		rereadAs *dao.Generation
 
@@ -224,6 +227,7 @@ func TestGenerationCheck(t *testing.T) {
 
 			expectSettle:  &settle{attempt: 1, callID: &callID, status: dao.GenerationStatusSucceeded},
 			expectAttempt: testResponse,
+			expectUsage:   true,
 			expectStatus:  dao.GenerationStatusSucceeded,
 		},
 		{
@@ -236,6 +240,7 @@ func TestGenerationCheck(t *testing.T) {
 
 			expectSettle:  &settle{attempt: 1, callID: &callID, status: dao.GenerationStatusSucceeded},
 			expectAttempt: testResponse,
+			expectUsage:   true,
 			expectStatus:  dao.GenerationStatusSucceeded,
 		},
 		{
@@ -249,6 +254,7 @@ func TestGenerationCheck(t *testing.T) {
 				attempt: 1, callID: &callID, status: dao.GenerationStatusCancelled, reason: &cancelledReason,
 			},
 			expectAttempt: testResponse,
+			expectUsage:   true,
 			expectStatus:  dao.GenerationStatusCancelled,
 		},
 		{
@@ -261,6 +267,7 @@ func TestGenerationCheck(t *testing.T) {
 				attempt: 1, callID: &callID, status: dao.GenerationStatusFailed, reason: &callFailedMessage,
 			},
 			expectAttempt: testResponse,
+			expectUsage:   true,
 			expectStatus:  dao.GenerationStatusFailed,
 		},
 		{
@@ -271,6 +278,7 @@ func TestGenerationCheck(t *testing.T) {
 
 			expectRequeue: true,
 			expectAttempt: testResponse,
+			expectUsage:   true,
 			expectStatus:  dao.GenerationStatusPending,
 		},
 		{
@@ -283,6 +291,7 @@ func TestGenerationCheck(t *testing.T) {
 				attempt: 2, callID: &callID, status: dao.GenerationStatusFailed, reason: &callFailedMessage,
 			},
 			expectAttempt: testResponse,
+			expectUsage:   true,
 			expectStatus:  dao.GenerationStatusFailed,
 		},
 		{
@@ -356,6 +365,32 @@ func TestGenerationCheck(t *testing.T) {
 			expectErr:    errFoo,
 		},
 		{
+			// The same usage recorded by an earlier settle that did not commit its status is counted once.
+			name: "Success/UsageAlreadyRecorded",
+
+			generation: runningGeneration(1),
+			observe:    providerCall(lib.ProviderCallSucceeded),
+			usageErr:   dao.ErrGenerationUsageExists,
+
+			expectSettle:  &settle{attempt: 1, callID: &callID, status: dao.GenerationStatusSucceeded},
+			expectAttempt: testResponse,
+			expectUsage:   true,
+			expectStatus:  dao.GenerationStatusSucceeded,
+		},
+		{
+			// A billed call nothing counts would leak past every cap: the settle waits for its usage.
+			name: "Error/Usage",
+
+			generation: runningGeneration(1),
+			observe:    providerCall(lib.ProviderCallSucceeded),
+			usageErr:   errFoo,
+
+			expectSettle:  &settle{attempt: 1, callID: &callID, status: dao.GenerationStatusSucceeded},
+			expectAttempt: testResponse,
+			expectUsage:   true,
+			expectErr:     errFoo,
+		},
+		{
 			// The settle and its answer commit together, or not at all.
 			name: "Error/Attempt",
 
@@ -382,6 +417,7 @@ func TestGenerationCheck(t *testing.T) {
 			settleDao := coremocks.NewMockGenerationCheckSettleDao(t)
 			requeue := coremocks.NewMockGenerationCheckRequeueDao(t)
 			attempt := coremocks.NewMockGenerationCheckAttemptInsertDao(t)
+			usage := coremocks.NewMockGenerationCheckUsageInsertDao(t)
 			get := coremocks.NewMockGenerationCheckGetDao(t)
 
 			// The attempt a fresh start takes.
@@ -470,6 +506,23 @@ func TestGenerationCheck(t *testing.T) {
 					Return(&dao.GenerationAttempt{}, testCase.attemptErr)
 			}
 
+			if testCase.expectUsage {
+				usage.EXPECT().
+					Exec(mock.Anything, &dao.GenerationUsageInsertRequest{
+						GenerationID:      generation.ID,
+						Attempt:           generation.Attempt,
+						OwnerID:           generation.OwnerID,
+						Purpose:           generation.Purpose,
+						Provider:          generation.Provider,
+						Model:             &testCase.observe.Model,
+						InputTokens:       testCase.observe.Usage.InputTokens,
+						CachedInputTokens: testCase.observe.Usage.CachedInputTokens,
+						OutputTokens:      testCase.observe.Usage.OutputTokens,
+						ReasoningTokens:   testCase.observe.Usage.ReasoningTokens,
+					}).
+					Return(&dao.GenerationUsage{}, testCase.usageErr)
+			}
+
 			if testCase.expectReread {
 				get.EXPECT().
 					Exec(mock.Anything, &dao.GenerationGetRequest{ID: generation.ID, OwnerID: generation.OwnerID}).
@@ -483,7 +536,7 @@ func TestGenerationCheck(t *testing.T) {
 				transactiontest.NewTransactor(),
 				core.GenerationCheckDaos{
 					BeginStart: beginStart, ReleaseStart: releaseStart, Record: record, Settle: settleDao,
-					Requeue: requeue, Attempt: attempt, Get: get,
+					Requeue: requeue, Attempt: attempt, Usage: usage, Get: get,
 				},
 			)
 			require.NoError(t, err)
@@ -498,7 +551,7 @@ func TestGenerationCheck(t *testing.T) {
 			}
 
 			for _, assertable := range []interface{ AssertExpectations(t mock.TestingT) bool }{
-				adapter, beginStart, releaseStart, record, settleDao, requeue, attempt, get,
+				adapter, beginStart, releaseStart, record, settleDao, requeue, attempt, usage, get,
 			} {
 				assertable.AssertExpectations(t)
 			}

@@ -96,6 +96,7 @@ func main() {
 			Settle:       dao.NewGenerationSettle(),
 			Requeue:      dao.NewGenerationRequeue(),
 			Attempt:      dao.NewGenerationAttemptInsert(),
+			Usage:        dao.NewGenerationUsageInsert(),
 			Get:          daoGet,
 		},
 	))

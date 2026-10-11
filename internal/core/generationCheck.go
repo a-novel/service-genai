@@ -47,6 +47,10 @@ type (
 	GenerationCheckAttemptInsertDao interface {
 		Exec(ctx context.Context, request *dao.GenerationAttemptInsertRequest) (*dao.GenerationAttempt, error)
 	}
+	// GenerationCheckUsageInsertDao records what one attempt consumed.
+	GenerationCheckUsageInsertDao interface {
+		Exec(ctx context.Context, request *dao.GenerationUsageInsertRequest) (*dao.GenerationUsage, error)
+	}
 	// GenerationCheckGetDao re-reads a generation another check moved on.
 	GenerationCheckGetDao interface {
 		Exec(ctx context.Context, request *dao.GenerationGetRequest) (*dao.Generation, error)
@@ -62,6 +66,7 @@ type GenerationCheckDaos struct {
 	Settle       GenerationCheckSettleDao
 	Requeue      GenerationCheckRequeueDao
 	Attempt      GenerationCheckAttemptInsertDao
+	Usage        GenerationCheckUsageInsertDao
 	Get          GenerationCheckGetDao
 }
 
@@ -411,7 +416,7 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 	return settled, nil
 }
 
-// requeue records the failed attempt's answer and authorizes a fresh call, together.
+// requeue records the failed attempt's answer and usage, and authorizes a fresh call, together.
 func (service *GenerationCheck) requeue(
 	ctx context.Context, generation *dao.Generation, call *lib.ProviderCall,
 ) (*dao.Generation, error) {
@@ -435,7 +440,12 @@ func (service *GenerationCheck) requeue(
 			return fmt.Errorf("requeue generation: %w", err)
 		}
 
-		return service.recordAttempt(ctx, generation, call.Response)
+		err = service.recordAttempt(ctx, generation, call.Response)
+		if err != nil {
+			return err
+		}
+
+		return service.recordUsage(ctx, generation, call)
 	})
 	if err != nil {
 		return nil, otel.ReportError(span, err)
@@ -444,9 +454,9 @@ func (service *GenerationCheck) requeue(
 	return requeued, nil
 }
 
-// settle records the outcome and the provider's answer, together.
+// settle records the outcome, the provider's answer and what the call consumed, together.
 //
-// One transaction, because a terminal transition without its answer loses what the call consumed.
+// One transaction, because a terminal transition without its usage is a billed call nothing counts.
 // The provider call happened before and outside it: a transaction held open across a call would pin
 // a pooled connection for its whole duration.
 func (service *GenerationCheck) settle(
@@ -481,7 +491,12 @@ func (service *GenerationCheck) settle(
 			return fmt.Errorf("settle generation: %w", err)
 		}
 
-		return service.recordAttempt(ctx, generation, call.Response)
+		err = service.recordAttempt(ctx, generation, call.Response)
+		if err != nil {
+			return err
+		}
+
+		return service.recordUsage(ctx, generation, call)
 	})
 	if err != nil {
 		return nil, otel.ReportError(span, err)
@@ -527,6 +542,42 @@ func (service *GenerationCheck) settleFailure(
 	}
 
 	return settled, nil
+}
+
+// recordUsage writes the attempt's Usage Record. A call the provider reports no usage for has
+// nothing to count.
+func (service *GenerationCheck) recordUsage(
+	ctx context.Context, generation *dao.Generation, call *lib.ProviderCall,
+) error {
+	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(recordUsage)")
+	defer span.End()
+
+	if call.Usage == nil {
+		return nil
+	}
+
+	_, err := service.daos.Usage.Exec(ctx, &dao.GenerationUsageInsertRequest{
+		GenerationID:      generation.ID,
+		Attempt:           generation.Attempt,
+		OwnerID:           generation.OwnerID,
+		Purpose:           generation.Purpose,
+		Provider:          generation.Provider,
+		Model:             lo.EmptyableToPtr(call.Model),
+		ServiceTier:       lo.EmptyableToPtr(call.ServiceTier),
+		InputTokens:       call.Usage.InputTokens,
+		CachedInputTokens: call.Usage.CachedInputTokens,
+		CacheWriteTokens:  call.Usage.CacheWriteTokens,
+		OutputTokens:      call.Usage.OutputTokens,
+		ReasoningTokens:   call.Usage.ReasoningTokens,
+	})
+
+	// A replay of the same provider result finds the row already there. That is the idempotent
+	// outcome, not a failure.
+	if err != nil && !errors.Is(err, dao.ErrGenerationUsageExists) {
+		return otel.ReportError(span, fmt.Errorf("record usage: %w", err))
+	}
+
+	return nil
 }
 
 // recordAttempt keeps the provider's answer to the generation's current attempt. A call that never
