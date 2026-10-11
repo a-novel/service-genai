@@ -167,7 +167,8 @@ func encodeJSON(value any) (json.RawMessage, error) {
 	return bytes.TrimSuffix(buffer.Bytes(), []byte("\n")), nil
 }
 
-// providerCallOf reads the operation's state off a provider response and keeps the response itself.
+// providerCallOf reads the operation's state, and once terminal its usage, off a provider response,
+// and keeps the response itself.
 //
 // A completed or incomplete response is finished: an output cut at the caller's max_output_tokens,
 // or a refusal, is the caller's to read.
@@ -189,8 +190,24 @@ func providerCallOf(response *responses.Response) *ProviderCall {
 		// cheap, and settling on a status we do not understand throws away work already paid for.
 	}
 
-	if call.State.Terminal() {
-		call.Response = json.RawMessage(response.RawJSON())
+	if !call.State.Terminal() {
+		return call
+	}
+
+	call.Response = json.RawMessage(response.RawJSON())
+	call.Model = response.Model
+	call.ServiceTier = string(response.ServiceTier)
+
+	// Zero tokens is a real answer and not a missing one, so presence is decided by the provider
+	// reporting the field.
+	if response.Usage.JSON.TotalTokens.Valid() {
+		call.Usage = &ProviderUsage{
+			InputTokens:       response.Usage.InputTokens,
+			CachedInputTokens: response.Usage.InputTokensDetails.CachedTokens,
+			CacheWriteTokens:  response.Usage.InputTokensDetails.CacheWriteTokens,
+			OutputTokens:      response.Usage.OutputTokens,
+			ReasoningTokens:   response.Usage.OutputTokensDetails.ReasoningTokens,
+		}
 	}
 
 	return call

@@ -97,7 +97,13 @@ func response(status string, extra string) string {
 	return body + "}"
 }
 
-const testRefusal = `"output": [{"type": "message", "content": [{"type": "refusal", "refusal": "no"}]}]`
+const (
+	testRefusal = `"output": [{"type": "message", "content": [{"type": "refusal", "refusal": "no"}]}]`
+	testUsage   = `"service_tier": "flex", "usage": {
+		"input_tokens": 1000, "input_tokens_details": {"cached_tokens": 200, "cache_write_tokens": 300},
+		"output_tokens": 500, "output_tokens_details": {"reasoning_tokens": 100}, "total_tokens": 1500
+	}`
+)
 
 func TestOpenAI(t *testing.T) {
 	t.Parallel()
@@ -108,6 +114,8 @@ func TestOpenAI(t *testing.T) {
 		script *scriptedProvider
 
 		expectState     lib.ProviderCallState
+		expectUsage     *lib.ProviderUsage
+		expectTier      string
 		expectReason    string
 		expectRetryable bool
 		expectErr       error
@@ -121,6 +129,30 @@ func TestOpenAI(t *testing.T) {
 			script: &scriptedProvider{status: http.StatusOK, body: response("completed", "")},
 
 			expectState: lib.ProviderCallSucceeded,
+		},
+		{
+			// What actually ran and what it consumed, read off the response for metering.
+			name: "Success/CompletedWithUsage",
+
+			script: &scriptedProvider{status: http.StatusOK, body: response("completed", testUsage)},
+
+			expectState: lib.ProviderCallSucceeded,
+			expectUsage: &lib.ProviderUsage{
+				InputTokens: 1000, CachedInputTokens: 200, CacheWriteTokens: 300, OutputTokens: 500, ReasoningTokens: 100,
+			},
+			expectTier: "flex",
+		},
+		{
+			// A cancelled call is not a free one.
+			name: "Success/CancelledWithUsage",
+
+			script: &scriptedProvider{status: http.StatusOK, body: response("cancelled", testUsage)},
+
+			expectState: lib.ProviderCallCancelled,
+			expectUsage: &lib.ProviderUsage{
+				InputTokens: 1000, CachedInputTokens: 200, CacheWriteTokens: 300, OutputTokens: 500, ReasoningTokens: 100,
+			},
+			expectTier: "flex",
 		},
 		{
 			// Background mode answers before the model has run: the identifier is recorded now and
@@ -280,14 +312,19 @@ func TestOpenAI(t *testing.T) {
 			require.Equal(t, testCase.expectReason, call.Reason)
 			require.Equal(t, testCase.expectRetryable, call.Retryable)
 
+			require.Equal(t, testCase.expectUsage, call.Usage)
+			require.Equal(t, testCase.expectTier, call.ServiceTier)
+
 			if !call.State.Terminal() {
 				require.Empty(t, call.Response)
+				require.Empty(t, call.Model)
 
 				return
 			}
 
-			// The provider's answer, as it sent it.
+			// The provider's answer, as it sent it, and the snapshot that actually ran.
 			require.Equal(t, testCase.script.body, string(call.Response))
+			require.Equal(t, "gpt-5.6-terra-2026-01-01", call.Model)
 		})
 	}
 }
