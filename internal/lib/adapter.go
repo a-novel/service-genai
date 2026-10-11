@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 )
 
 // ProviderCallState is where a provider operation sits. It is the provider's own lifecycle, not the
@@ -81,11 +82,17 @@ type ProviderCall struct {
 	// Usage is what the operation consumed, read off a terminal response. Absent when the provider
 	// reports none, as for an operation that never reached the model.
 	Usage *ProviderUsage
-	// Model and ServiceTier are what actually ran, read off a terminal response: the model snapshot
-	// and the processing class that set its price. ServiceTier is empty when the provider reports
-	// none.
-	Model       string
-	ServiceTier string
+	// Model, Class and Tier are what actually ran, read off a terminal response: the model snapshot,
+	// the reasoning effort (none when the call did not reason), and the provider's service tier,
+	// which sets the unit price. A terminal call always carries a Model and a Class; Tier is empty
+	// when the provider reports none.
+	Model string
+	Class string
+	Tier  string
+	// StartedAt and CompletedAt are when the provider started and finished the call, by its own
+	// clock. StartedAt is zero, and CompletedAt nil, when the provider reports none.
+	StartedAt   time.Time
+	CompletedAt *time.Time
 	// Reason is the provider's own account of a failure, for server-side logs only.
 	Reason string
 	// Retryable permits a fresh attempt after this failure is recorded.

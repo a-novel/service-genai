@@ -562,13 +562,17 @@ func (service *GenerationCheck) recordUsage(
 		OwnerID:           generation.OwnerID,
 		Purpose:           generation.Purpose,
 		Provider:          generation.Provider,
-		Model:             lo.EmptyableToPtr(call.Model),
-		ServiceTier:       lo.EmptyableToPtr(call.ServiceTier),
+		Model:             call.Model,
+		Class:             call.Class,
+		Tier:              lo.EmptyableToPtr(call.Tier),
 		InputTokens:       call.Usage.InputTokens,
 		CachedInputTokens: call.Usage.CachedInputTokens,
 		CacheWriteTokens:  call.Usage.CacheWriteTokens,
 		OutputTokens:      call.Usage.OutputTokens,
 		ReasoningTokens:   call.Usage.ReasoningTokens,
+		// A provider that reports no start is timed from when this service sent the call.
+		StartedAt:   lo.Ternary(call.StartedAt.IsZero(), lo.FromPtr(generation.StartRequestedAt), call.StartedAt),
+		CompletedAt: call.CompletedAt,
 	})
 
 	// A replay of the same provider result finds the row already there. That is the idempotent

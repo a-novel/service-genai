@@ -89,7 +89,7 @@ func testStartRequest() *lib.AsyncStartRequest {
 // response builds a Responses API body around the given status and extra fields.
 func response(status string, extra string) string {
 	body := `{"id": "resp_1", "status": "` + status + `", "model": "gpt-5.6-terra-2026-01-01",` +
-		` "reasoning": {"effort": "medium"}`
+		` "reasoning": {"effort": "medium"}, "created_at": 1760000000`
 	if extra != "" {
 		body += ", " + extra
 	}
@@ -99,7 +99,7 @@ func response(status string, extra string) string {
 
 const (
 	testRefusal = `"output": [{"type": "message", "content": [{"type": "refusal", "refusal": "no"}]}]`
-	testUsage   = `"service_tier": "flex", "usage": {
+	testUsage   = `"service_tier": "flex", "completed_at": 1760000090.5, "usage": {
 		"input_tokens": 1000, "input_tokens_details": {"cached_tokens": 200, "cache_write_tokens": 300},
 		"output_tokens": 500, "output_tokens_details": {"reasoning_tokens": 100}, "total_tokens": 1500
 	}`
@@ -113,9 +113,13 @@ func TestOpenAI(t *testing.T) {
 
 		script *scriptedProvider
 
-		expectState     lib.ProviderCallState
-		expectUsage     *lib.ProviderUsage
-		expectTier      string
+		expectState lib.ProviderCallState
+		expectUsage *lib.ProviderUsage
+		expectTier  string
+		// expectModel and expectClass default to the scripted response's own.
+		expectModel     string
+		expectClass     string
+		expectCompleted bool
 		expectReason    string
 		expectRetryable bool
 		expectErr       error
@@ -140,7 +144,19 @@ func TestOpenAI(t *testing.T) {
 			expectUsage: &lib.ProviderUsage{
 				InputTokens: 1000, CachedInputTokens: 200, CacheWriteTokens: 300, OutputTokens: 500, ReasoningTokens: 100,
 			},
-			expectTier: "flex",
+			expectTier:      "flex",
+			expectCompleted: true,
+		},
+		{
+			// A model that does not reason reports no effort: the call ran at none.
+			name: "Success/NoReasoning",
+
+			script: &scriptedProvider{status: http.StatusOK, body: `{"id": "resp_1", "status": "completed", ` +
+				`"model": "gpt-5.6-luna-2026-01-01", "created_at": 1760000000}`},
+
+			expectState: lib.ProviderCallSucceeded,
+			expectModel: "gpt-5.6-luna-2026-01-01",
+			expectClass: "none",
 		},
 		{
 			// A cancelled call is not a free one.
@@ -152,7 +168,8 @@ func TestOpenAI(t *testing.T) {
 			expectUsage: &lib.ProviderUsage{
 				InputTokens: 1000, CachedInputTokens: 200, CacheWriteTokens: 300, OutputTokens: 500, ReasoningTokens: 100,
 			},
-			expectTier: "flex",
+			expectTier:      "flex",
+			expectCompleted: true,
 		},
 		{
 			// Background mode answers before the model has run: the identifier is recorded now and
@@ -313,18 +330,27 @@ func TestOpenAI(t *testing.T) {
 			require.Equal(t, testCase.expectRetryable, call.Retryable)
 
 			require.Equal(t, testCase.expectUsage, call.Usage)
-			require.Equal(t, testCase.expectTier, call.ServiceTier)
+			require.Equal(t, testCase.expectTier, call.Tier)
 
 			if !call.State.Terminal() {
 				require.Empty(t, call.Response)
 				require.Empty(t, call.Model)
+				require.Empty(t, call.Class)
 
 				return
 			}
 
-			// The provider's answer, as it sent it, and the snapshot that actually ran.
+			// The provider's answer, as it sent it, and what actually ran, by the provider's clock.
 			require.Equal(t, testCase.script.body, string(call.Response))
-			require.Equal(t, "gpt-5.6-terra-2026-01-01", call.Model)
+			require.Equal(t, lo.CoalesceOrEmpty(testCase.expectModel, "gpt-5.6-terra-2026-01-01"), call.Model)
+			require.Equal(t, lo.CoalesceOrEmpty(testCase.expectClass, "medium"), call.Class)
+			require.Equal(t, time.Unix(1760000000, 0).UTC(), call.StartedAt)
+
+			if testCase.expectCompleted {
+				require.Equal(t, time.Unix(1760000090, 500_000_000).UTC(), *call.CompletedAt)
+			} else {
+				require.Nil(t, call.CompletedAt)
+			}
 		})
 	}
 }

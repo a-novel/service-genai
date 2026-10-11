@@ -20,9 +20,11 @@ type GenerationUsage struct {
 	OwnerID  uuid.UUID `bun:"owner_id,type:uuid"`
 	Purpose  string    `bun:"purpose"`
 	Provider string    `bun:"provider"`
-	// Model and ServiceTier are what the provider's response names; nil when it names none.
-	Model       *string `bun:"model,nullzero"`
-	ServiceTier *string `bun:"service_tier,nullzero"`
+	// Model, Class and Tier are what actually ran: the model snapshot, the reasoning effort, and the
+	// provider's service tier, nil when it reports none.
+	Model string  `bun:"model"`
+	Class string  `bun:"class"`
+	Tier  *string `bun:"tier,nullzero"`
 
 	// Totals include their detail counts, as the provider reports them.
 	InputTokens       int64 `bun:"input_tokens"`
@@ -31,5 +33,9 @@ type GenerationUsage struct {
 	OutputTokens      int64 `bun:"output_tokens"`
 	ReasoningTokens   int64 `bun:"reasoning_tokens"`
 
-	CreatedAt time.Time `bun:"created_at"`
+	// StartedAt and CompletedAt are when the provider started and finished the call. CompletedAt is
+	// nil when the provider reports no completion.
+	StartedAt   time.Time  `bun:"started_at"`
+	CompletedAt *time.Time `bun:"completed_at,nullzero"`
+	CreatedAt   time.Time  `bun:"created_at"`
 }

@@ -7,12 +7,15 @@ INSERT INTO
     purpose,
     provider,
     model,
-    service_tier,
+    class,
+    tier,
     input_tokens,
     cached_input_tokens,
     cache_write_tokens,
     output_tokens,
-    reasoning_tokens
+    reasoning_tokens,
+    started_at,
+    completed_at
   )
 VALUES
   (
@@ -22,10 +25,13 @@ VALUES
     'studio.generation',
     'openai',
     'fixture-model-2026-01-01',
+    'high',
     'default',
     1000,
     200,
     300,
     500,
-    100
+    100,
+    clock_timestamp() - interval '2 minutes',
+    clock_timestamp() - interval '1 minute'
   );

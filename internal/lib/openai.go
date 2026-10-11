@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptrace"
 	"sync/atomic"
@@ -14,6 +15,7 @@ import (
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/responses"
+	"github.com/openai/openai-go/v3/shared"
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/a-novel-kit/golib/otel"
@@ -196,7 +198,22 @@ func providerCallOf(response *responses.Response) *ProviderCall {
 
 	call.Response = json.RawMessage(response.RawJSON())
 	call.Model = response.Model
-	call.ServiceTier = string(response.ServiceTier)
+	call.Class = string(response.Reasoning.Effort)
+	call.Tier = string(response.ServiceTier)
+
+	if response.CreatedAt > 0 {
+		call.StartedAt = unixTime(response.CreatedAt)
+	}
+
+	// A model that does not reason reports no effort.
+	if call.Class == "" {
+		call.Class = string(shared.ReasoningEffortNone)
+	}
+
+	if response.JSON.CompletedAt.Valid() && response.CompletedAt > 0 {
+		completedAt := unixTime(response.CompletedAt)
+		call.CompletedAt = &completedAt
+	}
 
 	// Zero tokens is a real answer and not a missing one, so presence is decided by the provider
 	// reporting the field.
@@ -211,6 +228,13 @@ func providerCallOf(response *responses.Response) *ProviderCall {
 	}
 
 	return call
+}
+
+// unixTime reads the provider's fractional Unix seconds.
+func unixTime(seconds float64) time.Time {
+	whole, fraction := math.Modf(seconds)
+
+	return time.Unix(int64(whole), int64(fraction*float64(time.Second))).UTC()
 }
 
 // retryableFailure reports whether another attempt at a failed call is worth paying for.

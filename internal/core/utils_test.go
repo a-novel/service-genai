@@ -110,6 +110,7 @@ func providerCall(state lib.ProviderCallState) *lib.ProviderCall {
 	if state.Terminal() {
 		call.Response = testResponse
 		call.Model = testModel
+		call.Class = "high"
 		call.Usage = &lib.ProviderUsage{InputTokens: 1000, CachedInputTokens: 200, OutputTokens: 500, ReasoningTokens: 100}
 	}
 

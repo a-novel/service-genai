@@ -6,6 +6,7 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/attribute"
@@ -28,15 +29,19 @@ type GenerationUsageInsertRequest struct {
 	OwnerID      uuid.UUID
 	Purpose      string
 	Provider     string
-	// Model and ServiceTier as the provider's response names them; nil when it names none.
-	Model       *string
-	ServiceTier *string
+	// Model, Class and Tier as the provider's response reports them; Tier is nil when it reports none.
+	Model string
+	Class string
+	Tier  *string
 
 	InputTokens       int64
 	CachedInputTokens int64
 	CacheWriteTokens  int64
 	OutputTokens      int64
 	ReasoningTokens   int64
+
+	StartedAt   time.Time
+	CompletedAt *time.Time
 }
 
 // GenerationUsageInsert records what one answered attempt consumed.
@@ -77,12 +82,15 @@ func (dao *GenerationUsageInsert) Exec(
 		request.Purpose,
 		request.Provider,
 		request.Model,
-		request.ServiceTier,
+		request.Class,
+		request.Tier,
 		request.InputTokens,
 		request.CachedInputTokens,
 		request.CacheWriteTokens,
 		request.OutputTokens,
 		request.ReasoningTokens,
+		request.StartedAt,
+		request.CompletedAt,
 	).Scan(ctx, entity)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

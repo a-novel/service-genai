@@ -8,15 +8,34 @@ INSERT INTO
     purpose,
     provider,
     model,
-    service_tier,
+    class,
+    tier,
     input_tokens,
     cached_input_tokens,
     cache_write_tokens,
     output_tokens,
-    reasoning_tokens
+    reasoning_tokens,
+    started_at,
+    completed_at
   )
 VALUES
-  (?0, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+  (
+    ?0,
+    ?1,
+    ?2,
+    ?3,
+    ?4,
+    ?5,
+    ?6,
+    ?7,
+    ?8,
+    ?9,
+    ?10,
+    ?11,
+    ?12,
+    ?13,
+    ?14
+  )
 ON CONFLICT (generation_id, attempt) DO NOTHING
 RETURNING
   *;

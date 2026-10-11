@@ -509,12 +509,15 @@ func TestGenerationCheck(t *testing.T) {
 			if testCase.expectUsage {
 				usage.EXPECT().
 					Exec(mock.Anything, &dao.GenerationUsageInsertRequest{
-						GenerationID:      generation.ID,
-						Attempt:           generation.Attempt,
-						OwnerID:           generation.OwnerID,
-						Purpose:           generation.Purpose,
-						Provider:          generation.Provider,
-						Model:             &testCase.observe.Model,
+						GenerationID: generation.ID,
+						Attempt:      generation.Attempt,
+						OwnerID:      generation.OwnerID,
+						Purpose:      generation.Purpose,
+						Provider:     generation.Provider,
+						Model:        testCase.observe.Model,
+						Class:        testCase.observe.Class,
+						// The test provider reports no start: the call is timed from when it was sent.
+						StartedAt:         *generation.StartRequestedAt,
 						InputTokens:       testCase.observe.Usage.InputTokens,
 						CachedInputTokens: testCase.observe.Usage.CachedInputTokens,
 						OutputTokens:      testCase.observe.Usage.OutputTokens,

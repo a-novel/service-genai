@@ -258,6 +258,13 @@ func TestNewAdapters(t *testing.T) {
 		require.Equal(t, lib.ProviderCallSucceeded, finished.State, finished.Reason)
 		require.True(t, json.Valid(finished.Response))
 
+		// The usage record needs what ran and what it consumed, on every answered call.
+		require.NotEmpty(t, finished.Model)
+		require.NotEmpty(t, finished.Class)
+		require.False(t, finished.StartedAt.IsZero())
+		require.NotNil(t, finished.Usage)
+		require.Positive(t, finished.Usage.OutputTokens)
+
 		// Re-attach: the sweep reads an unpolled result within one interval, so it must outlive one.
 		time.Sleep(core.SweepIntervalCeiling)
 

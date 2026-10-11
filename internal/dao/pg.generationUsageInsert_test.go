@@ -3,6 +3,7 @@ package dao_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -17,8 +18,9 @@ import (
 func TestGenerationUsageInsert(t *testing.T) {
 	t.Parallel()
 
-	model := "a-model-snapshot"
-	serviceTier := "flex"
+	tier := "flex"
+	startedAt := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	completedAt := startedAt.Add(90 * time.Second)
 
 	testCases := []struct {
 		name string
@@ -34,27 +36,32 @@ func TestGenerationUsageInsert(t *testing.T) {
 			name: "Success",
 
 			usage: &dao.GenerationUsageInsertRequest{
-				Model: &model, ServiceTier: &serviceTier,
+				Model: "a-model-snapshot", Class: "high", Tier: &tier,
 				InputTokens: 1000, CachedInputTokens: 200, CacheWriteTokens: 300,
 				OutputTokens: 500, ReasoningTokens: 100,
+				StartedAt: startedAt, CompletedAt: &completedAt,
 			},
 		},
 		{
-			// A provider that names no model or processing class still has its usage counted.
-			name: "Success/Unnamed",
+			// A provider that reports no tier and no completion still has its usage counted.
+			name: "Success/Unreported",
 
-			usage: &dao.GenerationUsageInsertRequest{InputTokens: 10, OutputTokens: 5},
+			usage: &dao.GenerationUsageInsertRequest{
+				Model: "a-model-snapshot", Class: "none", InputTokens: 10, OutputTokens: 5, StartedAt: startedAt,
+			},
 		},
 		{
 			name: "Success/NoTokens",
 
-			usage: &dao.GenerationUsageInsertRequest{Model: &model},
+			usage: &dao.GenerationUsageInsertRequest{Model: "a-model-snapshot", Class: "low", StartedAt: startedAt},
 		},
 		{
 			name: "Error/AlreadyRecordedForThisAttempt",
 
 			insertTwice: true,
-			usage:       &dao.GenerationUsageInsertRequest{Model: &model, InputTokens: 10, OutputTokens: 5},
+			usage: &dao.GenerationUsageInsertRequest{
+				Model: "a-model-snapshot", Class: "low", InputTokens: 10, OutputTokens: 5, StartedAt: startedAt,
+			},
 
 			expectErr: dao.ErrGenerationUsageExists,
 		},
@@ -94,7 +101,10 @@ func TestGenerationUsageInsert(t *testing.T) {
 
 				require.Equal(t, request.Purpose, usage.Purpose)
 				require.Equal(t, request.Model, usage.Model)
-				require.Equal(t, request.ServiceTier, usage.ServiceTier)
+				require.Equal(t, request.Class, usage.Class)
+				require.Equal(t, request.Tier, usage.Tier)
+				require.True(t, request.StartedAt.Equal(usage.StartedAt))
+				require.Equal(t, request.CompletedAt == nil, usage.CompletedAt == nil)
 				require.Equal(t, request.InputTokens, usage.InputTokens)
 				require.Equal(t, request.CachedInputTokens, usage.CachedInputTokens)
 				require.Equal(t, request.CacheWriteTokens, usage.CacheWriteTokens)

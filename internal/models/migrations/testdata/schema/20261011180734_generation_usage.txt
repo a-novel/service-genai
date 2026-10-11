@@ -1,4 +1,4 @@
-migration-history	sha256:9e90e9a5b0bb655a7edcef5b68d056848ee4534eed2875fcf8fcb408e7a98e46
+migration-history	sha256:cdfd56422e47c4fceb84e8825e1501ed1c56309e6683cc4c0a360abe2f5be680
 column	generation_attempts.attempt	smallint NOT NULL
 column	generation_attempts.created_at	timestamp with time zone NOT NULL DEFAULT clock_timestamp()
 column	generation_attempts.generation_id	uuid NOT NULL
@@ -6,16 +6,19 @@ column	generation_attempts.response	json NOT NULL
 column	generation_usage.attempt	smallint NOT NULL
 column	generation_usage.cache_write_tokens	bigint NOT NULL DEFAULT 0
 column	generation_usage.cached_input_tokens	bigint NOT NULL DEFAULT 0
+column	generation_usage.class	text NOT NULL
+column	generation_usage.completed_at	timestamp with time zone
 column	generation_usage.created_at	timestamp with time zone NOT NULL DEFAULT clock_timestamp()
 column	generation_usage.generation_id	uuid NOT NULL
 column	generation_usage.input_tokens	bigint NOT NULL
-column	generation_usage.model	text
+column	generation_usage.model	text NOT NULL
 column	generation_usage.output_tokens	bigint NOT NULL
 column	generation_usage.owner_id	uuid NOT NULL
 column	generation_usage.provider	text NOT NULL
 column	generation_usage.purpose	text NOT NULL
 column	generation_usage.reasoning_tokens	bigint NOT NULL DEFAULT 0
-column	generation_usage.service_tier	text
+column	generation_usage.started_at	timestamp with time zone NOT NULL
+column	generation_usage.tier	text
 column	generations.attempt	smallint NOT NULL DEFAULT 0
 column	generations.cancel_requested_at	timestamp with time zone
 column	generations.checked_at	timestamp with time zone NOT NULL DEFAULT clock_timestamp()
@@ -50,11 +53,14 @@ constraint	generation_usage.generation_usage_cache_write_tokens_not_null	NOT NUL
 constraint	generation_usage.generation_usage_cached_input_tokens_check	CHECK ((cached_input_tokens >= 0))
 constraint	generation_usage.generation_usage_cached_input_tokens_not_null	NOT NULL cached_input_tokens
 constraint	generation_usage.generation_usage_cached_within_input	CHECK ((cached_input_tokens <= input_tokens))
+constraint	generation_usage.generation_usage_class_check	CHECK ((class <> ''::text))
+constraint	generation_usage.generation_usage_class_not_null	NOT NULL class
 constraint	generation_usage.generation_usage_created_at_not_null	NOT NULL created_at
 constraint	generation_usage.generation_usage_generation_id_not_null	NOT NULL generation_id
 constraint	generation_usage.generation_usage_input_tokens_check	CHECK ((input_tokens >= 0))
 constraint	generation_usage.generation_usage_input_tokens_not_null	NOT NULL input_tokens
-constraint	generation_usage.generation_usage_model_check	CHECK (((model IS NULL) OR (model <> ''::text)))
+constraint	generation_usage.generation_usage_model_check	CHECK ((model <> ''::text))
+constraint	generation_usage.generation_usage_model_not_null	NOT NULL model
 constraint	generation_usage.generation_usage_output_tokens_check	CHECK ((output_tokens >= 0))
 constraint	generation_usage.generation_usage_output_tokens_not_null	NOT NULL output_tokens
 constraint	generation_usage.generation_usage_owner_id_not_null	NOT NULL owner_id
@@ -66,7 +72,8 @@ constraint	generation_usage.generation_usage_purpose_not_null	NOT NULL purpose
 constraint	generation_usage.generation_usage_reasoning_tokens_check	CHECK ((reasoning_tokens >= 0))
 constraint	generation_usage.generation_usage_reasoning_tokens_not_null	NOT NULL reasoning_tokens
 constraint	generation_usage.generation_usage_reasoning_within_output	CHECK ((reasoning_tokens <= output_tokens))
-constraint	generation_usage.generation_usage_service_tier_check	CHECK (((service_tier IS NULL) OR (service_tier <> ''::text)))
+constraint	generation_usage.generation_usage_started_at_not_null	NOT NULL started_at
+constraint	generation_usage.generation_usage_tier_check	CHECK (((tier IS NULL) OR (tier <> ''::text)))
 constraint	generations.generations_attempt_check	CHECK ((attempt >= 0))
 constraint	generations.generations_attempt_not_null	NOT NULL attempt
 constraint	generations.generations_call_matches_status	CHECK (((status <> ALL (ARRAY['pending'::generation_status, 'running'::generation_status])) OR ((status = 'running'::generation_status) = (provider_call_id IS NOT NULL))))
