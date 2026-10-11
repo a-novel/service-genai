@@ -62,6 +62,8 @@ func TestGenerationCheck(t *testing.T) {
 		settleErr     error
 		attemptErr    error
 		usageErr      error
+		// callerGone runs the check for a caller whose call already ended.
+		callerGone bool
 
 		expectStart      bool
 		expectRelease    bool
@@ -303,6 +305,20 @@ func TestGenerationCheck(t *testing.T) {
 			expectStatus:  dao.GenerationStatusFailed,
 		},
 		{
+			// A poll that elected the check stamped the generation: a check cut by the caller's
+			// deadline would leave it stale, so it runs to the end on its own.
+			name: "Success/CallerGone",
+
+			generation: runningGeneration(1),
+			observe:    providerCall(connectors.CallSucceeded),
+			callerGone: true,
+
+			expectSettle:  &settle{attempt: 1, callID: &callID, status: dao.GenerationStatusSucceeded},
+			expectAttempt: testResponse,
+			expectUsage:   true,
+			expectStatus:  dao.GenerationStatusSucceeded,
+		},
+		{
 			name: "Success/RetriesExhausted",
 
 			generation: runningGeneration(2),
@@ -505,7 +521,9 @@ func TestGenerationCheck(t *testing.T) {
 				if generation.CancelRequestedAt != nil {
 					connector.EXPECT().Cancel(mock.Anything, testCallID).Return(testCase.observe, testCase.observeErr)
 				} else {
-					connector.EXPECT().Get(mock.Anything, testCallID).Return(testCase.observe, testCase.observeErr)
+					// The read must run on a live context, whatever became of the caller's.
+					connector.EXPECT().Get(mock.MatchedBy(func(ctx context.Context) bool { return ctx.Err() == nil }), testCallID).
+						Return(testCase.observe, testCase.observeErr)
 				}
 			}
 
@@ -578,7 +596,16 @@ func TestGenerationCheck(t *testing.T) {
 				},
 			)
 
-			result, err := check.Exec(t.Context(), &core.GenerationCheckRequest{Generation: generation})
+			ctx := t.Context()
+
+			if testCase.callerGone {
+				var cancelCaller context.CancelFunc
+
+				ctx, cancelCaller = context.WithCancel(ctx)
+				cancelCaller()
+			}
+
+			result, err := check.Exec(ctx, &core.GenerationCheckRequest{Generation: generation})
 			require.ErrorIs(t, err, testCase.expectErr)
 
 			if testCase.expectErr != nil {
