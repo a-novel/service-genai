@@ -22,7 +22,7 @@ A provider call can take minutes, costs real money, and must never be paid for t
 
 It is an execution service, not a proxy. The caller holds no connection while the provider works: it submits the call, then polls for the result, so the call outlives the caller's request, a restart of either side, and a deploy.
 
-Four things shape the contract:
+Five things shape the contract:
 
 **The caller builds the request.** A submission names why it is made (its `purpose`, in the caller's own vocabulary) and a provider (`openai` today), and carries the payload: the provider's own request body, as raw JSON. The model, the prompt, the output schema, the limits and the privacy fields such as `store` belong to the caller. The provider's adapter writes only the fields the execution mode needs, and authenticates with the platform's only provider credential. Calls run in the Async mode: the provider accepts the call and runs it on its side while the caller polls.
 
@@ -31,6 +31,8 @@ Four things shape the contract:
 **A crash re-attaches instead of re-paying.** The provider's own identifier for an in-flight operation is recorded the moment the call starts, and every later check reads it back. No process holds a generation, so a restart or a deploy loses nothing: the next poll or sweep picks up the operation already paid for. Every accepted call is followed until it settles, whether anyone polls it or not.
 
 **The provider's answers come back as sent.** Each generation lists every attempt that reached an answer, retried and cancelled ones included, with the provider's raw response, which holds the output and the usage. The service also keeps a permanent Usage Record of every answered attempt, with no content: who and what it was for, its token counts, the model, reasoning effort and service tier that ran, and when it started and finished. The generation and its responses are purged after `RETENTION`; the usage stays. A generation that holds no finished response says why in the service's own words, and a request the provider rejected comes back with the provider's error body.
+
+**Usage is capped per purpose and user tier.** The [caps file](./internal/config/caps.config.yaml), built into the image so every change is reviewed, declares each purpose a caller may submit and the token limits each user tier gets over rolling windows; its comments explain every key. Once a user has reached a limit, a submit that would start a new generation answers `RESOURCE_EXHAUSTED`, naming it. An admitted call always finishes, even past its cap, and a resend of a running generation always attaches to it.
 
 The surface is **gRPC only**. Callers are other services on the internal network, so there is no browser client and no REST API to keep in step.
 

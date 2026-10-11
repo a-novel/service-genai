@@ -7,8 +7,10 @@ import "anovel/genai/v0/generation.proto";
 // GenerationSubmitService records a generation and starts it in the Async mode: the call runs on the
 // provider's side while the caller polls GenerationGet. Resending the same request is a replay: it
 // returns the generation already running or succeeded rather than paying again. A request whose
-// generation failed or was cancelled runs again from scratch. An invalid request answers
-// INVALID_ARGUMENT with the reason; a provider without the Async mode answers UNIMPLEMENTED.
+// generation failed or was cancelled runs again from scratch. An invalid request, an undeclared
+// purpose included, answers INVALID_ARGUMENT with the reason; a provider without the Async mode
+// answers UNIMPLEMENTED; a user whose usage already reached a cap answers RESOURCE_EXHAUSTED, naming
+// the cap.
 service GenerationSubmitService {
   rpc GenerationSubmit(GenerationSubmitRequest) returns (GenerationSubmitResponse);
 }
@@ -18,8 +20,8 @@ message GenerationSubmitRequest {
   // OwnerID is the user this acts for, formatted as a UUID. Supplied by the calling service, which
   // verified it against its own credential: this service does not authenticate.
   string owner_id = 1;
-  // Purpose labels why the call is made, such as "studio.generation". Required, at most 255
-  // characters. Each caller names its own purposes.
+  // Purpose labels why the call is made, such as "studio.generation". Required, and declared in the
+  // service's caps file, which sets how much each user may consume for it.
   string purpose = 2;
   // Provider names the service to run the call on, such as "openai". Required.
   string provider = 11;
@@ -28,6 +30,10 @@ message GenerationSubmitRequest {
   // no unpaired surrogates, no duplicate names in an object. The provider's adapter sets the fields
   // the Async mode needs, such as OpenAI's background and stream, over the payload's own values.
   bytes payload = 12;
+  // UserTier is the usage tier the caller assigns its user, such as "premium". It selects the caps
+  // the submit answers to; an empty or unrecognized tier answers to the default caps. Not part of
+  // the request's identity: it changes what the user may spend, not what the call does.
+  string user_tier = 13;
   // Variant asks for another generation of a request that already succeeded, such as a regenerate.
   // Zero by default. A caller recovering from a crash counts variants from zero again, and each one
   // already run returns its stored result.

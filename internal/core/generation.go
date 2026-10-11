@@ -100,4 +100,7 @@ var (
 	// ErrGenerationNotFound is returned when the owner has no such generation. A generation owned by
 	// somebody else reports this too, so an identifier cannot be probed for existence.
 	ErrGenerationNotFound = errors.New("generation not found")
+	// ErrUsageCapReached is returned when the user's usage already reached a cap the submit answers
+	// to. Its message names the cap.
+	ErrUsageCapReached = errors.New("usage cap reached")
 )

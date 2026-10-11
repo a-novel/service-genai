@@ -8,13 +8,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/samber/lo"
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/a-novel-kit/golib/otel"
 
+	"github.com/a-novel/service-genai/internal/config"
 	"github.com/a-novel/service-genai/internal/dao"
 	"github.com/a-novel/service-genai/internal/lib"
 )
@@ -29,6 +34,14 @@ type (
 	GenerationSubmitAttemptListDao interface {
 		Exec(ctx context.Context, request *dao.GenerationAttemptListRequest) ([]*dao.GenerationAttempt, error)
 	}
+	// GenerationSubmitUsageSumDao adds up a user's usage over a window.
+	GenerationSubmitUsageSumDao interface {
+		Exec(ctx context.Context, request *dao.GenerationUsageSumRequest) (*dao.GenerationUsageTotals, error)
+	}
+	// GenerationSubmitSettleDao fails a generation whose user is over a cap, so nothing starts it.
+	GenerationSubmitSettleDao interface {
+		Exec(ctx context.Context, request *dao.GenerationSettleRequest) (*dao.Generation, error)
+	}
 	// GenerationSubmitServiceCheck starts a newly recorded generation.
 	GenerationSubmitServiceCheck interface {
 		Exec(ctx context.Context, request *GenerationCheckRequest) (*dao.Generation, error)
@@ -39,14 +52,20 @@ type (
 type GenerationSubmitConfig struct {
 	// MaxAttempts caps the provider calls a generation gets when a call fails retryably.
 	MaxAttempts int16 `validate:"required,min=1,max=10"`
+	// Retention is how long a settled generation's user content survives before the purge.
+	Retention time.Duration `validate:"required"`
+	// Caps declares every purpose and the usage it allows.
+	Caps config.Caps
 }
 
 // GenerationSubmitRequest holds the parameters for a [GenerationSubmit.Exec] call.
 type GenerationSubmitRequest struct {
 	// OwnerID is the user the generation acts for, supplied by a caller that already verified it.
 	OwnerID uuid.UUID `validate:"required"`
-	// Purpose is why the caller makes the call, up to 255 characters, in the caller's own vocabulary.
+	// Purpose is why the caller makes the call, up to 255 characters. It must be declared in the caps.
 	Purpose string `validate:"required,notblank,max=255"`
+	// UserTier selects the caps the user answers to. Empty or unrecognized, it selects the default.
+	UserTier string `validate:"max=255"`
 	// Provider names the service to run the call on. It must have an adapter offering the Async
 	// mode.
 	Provider string `validate:"required"`
@@ -71,18 +90,24 @@ type GenerationSubmitResult struct {
 // as it stands, without checking it: the caller polls it next, and the poll checks it. A failed or
 // cancelled generation does not count, so resending its request runs it again.
 type GenerationSubmit struct {
-	config     GenerationSubmitConfig
-	adapters   lib.Adapters
-	dao        GenerationSubmitDao
-	attemptDao GenerationSubmitAttemptListDao
-	check      GenerationSubmitServiceCheck
+	config   GenerationSubmitConfig
+	adapters lib.Adapters
+	daos     GenerationSubmitDaos
+	check    GenerationSubmitServiceCheck
+}
+
+// GenerationSubmitDaos are the data-access dependencies of a [GenerationSubmit].
+type GenerationSubmitDaos struct {
+	Submit   GenerationSubmitDao
+	Attempts GenerationSubmitAttemptListDao
+	Usage    GenerationSubmitUsageSumDao
+	Settle   GenerationSubmitSettleDao
 }
 
 func NewGenerationSubmit(
 	config GenerationSubmitConfig,
 	adapters lib.Adapters,
-	submitDao GenerationSubmitDao,
-	attemptDao GenerationSubmitAttemptListDao,
+	daos GenerationSubmitDaos,
 	check GenerationSubmitServiceCheck,
 ) (*GenerationSubmit, error) {
 	err := validate.Struct(config)
@@ -90,9 +115,12 @@ func NewGenerationSubmit(
 		return nil, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 	}
 
-	return &GenerationSubmit{
-		config: config, adapters: adapters, dao: submitDao, attemptDao: attemptDao, check: check,
-	}, nil
+	err = validateCaps(config.Caps)
+	if err != nil {
+		return nil, fmt.Errorf("caps: %w", err)
+	}
+
+	return &GenerationSubmit{config: config, adapters: adapters, daos: daos, check: check}, nil
 }
 
 func (service *GenerationSubmit) Exec(
@@ -118,7 +146,7 @@ func (service *GenerationSubmit) Exec(
 		return nil, otel.ReportError(span, fmt.Errorf("derive request key: %w", err))
 	}
 
-	result, err := service.dao.Exec(ctx, &dao.GenerationSubmitRequest{
+	result, err := service.daos.Submit.Exec(ctx, &dao.GenerationSubmitRequest{
 		// Minted here so the created and replayed cases can be told apart without a second
 		// round-trip. uuidv7 keeps the table's index locality under insert churn.
 		ID:          uuid.Must(uuid.NewV7()),
@@ -138,13 +166,18 @@ func (service *GenerationSubmit) Exec(
 	generation := result.Generation
 
 	if result.Created {
+		err = service.admit(ctx, request, generation)
+		if err != nil {
+			return nil, otel.ReportError(span, err)
+		}
+
 		generation, err = service.check.Exec(ctx, &GenerationCheckRequest{Generation: generation})
 		if err != nil {
 			return nil, otel.ReportError(span, fmt.Errorf("start generation: %w", err))
 		}
 	}
 
-	attempts, err := service.attemptDao.Exec(ctx, &dao.GenerationAttemptListRequest{GenerationID: generation.ID})
+	attempts, err := service.daos.Attempts.Exec(ctx, &dao.GenerationAttemptListRequest{GenerationID: generation.ID})
 	if err != nil {
 		return nil, otel.ReportError(span, fmt.Errorf("list attempts: %w", err))
 	}
@@ -161,6 +194,10 @@ func (service *GenerationSubmit) validateRequest(request *GenerationSubmitReques
 	err := validate.Struct(request)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalidRequest, err)
+	}
+
+	if _, declared := service.config.Caps.Purposes[request.Purpose]; !declared {
+		return fmt.Errorf("%w: purpose %q is not declared in the caps", ErrInvalidRequest, request.Purpose)
 	}
 
 	// A NUL byte cannot be stored in a PostgreSQL text column.
@@ -187,6 +224,132 @@ func (service *GenerationSubmit) validateRequest(request *GenerationSubmitReques
 
 	if err != nil {
 		return fmt.Errorf("provider %q: %w", request.Provider, err)
+	}
+
+	return nil
+}
+
+// admit lets a newly created generation start unless its user's usage already reached a cap it
+// answers to: its purpose's, then the global one, for its tier. Nothing is reserved, so a call
+// admitted under a cap runs to the end past it. A refused generation is settled as failed, so no
+// later check starts it.
+func (service *GenerationSubmit) admit(
+	ctx context.Context, request *GenerationSubmitRequest, generation *dao.Generation,
+) error {
+	ctx, span := otel.Tracer().Start(ctx, "core.GenerationSubmit(admit)")
+	defer span.End()
+
+	refusal, err := service.capReached(ctx, request)
+	if err != nil {
+		return otel.ReportError(span, err)
+	}
+
+	if refusal == "" {
+		return nil
+	}
+
+	message := ErrUsageCapReached.Error() + ": " + refusal
+
+	_, err = service.daos.Settle.Exec(ctx, &dao.GenerationSettleRequest{
+		ID:        generation.ID,
+		Attempt:   generation.Attempt,
+		Status:    dao.GenerationStatusFailed,
+		Error:     &message,
+		Retention: service.config.Retention,
+	})
+	if err != nil {
+		return otel.ReportError(span, fmt.Errorf("settle refused generation: %w", err))
+	}
+
+	return otel.ReportError(span, fmt.Errorf("%w: %s", ErrUsageCapReached, refusal))
+}
+
+// capReached names the first cap the user's usage already reached, or returns empty when none is.
+func (service *GenerationSubmit) capReached(ctx context.Context, request *GenerationSubmitRequest) (string, error) {
+	ctx, span := otel.Tracer().Start(ctx, "core.GenerationSubmit(capReached)")
+	defer span.End()
+
+	scopes := []struct {
+		name      string
+		purpose   *string
+		capOfTier config.Cap
+	}{
+		{
+			name:      fmt.Sprintf("purpose %q", request.Purpose),
+			purpose:   &request.Purpose,
+			capOfTier: service.config.Caps.Purposes[request.Purpose].For(request.UserTier),
+		},
+		{name: "global", capOfTier: service.config.Caps.Global.For(request.UserTier)},
+	}
+
+	for _, scope := range scopes {
+		if scope.capOfTier.Forbidden {
+			return scope.name + " allows no usage", nil
+		}
+
+		for _, window := range slices.Sorted(maps.Keys(scope.capOfTier.Windows)) {
+			limit := scope.capOfTier.Windows[window]
+
+			used, err := service.daos.Usage.Exec(ctx, &dao.GenerationUsageSumRequest{
+				OwnerID: request.OwnerID, Purpose: scope.purpose, Window: window,
+			})
+			if err != nil {
+				return "", otel.ReportError(span, fmt.Errorf("sum usage: %w", err))
+			}
+
+			if reached(limit.InputTokens, used.InputTokens) || reached(limit.OutputTokens, used.OutputTokens) {
+				return fmt.Sprintf("%s over %s", scope.name, window), nil
+			}
+		}
+	}
+
+	return "", nil
+}
+
+func reached(limit *int64, used int64) bool {
+	return limit != nil && used >= *limit
+}
+
+// validateCaps refuses caps a submit could not apply, so a bad file fails startup.
+func validateCaps(caps config.Caps) error {
+	for purpose, tiers := range caps.Purposes {
+		err := validateTierCaps(tiers)
+		if err != nil {
+			return fmt.Errorf("purpose %q: %w", purpose, err)
+		}
+	}
+
+	err := validateTierCaps(caps.Global)
+	if err != nil {
+		return fmt.Errorf("global: %w", err)
+	}
+
+	return nil
+}
+
+func validateTierCaps(tiers config.TierCaps) error {
+	if _, ok := tiers[config.DefaultTier]; !ok {
+		return fmt.Errorf("%w: no %q tier", ErrInvalidRequest, config.DefaultTier)
+	}
+
+	for tier, capOfTier := range tiers {
+		if capOfTier.Unlimited || capOfTier.Forbidden {
+			continue
+		}
+
+		if len(capOfTier.Windows) == 0 {
+			return fmt.Errorf("%w: tier %q declares no window", ErrInvalidRequest, tier)
+		}
+
+		for window, limit := range capOfTier.Windows {
+			if limit.InputTokens == nil && limit.OutputTokens == nil {
+				return fmt.Errorf("%w: tier %q limits nothing over %s", ErrInvalidRequest, tier, window)
+			}
+
+			if lo.FromPtr(limit.InputTokens) < 0 || lo.FromPtr(limit.OutputTokens) < 0 {
+				return fmt.Errorf("%w: tier %q has a negative limit over %s", ErrInvalidRequest, tier, window)
+			}
+		}
 	}
 
 	return nil

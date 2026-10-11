@@ -102,10 +102,14 @@ func main() {
 	))
 
 	serviceSubmit := lo.Must(core.NewGenerationSubmit(
-		core.GenerationSubmitConfig{MaxAttempts: cfg.MaxAttempts},
+		core.GenerationSubmitConfig{MaxAttempts: cfg.MaxAttempts, Retention: cfg.Retention, Caps: cfg.Caps},
 		adapters,
-		dao.NewGenerationSubmit(),
-		daoAttemptList,
+		core.GenerationSubmitDaos{
+			Submit:   dao.NewGenerationSubmit(),
+			Attempts: daoAttemptList,
+			Usage:    dao.NewGenerationUsageSum(),
+			Settle:   dao.NewGenerationSettle(),
+		},
 		serviceCheck,
 	))
 	serviceGet := lo.Must(core.NewGenerationGet(
