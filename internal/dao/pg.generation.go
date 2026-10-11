@@ -28,8 +28,8 @@ const (
 
 // Generation is the durable record of one provider call.
 //
-// Payload, and the attempts recorded against the row, hold user content, so the row is purged on a
-// retention schedule and its attempts with it.
+// Its payload and attempts hold user content, so the row is purged on a retention schedule and they
+// go with it.
 type Generation struct {
 	bun.BaseModel `bun:"table:generations,alias:generations"`
 
@@ -41,8 +41,9 @@ type Generation struct {
 	Provider string `bun:"provider"`
 	// RequestKey identifies the request among live and succeeded generations.
 	RequestKey []byte `bun:"request_key"`
-	// Payload is the provider's own request, built by the caller and stored as sent.
-	Payload json.RawMessage `bun:"payload,type:json"`
+	// Payload is the provider's own request, built by the caller and stored as sent. Only the read
+	// that begins a start carries it.
+	Payload json.RawMessage `bun:"payload,type:json,scanonly"`
 	// Error names the cause of a failure or cancellation in this service's own words.
 	Error *string `bun:"error,nullzero"`
 

@@ -1,5 +1,5 @@
--- Takes the next attempt and records that its call may be sent. The conditions read the row's own
--- state, so of two concurrent checks only the first to commit matches.
+-- Takes the next attempt and records that its call may be sent, with the payload to send. The
+-- conditions read the row's own state, so of two concurrent checks only the first to commit matches.
 UPDATE generations
 SET
   attempt = attempt + 1,
@@ -12,4 +12,12 @@ WHERE
   AND cancel_requested_at IS NULL
   AND run_at <= clock_timestamp()
 RETURNING
-  *;
+  generations.*,
+  (
+    SELECT
+      payload
+    FROM
+      generation_payloads
+    WHERE
+      generation_id = generations.id
+  ) AS payload;

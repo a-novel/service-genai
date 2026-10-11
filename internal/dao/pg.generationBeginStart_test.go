@@ -98,6 +98,7 @@ func TestPgGenerationBeginStart(t *testing.T) {
 				require.Equal(t, int16(1), started.Attempt)
 				require.NotNil(t, started.StartRequestedAt)
 				require.Nil(t, started.ProviderCallID)
+				require.JSONEq(t, `{"model": "a-model"}`, string(started.Payload))
 			})
 		})
 	}
