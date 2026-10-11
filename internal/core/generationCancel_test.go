@@ -33,9 +33,9 @@ func TestGenerationCancel(t *testing.T) {
 
 		daoMock *daoMock
 		// getMock is the owner-scoped read of a generation the cancel could not stop.
-		getMock   *daoMock
-		checkMock *daoMock
-		usageErr  error
+		getMock    *daoMock
+		checkMock  *daoMock
+		attemptErr error
 
 		expectStatus core.GenerationStatus
 		expectErr    error
@@ -70,7 +70,7 @@ func TestGenerationCancel(t *testing.T) {
 		},
 		{
 			// Settled before the cancel arrived, or a cancel retried after its answer was lost: the
-			// generation comes back as it stands, its output and usage included.
+			// generation comes back as it stands, its attempts included.
 			name: "Success/AlreadySettled",
 
 			request: &core.GenerationCancelRequest{ID: generationID, OwnerID: owner},
@@ -105,11 +105,11 @@ func TestGenerationCancel(t *testing.T) {
 			expectErr: errFoo,
 		},
 		{
-			name: "Error/Usage",
+			name: "Error/Attempts",
 
-			request:  &core.GenerationCancelRequest{ID: generationID, OwnerID: owner},
-			daoMock:  &daoMock{resp: settledGeneration(dao.GenerationStatusCancelled)},
-			usageErr: errFoo,
+			request:    &core.GenerationCancelRequest{ID: generationID, OwnerID: owner},
+			daoMock:    &daoMock{resp: settledGeneration(dao.GenerationStatusCancelled)},
+			attemptErr: errFoo,
 
 			expectErr: errFoo,
 		},
@@ -131,7 +131,7 @@ func TestGenerationCancel(t *testing.T) {
 			cancelDao := coremocks.NewMockGenerationCancelDao(t)
 			getDao := coremocks.NewMockGenerationCancelGetDao(t)
 			check := coremocks.NewMockGenerationCancelServiceCheck(t)
-			usageDao := coremocks.NewMockGenerationCancelUsageListDao(t)
+			attemptDao := coremocks.NewMockGenerationCancelAttemptListDao(t)
 
 			if testCase.daoMock != nil {
 				cancelDao.EXPECT().
@@ -156,14 +156,14 @@ func TestGenerationCancel(t *testing.T) {
 					Return(testCase.checkMock.resp, testCase.checkMock.err)
 			}
 
-			if testCase.expectStatus != "" || testCase.usageErr != nil {
-				usageDao.EXPECT().
-					Exec(mock.Anything, &dao.GenerationUsageListRequest{GenerationID: testGenerationID}).
-					Return(testUsageRows(), testCase.usageErr)
+			if testCase.expectStatus != "" || testCase.attemptErr != nil {
+				attemptDao.EXPECT().
+					Exec(mock.Anything, &dao.GenerationAttemptListRequest{GenerationID: testGenerationID}).
+					Return(testAttemptRows(), testCase.attemptErr)
 			}
 
 			service, err := core.NewGenerationCancel(
-				core.GenerationCancelConfig{Retention: retention}, cancelDao, getDao, usageDao, check,
+				core.GenerationCancelConfig{Retention: retention}, cancelDao, getDao, attemptDao, check,
 			)
 			require.NoError(t, err)
 
@@ -174,13 +174,13 @@ func TestGenerationCancel(t *testing.T) {
 				require.Nil(t, result)
 			} else {
 				require.Equal(t, testCase.expectStatus, result.Status)
-				require.Len(t, result.Usage, len(testUsageRows()))
+				require.Equal(t, []*core.GenerationAttempt{{Number: 1, Response: testResponse}}, result.Attempts)
 			}
 
 			cancelDao.AssertExpectations(t)
 			getDao.AssertExpectations(t)
 			check.AssertExpectations(t)
-			usageDao.AssertExpectations(t)
+			attemptDao.AssertExpectations(t)
 		})
 	}
 }

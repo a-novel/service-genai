@@ -21,14 +21,17 @@ type GenerationSubmitRequest struct {
 	// ID the generation takes if this submission creates it. Minted by the caller, so created and
 	// replayed can be told apart without a second round-trip.
 	ID uuid.UUID
-	// OwnerID is the user the generation acts for, and the attribution key for its cost.
+	// OwnerID is the user the generation acts for.
 	OwnerID uuid.UUID
-	// Purpose is what the caller attributes this spend to. Its vocabulary belongs to the caller.
+	// Purpose is why the caller makes the call, in its own vocabulary.
 	Purpose string
+	// Provider names the service the payload is built for.
+	Provider string
 	// RequestKey identifies the request: another submission with the same key is a replay while its
 	// generation is pending, running or succeeded.
-	RequestKey  []byte
-	Request     json.RawMessage
+	RequestKey []byte
+	// Payload is the provider's own request, stored as sent.
+	Payload     json.RawMessage
 	MaxAttempts int16
 }
 
@@ -56,6 +59,7 @@ func (dao *GenerationSubmit) Exec(
 
 	span.SetAttributes(
 		attribute.String("generation.id", request.ID.String()),
+		attribute.String("generation.provider", request.Provider),
 		attribute.Int("generation.max_attempts", int(request.MaxAttempts)),
 	)
 
@@ -71,8 +75,9 @@ func (dao *GenerationSubmit) Exec(
 		request.ID,
 		request.OwnerID,
 		request.Purpose,
+		request.Provider,
 		request.RequestKey,
-		request.Request,
+		request.Payload,
 		request.MaxAttempts,
 	).Scan(ctx, entity)
 	if err != nil {

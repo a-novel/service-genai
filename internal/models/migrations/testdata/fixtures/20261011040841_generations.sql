@@ -1,13 +1,13 @@
--- Seeds one row per lifecycle shape so later migrations carry real data over: unstarted, started
--- without an id yet, running, and settled with its usage.
+-- Seeds one row per lifecycle shape so a later migration carries real data over: unstarted, started
+-- without an id yet, running, and settled with its attempt.
 INSERT INTO
   generations (
     id,
     owner_id,
     purpose,
-    idempotency_key,
-    request_fingerprint,
-    request,
+    provider,
+    request_key,
+    payload,
     status,
     attempt,
     start_requested_at,
@@ -18,9 +18,9 @@ VALUES
     '01999999-0000-7000-8000-000000000001',
     '00000000-0000-0000-0000-000000000001',
     'studio.generation',
-    'fixture-pending',
-    '\x00'::bytea,
-    '{"instructions": "fixture"}'::jsonb,
+    'openai',
+    '\x01'::bytea,
+    '{"model": "fixture"}'::json,
     'pending',
     0,
     NULL,
@@ -30,9 +30,9 @@ VALUES
     '01999999-0000-7000-8000-000000000002',
     '00000000-0000-0000-0000-000000000001',
     'studio.generation',
-    'fixture-starting',
-    '\x00'::bytea,
-    '{"instructions": "fixture"}'::jsonb,
+    'openai',
+    '\x02'::bytea,
+    '{"model": "fixture"}'::json,
     'pending',
     1,
     clock_timestamp(),
@@ -42,9 +42,9 @@ VALUES
     '01999999-0000-7000-8000-000000000003',
     '00000000-0000-0000-0000-000000000001',
     'studio.generation',
-    'fixture-running',
-    '\x00'::bytea,
-    '{"instructions": "fixture"}'::jsonb,
+    'openai',
+    '\x03'::bytea,
+    '{"model": "fixture"}'::json,
     'running',
     1,
     clock_timestamp(),
@@ -56,10 +56,9 @@ INSERT INTO
     id,
     owner_id,
     purpose,
-    idempotency_key,
-    request_fingerprint,
-    request,
-    output,
+    provider,
+    request_key,
+    payload,
     status,
     attempt,
     start_requested_at,
@@ -72,10 +71,9 @@ VALUES
     '01999999-0000-7000-8000-000000000004',
     '00000000-0000-0000-0000-000000000001',
     'studio.generation',
-    'fixture-succeeded',
-    '\x01'::bytea,
-    '{"instructions": "fixture"}'::jsonb,
-    '{"text": "fixture output"}'::jsonb,
+    'openai',
+    '\x04'::bytea,
+    '{"model": "fixture"}'::json,
     'succeeded',
     1,
     clock_timestamp(),
@@ -85,28 +83,10 @@ VALUES
   );
 
 INSERT INTO
-  generation_usage (
-    generation_id,
-    attempt,
-    owner_id,
-    purpose,
-    provider,
-    model,
-    input_tokens,
-    cached_input_tokens,
-    output_tokens,
-    reasoning_tokens
-  )
+  generation_attempts (generation_id, attempt, response)
 VALUES
   (
     '01999999-0000-7000-8000-000000000004',
     1,
-    '00000000-0000-0000-0000-000000000001',
-    'studio.generation',
-    'openai',
-    'fixture-model',
-    1000,
-    200,
-    500,
-    100
+    '{"id": "resp_fixture_done", "status": "completed"}'::json
   );

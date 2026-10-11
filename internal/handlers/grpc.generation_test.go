@@ -11,7 +11,6 @@ import (
 	"github.com/a-novel/service-genai/internal/core"
 	"github.com/a-novel/service-genai/internal/handlers"
 	genaiv0 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v0"
-	"github.com/a-novel/service-genai/internal/lib"
 )
 
 func TestNewGrpcGeneration(t *testing.T) {
@@ -20,9 +19,10 @@ func TestNewGrpcGeneration(t *testing.T) {
 	createdAt := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	settledAt := createdAt.Add(time.Minute)
 	expiresAt := settledAt.Add(time.Hour)
-	refused := lib.FailureRefused
-	message := "the model refused the request"
-	effort := "medium"
+	message := "the provider failed the call"
+
+	failedResponse := `{"id":"resp_1","status":"failed","error":{"code":"server_error"}}`
+	finishedResponse := `{"id":"resp_2","status":"completed","usage":{"output_tokens":5}}`
 
 	testCases := []struct {
 		name string
@@ -35,45 +35,39 @@ func TestNewGrpcGeneration(t *testing.T) {
 			name: "Success/Pending",
 
 			generation: &core.Generation{
-				ID: uuid.MustParse(testGenerationID), OwnerID: uuid.MustParse(testOwnerID), Purpose: "studio.generation",
+				ID: uuid.MustParse(testGenerationID), OwnerID: uuid.MustParse(testOwnerID),
+				Purpose: "studio.generation", Provider: "openai",
 				Status: core.GenerationStatusPending, CreatedAt: createdAt, UpdatedAt: createdAt,
 			},
 
 			expect: &genaiv0.Generation{
-				Id: testGenerationID, OwnerId: testOwnerID, Purpose: "studio.generation",
-				Status: genaiv0.GenerationStatus_GENERATION_STATUS_PENDING, Usage: []*genaiv0.GenerationUsage{},
+				Id: testGenerationID, OwnerId: testOwnerID, Purpose: "studio.generation", Provider: "openai",
+				Status:    genaiv0.GenerationStatus_GENERATION_STATUS_PENDING,
+				Attempts:  []*genaiv0.GenerationAttempt{},
 				CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: "2026-01-01T00:00:00Z",
 			},
 		},
 		{
-			// A failure still reports what it consumed, with the model and effort that actually ran.
-			name: "Success/FailedWithUsage",
+			// A failure still returns every answer the provider gave, and with them what each consumed.
+			name: "Success/FailedWithAttempts",
 
 			generation: &core.Generation{
-				ID: uuid.MustParse(testGenerationID), OwnerID: uuid.MustParse(testOwnerID), Purpose: "studio.generation",
-				Status: core.GenerationStatusFailed, Failure: &refused, Error: &message,
-				Usage: []*core.GenerationUsage{
-					{
-						Attempt: 1, Provider: "openai", Model: "gpt-5.6-terra-2026-01-01", ReasoningEffort: &effort,
-						InputTokens: 1000, CachedInputTokens: 200, CacheWriteTokens: 300, OutputTokens: 500,
-						ReasoningTokens: 100,
-					},
-					{Attempt: 2, Provider: "openai", Model: "gpt-5.6-terra-2026-01-01", InputTokens: 10},
+				ID: uuid.MustParse(testGenerationID), OwnerID: uuid.MustParse(testOwnerID),
+				Purpose: "studio.generation", Provider: "openai",
+				Status: core.GenerationStatusFailed, Error: &message,
+				Attempts: []*core.GenerationAttempt{
+					{Number: 1, Response: json.RawMessage(failedResponse)},
+					{Number: 2, Response: json.RawMessage(failedResponse)},
 				},
 				CreatedAt: createdAt, UpdatedAt: settledAt, SettledAt: &settledAt, ExpiresAt: &expiresAt,
 			},
 
 			expect: &genaiv0.Generation{
-				Id: testGenerationID, OwnerId: testOwnerID, Purpose: "studio.generation",
-				Status:  genaiv0.GenerationStatus_GENERATION_STATUS_FAILED,
-				Failure: genaiv0.GenerationFailure_GENERATION_FAILURE_REFUSED, Error: message,
-				Usage: []*genaiv0.GenerationUsage{
-					{
-						Attempt: 1, Provider: "openai", Model: "gpt-5.6-terra-2026-01-01", ReasoningEffort: "medium",
-						InputTokens: 1000, CachedInputTokens: 200, CacheWriteTokens: 300, OutputTokens: 500,
-						ReasoningTokens: 100,
-					},
-					{Attempt: 2, Provider: "openai", Model: "gpt-5.6-terra-2026-01-01", InputTokens: 10},
+				Id: testGenerationID, OwnerId: testOwnerID, Purpose: "studio.generation", Provider: "openai",
+				Status: genaiv0.GenerationStatus_GENERATION_STATUS_FAILED, Error: message,
+				Attempts: []*genaiv0.GenerationAttempt{
+					{Number: 1, Response: []byte(failedResponse)},
+					{Number: 2, Response: []byte(failedResponse)},
 				},
 				CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: "2026-01-01T00:01:00Z",
 				SettledAt: "2026-01-01T00:01:00Z", ExpiresAt: "2026-01-01T01:01:00Z",
@@ -83,16 +77,17 @@ func TestNewGrpcGeneration(t *testing.T) {
 			name: "Success/Succeeded",
 
 			generation: &core.Generation{
-				ID: uuid.MustParse(testGenerationID), OwnerID: uuid.MustParse(testOwnerID), Purpose: "studio.generation",
-				Status: core.GenerationStatusSucceeded, Output: json.RawMessage(`{"text":"done"}`),
-				Usage:     []*core.GenerationUsage{},
+				ID: uuid.MustParse(testGenerationID), OwnerID: uuid.MustParse(testOwnerID),
+				Purpose: "studio.generation", Provider: "openai",
+				Status:    core.GenerationStatusSucceeded,
+				Attempts:  []*core.GenerationAttempt{{Number: 1, Response: json.RawMessage(finishedResponse)}},
 				CreatedAt: createdAt, UpdatedAt: settledAt, SettledAt: &settledAt, ExpiresAt: &expiresAt,
 			},
 
 			expect: &genaiv0.Generation{
-				Id: testGenerationID, OwnerId: testOwnerID, Purpose: "studio.generation",
-				Status: genaiv0.GenerationStatus_GENERATION_STATUS_SUCCEEDED, Output: []byte(`{"text":"done"}`),
-				Usage:     []*genaiv0.GenerationUsage{},
+				Id: testGenerationID, OwnerId: testOwnerID, Purpose: "studio.generation", Provider: "openai",
+				Status:    genaiv0.GenerationStatus_GENERATION_STATUS_SUCCEEDED,
+				Attempts:  []*genaiv0.GenerationAttempt{{Number: 1, Response: []byte(finishedResponse)}},
 				CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: "2026-01-01T00:01:00Z",
 				SettledAt: "2026-01-01T00:01:00Z", ExpiresAt: "2026-01-01T01:01:00Z",
 			},

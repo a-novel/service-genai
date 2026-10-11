@@ -27,8 +27,6 @@ type GenerationElectCheckRequest struct {
 	OwnerID uuid.UUID
 	// Interval is how long a check stays fresh.
 	Interval time.Duration
-	// ProviderEpoch is the reader's provider configuration. Newer generations are not elected.
-	ProviderEpoch int32
 }
 
 // GenerationElectCheck marks a stale generation checked and returns it, electing the caller to run
@@ -57,7 +55,6 @@ func (dao *GenerationElectCheck) Exec(
 		request.ID,
 		request.OwnerID,
 		request.Interval.Seconds(),
-		request.ProviderEpoch,
 	).Scan(ctx, entity)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

@@ -36,8 +36,9 @@ func (sub submission) build() *dao.GenerationSubmitRequest {
 		ID:          uuid.Must(uuid.NewV7()),
 		OwnerID:     submitOwner,
 		Purpose:     "studio.generation",
+		Provider:    "openai",
 		RequestKey:  []byte("the-request-key"),
-		Request:     json.RawMessage(`{"instructions": "write"}`),
+		Payload:     json.RawMessage(`{"model": "a-model", "input": "write & read"}`),
 		MaxAttempts: 1,
 	}
 
@@ -68,8 +69,8 @@ func settleTo(ctx context.Context, t *testing.T, generation *dao.Generation, sta
 		_, err := dao.NewGenerationSettle().Exec(ctx, &dao.GenerationSettleRequest{
 			ID: running.ID, Attempt: running.Attempt, StartRequestedAt: running.StartRequestedAt,
 			ProviderCallID: running.ProviderCallID,
-			Status:         dao.GenerationStatusSucceeded, Output: json.RawMessage(`{"text": "done"}`),
-			Retention: testRetention,
+			Status:         dao.GenerationStatusSucceeded,
+			Retention:      testRetention,
 		})
 		if err != nil {
 			panic(err)
@@ -174,6 +175,10 @@ func TestGenerationSubmit(t *testing.T) {
 						require.Equalf(t, request.ID, result.Generation.ID, "submission %d", index+1)
 						require.Equal(t, dao.GenerationStatusPending, result.Generation.Status)
 						require.Zero(t, result.Generation.Attempt)
+						require.Equal(t, request.Purpose, result.Generation.Purpose)
+						require.Equal(t, request.Provider, result.Generation.Provider)
+						// Stored as sent: key order and characters reach the provider unchanged.
+						require.Equal(t, string(request.Payload), string(result.Generation.Payload))
 
 						// The database owns these, and a caller must never supply them.
 						require.False(t, result.Generation.CreatedAt.IsZero())

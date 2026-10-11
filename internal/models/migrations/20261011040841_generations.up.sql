@@ -1,6 +1,5 @@
--- generations holds user content and is purged on a retention schedule. generation_usage holds
--- none and is kept, so the consumption record outlives the material it describes. That is why no
--- foreign key joins them: the purge deletes the parent while the usage row must survive.
+-- generations holds the caller's payload and generation_attempts the provider's answers. Both are
+-- user content, so both are purged on a retention schedule, the attempts with their generation.
 CREATE TYPE generation_status AS ENUM(
   'pending',
   'running',
@@ -20,23 +19,23 @@ CREATE TABLE generations (
   /* The user this acts for. Reads are scoped by it inside the statement, so a caller that omits it
   scans nothing rather than another owner's row. */
   owner_id uuid NOT NULL,
+  /* Why the caller makes the call, in the caller's own vocabulary. */
   purpose text NOT NULL CHECK (purpose <> ''),
-  idempotency_key text NOT NULL CHECK (idempotency_key <> ''),
-  /* Digest of the request. A key reused with different content is a conflict, not a replay. */
-  request_fingerprint bytea NOT NULL,
-  /* The provider request, forwarded verbatim. User content, which is why this table is purged. */
-  request jsonb NOT NULL CHECK (jsonb_typeof(request) = 'object'),
-  output jsonb CHECK (
-    output IS NULL
-    OR jsonb_typeof(output) = 'object'
-  ),
+  /* The service the payload is built for. Every attempt runs on it. */
+  provider text NOT NULL CHECK (provider <> ''),
+  /* Digest of the owner, the purpose, the provider, the mode, the payload and the variant, computed
+  by the service, so a caller recovers a generation by resending its request. */
+  request_key bytea NOT NULL,
+  /* The provider's own request, built by the caller. json keeps it as sent, where jsonb would
+  reorder its keys before it reaches the provider. */
+  payload json NOT NULL CHECK (json_typeof(payload) = 'object'),
   error text CHECK (
     error IS NULL
     OR error <> ''
   ),
   status generation_status NOT NULL DEFAULT 'pending',
   /* Numbers the provider calls this generation may have paid for. Recording start intent takes the
-  next number, so each attempt names at most one call and one usage row. */
+  next number, so each attempt names at most one call and one attempt row. */
   attempt smallint NOT NULL DEFAULT 0 CHECK (attempt >= 0),
   max_attempts smallint NOT NULL DEFAULT 1 CHECK (max_attempts >= 1),
   /* Earliest time the next start may be sent, pushed back after a rate limit or a retryable failure. */
@@ -70,8 +69,11 @@ CREATE TABLE generations (
   )
 );
 
--- Scoped to the owner alone. The caller owns its own key space.
-CREATE UNIQUE INDEX generations_idempotency_idx ON generations (owner_id, idempotency_key);
+-- A failed or cancelled generation leaves the index, so resending its request runs it again from
+-- scratch instead of returning the failure.
+CREATE UNIQUE INDEX generations_request_key_idx ON generations (request_key)
+WHERE
+  status NOT IN ('failed', 'cancelled');
 
 -- Partial, so it does not grow as settled rows accumulate.
 CREATE INDEX generations_check_idx ON generations (checked_at)
@@ -92,31 +94,15 @@ SET
     autovacuum_analyze_scale_factor = 0.02
   );
 
--- What each attempt consumed. One row per attempt, because a retry burns tokens twice and both have
--- to be recorded. owner_id and purpose are duplicated rather than joined because the row they would
--- join to is purged.
-CREATE TABLE generation_usage (
-  generation_id uuid NOT NULL,
-  /* One-based: a row exists only once a call has been sent. */
+-- The provider's answer to each attempt. One row per attempt, because a retry or a cancel can be
+-- billed too, and the caller reads what each one consumed from its response.
+CREATE TABLE generation_attempts (
+  generation_id uuid NOT NULL REFERENCES generations (id) ON DELETE CASCADE,
+  /* One-based: a row exists only once a call has been answered. */
   attempt smallint NOT NULL CHECK (attempt >= 1),
-  owner_id uuid NOT NULL,
-  purpose text NOT NULL CHECK (purpose <> ''),
-  /* What actually ran, read back off the provider's response rather than off the request: a
-  provider may serve a different snapshot than the one asked for. */
-  provider text NOT NULL CHECK (provider <> ''),
-  model text NOT NULL CHECK (model <> ''),
-  /* Totals include the detail counts below, mirroring the provider's own accounting. */
-  input_tokens bigint NOT NULL CHECK (input_tokens >= 0),
-  cached_input_tokens bigint NOT NULL DEFAULT 0 CHECK (cached_input_tokens >= 0),
-  output_tokens bigint NOT NULL CHECK (output_tokens >= 0),
-  reasoning_tokens bigint NOT NULL DEFAULT 0 CHECK (reasoning_tokens >= 0),
+  /* The provider's final answer, as sent: the finished response, or the error body of a rejected
+  request. */
+  response json NOT NULL,
   created_at timestamp with time zone NOT NULL DEFAULT clock_timestamp(),
-  CONSTRAINT generation_usage_pkey PRIMARY KEY (generation_id, attempt),
-  -- A count outside its total means the provider's numbers were mapped wrong.
-  CONSTRAINT generation_usage_cached_within_input CHECK (cached_input_tokens <= input_tokens),
-  CONSTRAINT generation_usage_reasoning_within_output CHECK (reasoning_tokens <= output_tokens)
+  CONSTRAINT generation_attempts_pkey PRIMARY KEY (generation_id, attempt)
 );
-
-CREATE INDEX generation_usage_owner_idx ON generation_usage (owner_id, created_at DESC);
-
-CREATE INDEX generation_usage_owner_purpose_idx ON generation_usage (owner_id, purpose, created_at DESC);

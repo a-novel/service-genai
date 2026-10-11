@@ -7,11 +7,9 @@
 UPDATE generations
 SET
   status = ?3,
-  output = ?4,
-  error = ?5,
-  failure = ?7,
+  error = ?4,
   settled_at = settle.at,
-  expires_at = settle.at + make_interval(secs => ?6),
+  expires_at = settle.at + make_interval(secs => ?5),
   updated_at = settle.at
 FROM
   (
@@ -22,7 +20,7 @@ WHERE
   generations.id = ?0
   AND generations.attempt = ?1
   AND generations.provider_call_id IS NOT DISTINCT FROM ?2
-  AND generations.start_requested_at IS NOT DISTINCT FROM ?8
+  AND generations.start_requested_at IS NOT DISTINCT FROM ?6
   AND generations.status IN ('pending', 'running')
 RETURNING
   generations.*;

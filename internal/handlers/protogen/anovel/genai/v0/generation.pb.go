@@ -21,126 +21,6 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// Tier is the level of model capability a caller asks for. This service maps each Tier to a model
-// and a reasoning effort for the configured provider; callers never name a model.
-type Tier int32
-
-const (
-	// TIER_UNSPECIFIED is never valid in a request.
-	Tier_TIER_UNSPECIFIED Tier = 0
-	// TIER_FAST favours latency and cost.
-	Tier_TIER_FAST Tier = 1
-	// TIER_BALANCED trades capability against cost.
-	Tier_TIER_BALANCED Tier = 2
-	// TIER_DEEP favours capability.
-	Tier_TIER_DEEP Tier = 3
-)
-
-// Enum value maps for Tier.
-var (
-	Tier_name = map[int32]string{
-		0: "TIER_UNSPECIFIED",
-		1: "TIER_FAST",
-		2: "TIER_BALANCED",
-		3: "TIER_DEEP",
-	}
-	Tier_value = map[string]int32{
-		"TIER_UNSPECIFIED": 0,
-		"TIER_FAST":        1,
-		"TIER_BALANCED":    2,
-		"TIER_DEEP":        3,
-	}
-)
-
-func (x Tier) Enum() *Tier {
-	p := new(Tier)
-	*p = x
-	return p
-}
-
-func (x Tier) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (Tier) Descriptor() protoreflect.EnumDescriptor {
-	return file_anovel_genai_v0_generation_proto_enumTypes[0].Descriptor()
-}
-
-func (Tier) Type() protoreflect.EnumType {
-	return &file_anovel_genai_v0_generation_proto_enumTypes[0]
-}
-
-func (x Tier) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use Tier.Descriptor instead.
-func (Tier) EnumDescriptor() ([]byte, []int) {
-	return file_anovel_genai_v0_generation_proto_rawDescGZIP(), []int{0}
-}
-
-// GenerationFailure is what kind of failure ended a generation.
-type GenerationFailure int32
-
-const (
-	// GENERATION_FAILURE_UNSPECIFIED means the generation did not fail.
-	GenerationFailure_GENERATION_FAILURE_UNSPECIFIED GenerationFailure = 0
-	// GENERATION_FAILURE_REFUSED means the model or the provider's policy declined the request.
-	GenerationFailure_GENERATION_FAILURE_REFUSED GenerationFailure = 1
-	// GENERATION_FAILURE_INCOMPLETE means the output stopped at the Tier's output ceiling.
-	GenerationFailure_GENERATION_FAILURE_INCOMPLETE GenerationFailure = 2
-	// GENERATION_FAILURE_INVALID_REQUEST means the provider rejected the request before running it,
-	// for example an input over the context window or an unsupported output schema. It cost nothing.
-	GenerationFailure_GENERATION_FAILURE_INVALID_REQUEST GenerationFailure = 3
-	// GENERATION_FAILURE_FAILED is every other failure, including an unknown outcome.
-	GenerationFailure_GENERATION_FAILURE_FAILED GenerationFailure = 4
-)
-
-// Enum value maps for GenerationFailure.
-var (
-	GenerationFailure_name = map[int32]string{
-		0: "GENERATION_FAILURE_UNSPECIFIED",
-		1: "GENERATION_FAILURE_REFUSED",
-		2: "GENERATION_FAILURE_INCOMPLETE",
-		3: "GENERATION_FAILURE_INVALID_REQUEST",
-		4: "GENERATION_FAILURE_FAILED",
-	}
-	GenerationFailure_value = map[string]int32{
-		"GENERATION_FAILURE_UNSPECIFIED":     0,
-		"GENERATION_FAILURE_REFUSED":         1,
-		"GENERATION_FAILURE_INCOMPLETE":      2,
-		"GENERATION_FAILURE_INVALID_REQUEST": 3,
-		"GENERATION_FAILURE_FAILED":          4,
-	}
-)
-
-func (x GenerationFailure) Enum() *GenerationFailure {
-	p := new(GenerationFailure)
-	*p = x
-	return p
-}
-
-func (x GenerationFailure) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (GenerationFailure) Descriptor() protoreflect.EnumDescriptor {
-	return file_anovel_genai_v0_generation_proto_enumTypes[1].Descriptor()
-}
-
-func (GenerationFailure) Type() protoreflect.EnumType {
-	return &file_anovel_genai_v0_generation_proto_enumTypes[1]
-}
-
-func (x GenerationFailure) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use GenerationFailure.Descriptor instead.
-func (GenerationFailure) EnumDescriptor() ([]byte, []int) {
-	return file_anovel_genai_v0_generation_proto_rawDescGZIP(), []int{1}
-}
-
 // GenerationStatus is where a generation sits in its lifecycle.
 type GenerationStatus int32
 
@@ -151,10 +31,12 @@ const (
 	GenerationStatus_GENERATION_STATUS_PENDING GenerationStatus = 1
 	// GENERATION_STATUS_RUNNING means the provider accepted the call and it has not settled yet.
 	GenerationStatus_GENERATION_STATUS_RUNNING GenerationStatus = 2
-	// GENERATION_STATUS_SUCCEEDED means the provider returned a usable output.
+	// GENERATION_STATUS_SUCCEEDED means the provider finished the call. Whether its output is usable
+	// is the caller's reading of the last attempt's response.
 	GenerationStatus_GENERATION_STATUS_SUCCEEDED GenerationStatus = 3
-	// GENERATION_STATUS_FAILED means the generation failed; its failure says how. A resend of the same
-	// request runs again from scratch.
+	// GENERATION_STATUS_FAILED means the generation holds no finished response: the provider rejected
+	// or failed the call, or its outcome is unknown. A resend of the same request runs again from
+	// scratch.
 	GenerationStatus_GENERATION_STATUS_FAILED GenerationStatus = 4
 	// GENERATION_STATUS_CANCELLED means the generation was stopped on the owner's request. A resend of
 	// the same request runs again from scratch.
@@ -192,11 +74,11 @@ func (x GenerationStatus) String() string {
 }
 
 func (GenerationStatus) Descriptor() protoreflect.EnumDescriptor {
-	return file_anovel_genai_v0_generation_proto_enumTypes[2].Descriptor()
+	return file_anovel_genai_v0_generation_proto_enumTypes[0].Descriptor()
 }
 
 func (GenerationStatus) Type() protoreflect.EnumType {
-	return &file_anovel_genai_v0_generation_proto_enumTypes[2]
+	return &file_anovel_genai_v0_generation_proto_enumTypes[0]
 }
 
 func (x GenerationStatus) Number() protoreflect.EnumNumber {
@@ -205,27 +87,25 @@ func (x GenerationStatus) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use GenerationStatus.Descriptor instead.
 func (GenerationStatus) EnumDescriptor() ([]byte, []int) {
-	return file_anovel_genai_v0_generation_proto_rawDescGZIP(), []int{2}
+	return file_anovel_genai_v0_generation_proto_rawDescGZIP(), []int{0}
 }
 
-// A Generation is one AI generative call as this service records it.
+// A Generation is one provider call as this service records it.
 //
-// The caller states what it wants in provider-neutral terms; this service composes the provider call,
-// executes it durably, never pays for it twice, and reports what it consumed.
+// The caller builds the provider's own request; this service executes it durably, never pays for it
+// twice, and returns what the provider answered. It never reads the request or the answers.
 type Generation struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Unique identifier, formatted as a UUID.
 	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	// OwnerID is the user this acts for, formatted as a UUID. Supplied by the calling service.
 	OwnerId string `protobuf:"bytes,2,opt,name=owner_id,json=ownerId,proto3" json:"owner_id,omitempty"`
-	// Purpose is the caller's own label for what this spend is attributed to. Opaque here.
+	// Purpose labels why the call was made, as submitted.
 	Purpose string `protobuf:"bytes,3,opt,name=purpose,proto3" json:"purpose,omitempty"`
 	// Status is where the generation sits in its lifecycle.
 	Status GenerationStatus `protobuf:"varint,4,opt,name=status,proto3,enum=anovel.genai.v0.GenerationStatus" json:"status,omitempty"`
-	// Output is the JSON document conforming to the request's output schema. Empty until it succeeds.
-	Output []byte `protobuf:"bytes,7,opt,name=output,proto3" json:"output,omitempty"`
-	// Error names the cause of a failure in this service's own words. Raw provider details remain in
-	// server-side logs. Empty unless the generation failed or was cancelled.
+	// Error names why the generation failed or was cancelled, in this service's own words. Empty
+	// otherwise.
 	Error string `protobuf:"bytes,8,opt,name=error,proto3" json:"error,omitempty"`
 	// Creation timestamp, formatted as RFC 3339.
 	CreatedAt string `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
@@ -233,14 +113,13 @@ type Generation struct {
 	UpdatedAt string `protobuf:"bytes,10,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	// Timestamp the generation reached a terminal status, formatted as RFC 3339. Empty until then.
 	SettledAt string `protobuf:"bytes,11,opt,name=settled_at,json=settledAt,proto3" json:"settled_at,omitempty"`
-	// Timestamp the settled generation and its usage may be purged, formatted as RFC 3339.
+	// Timestamp the settled generation and its attempts may be purged, formatted as RFC 3339.
 	ExpiresAt string `protobuf:"bytes,12,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
-	// Failure says what kind of failure ended the generation, so the caller can decide what to do.
-	// Unspecified unless the status is failed.
-	Failure GenerationFailure `protobuf:"varint,14,opt,name=failure,proto3,enum=anovel.genai.v0.GenerationFailure" json:"failure,omitempty"`
-	// Usage lists what each provider call consumed, failed ones included, with the model and effort
-	// that actually ran. The caller keeps long-term usage; this record is purged with the generation.
-	Usage         []*GenerationUsage `protobuf:"bytes,15,rep,name=usage,proto3" json:"usage,omitempty"`
+	// Provider names the service the generation runs on, as submitted.
+	Provider string `protobuf:"bytes,16,opt,name=provider,proto3" json:"provider,omitempty"`
+	// Attempts lists every provider call that reached an answer, in order: retried and cancelled ones
+	// as well as the last. The output and the usage are in their responses.
+	Attempts      []*GenerationAttempt `protobuf:"bytes,17,rep,name=attempts,proto3" json:"attempts,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -303,13 +182,6 @@ func (x *Generation) GetStatus() GenerationStatus {
 	return GenerationStatus_GENERATION_STATUS_UNSPECIFIED
 }
 
-func (x *Generation) GetOutput() []byte {
-	if x != nil {
-		return x.Output
-	}
-	return nil
-}
-
 func (x *Generation) GetError() string {
 	if x != nil {
 		return x.Error
@@ -345,57 +217,46 @@ func (x *Generation) GetExpiresAt() string {
 	return ""
 }
 
-func (x *Generation) GetFailure() GenerationFailure {
+func (x *Generation) GetProvider() string {
 	if x != nil {
-		return x.Failure
+		return x.Provider
 	}
-	return GenerationFailure_GENERATION_FAILURE_UNSPECIFIED
+	return ""
 }
 
-func (x *Generation) GetUsage() []*GenerationUsage {
+func (x *Generation) GetAttempts() []*GenerationAttempt {
 	if x != nil {
-		return x.Usage
+		return x.Attempts
 	}
 	return nil
 }
 
-// GenerationUsage is what one provider call consumed. Totals include their detail counts, as the
-// provider counts them.
-type GenerationUsage struct {
+// GenerationAttempt is one provider call that reached an answer.
+type GenerationAttempt struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Attempt numbers the provider call within its generation, from one.
-	Attempt int32 `protobuf:"varint,1,opt,name=attempt,proto3" json:"attempt,omitempty"`
-	// Provider, Model and ReasoningEffort are what actually ran, read off the provider's response
-	// rather than the Tier's preset. ReasoningEffort is empty for a model without one.
-	Provider        string `protobuf:"bytes,2,opt,name=provider,proto3" json:"provider,omitempty"`
-	Model           string `protobuf:"bytes,3,opt,name=model,proto3" json:"model,omitempty"`
-	ReasoningEffort string `protobuf:"bytes,4,opt,name=reasoning_effort,json=reasoningEffort,proto3" json:"reasoning_effort,omitempty"`
-	// Totals include their detail counts, as the provider counts them.
-	InputTokens int64 `protobuf:"varint,5,opt,name=input_tokens,json=inputTokens,proto3" json:"input_tokens,omitempty"`
-	// CachedInputTokens were read from the provider's prompt cache, billed below the input rate.
-	CachedInputTokens int64 `protobuf:"varint,6,opt,name=cached_input_tokens,json=cachedInputTokens,proto3" json:"cached_input_tokens,omitempty"`
-	OutputTokens      int64 `protobuf:"varint,7,opt,name=output_tokens,json=outputTokens,proto3" json:"output_tokens,omitempty"`
-	ReasoningTokens   int64 `protobuf:"varint,8,opt,name=reasoning_tokens,json=reasoningTokens,proto3" json:"reasoning_tokens,omitempty"`
-	// CacheWriteTokens were written to the provider's prompt cache, billed above the input rate.
-	CacheWriteTokens int64 `protobuf:"varint,9,opt,name=cache_write_tokens,json=cacheWriteTokens,proto3" json:"cache_write_tokens,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// Number orders the attempt within its generation, from one.
+	Number int32 `protobuf:"varint,1,opt,name=number,proto3" json:"number,omitempty"`
+	// Response is the provider's final answer to the call, as the provider sent it: the finished
+	// response, or the error body of a request the provider rejected.
+	Response      []byte `protobuf:"bytes,2,opt,name=response,proto3" json:"response,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
-func (x *GenerationUsage) Reset() {
-	*x = GenerationUsage{}
+func (x *GenerationAttempt) Reset() {
+	*x = GenerationAttempt{}
 	mi := &file_anovel_genai_v0_generation_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *GenerationUsage) String() string {
+func (x *GenerationAttempt) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*GenerationUsage) ProtoMessage() {}
+func (*GenerationAttempt) ProtoMessage() {}
 
-func (x *GenerationUsage) ProtoReflect() protoreflect.Message {
+func (x *GenerationAttempt) ProtoReflect() protoreflect.Message {
 	mi := &file_anovel_genai_v0_generation_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -407,86 +268,36 @@ func (x *GenerationUsage) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use GenerationUsage.ProtoReflect.Descriptor instead.
-func (*GenerationUsage) Descriptor() ([]byte, []int) {
+// Deprecated: Use GenerationAttempt.ProtoReflect.Descriptor instead.
+func (*GenerationAttempt) Descriptor() ([]byte, []int) {
 	return file_anovel_genai_v0_generation_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *GenerationUsage) GetAttempt() int32 {
+func (x *GenerationAttempt) GetNumber() int32 {
 	if x != nil {
-		return x.Attempt
+		return x.Number
 	}
 	return 0
 }
 
-func (x *GenerationUsage) GetProvider() string {
+func (x *GenerationAttempt) GetResponse() []byte {
 	if x != nil {
-		return x.Provider
+		return x.Response
 	}
-	return ""
-}
-
-func (x *GenerationUsage) GetModel() string {
-	if x != nil {
-		return x.Model
-	}
-	return ""
-}
-
-func (x *GenerationUsage) GetReasoningEffort() string {
-	if x != nil {
-		return x.ReasoningEffort
-	}
-	return ""
-}
-
-func (x *GenerationUsage) GetInputTokens() int64 {
-	if x != nil {
-		return x.InputTokens
-	}
-	return 0
-}
-
-func (x *GenerationUsage) GetCachedInputTokens() int64 {
-	if x != nil {
-		return x.CachedInputTokens
-	}
-	return 0
-}
-
-func (x *GenerationUsage) GetOutputTokens() int64 {
-	if x != nil {
-		return x.OutputTokens
-	}
-	return 0
-}
-
-func (x *GenerationUsage) GetReasoningTokens() int64 {
-	if x != nil {
-		return x.ReasoningTokens
-	}
-	return 0
-}
-
-func (x *GenerationUsage) GetCacheWriteTokens() int64 {
-	if x != nil {
-		return x.CacheWriteTokens
-	}
-	return 0
+	return nil
 }
 
 var File_anovel_genai_v0_generation_proto protoreflect.FileDescriptor
 
 const file_anovel_genai_v0_generation_proto_rawDesc = "" +
 	"\n" +
-	" anovel/genai/v0/generation.proto\x12\x0fanovel.genai.v0\"\xe7\x03\n" +
+	" anovel/genai/v0/generation.proto\x12\x0fanovel.genai.v0\"\xdf\x03\n" +
 	"\n" +
 	"Generation\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x19\n" +
 	"\bowner_id\x18\x02 \x01(\tR\aownerId\x12\x18\n" +
 	"\apurpose\x18\x03 \x01(\tR\apurpose\x129\n" +
-	"\x06status\x18\x04 \x01(\x0e2!.anovel.genai.v0.GenerationStatusR\x06status\x12\x16\n" +
-	"\x06output\x18\a \x01(\fR\x06output\x12\x14\n" +
+	"\x06status\x18\x04 \x01(\x0e2!.anovel.genai.v0.GenerationStatusR\x06status\x12\x14\n" +
 	"\x05error\x18\b \x01(\tR\x05error\x12\x1d\n" +
 	"\n" +
 	"created_at\x18\t \x01(\tR\tcreatedAt\x12\x1d\n" +
@@ -496,30 +307,12 @@ const file_anovel_genai_v0_generation_proto_rawDesc = "" +
 	"\n" +
 	"settled_at\x18\v \x01(\tR\tsettledAt\x12\x1d\n" +
 	"\n" +
-	"expires_at\x18\f \x01(\tR\texpiresAt\x12<\n" +
-	"\afailure\x18\x0e \x01(\x0e2\".anovel.genai.v0.GenerationFailureR\afailure\x126\n" +
-	"\x05usage\x18\x0f \x03(\v2 .anovel.genai.v0.GenerationUsageR\x05usageJ\x04\b\x05\x10\x06J\x04\b\x06\x10\aJ\x04\b\r\x10\x0eR\aattemptR\fmax_attemptsR\x10provider_call_id\"\xd9\x02\n" +
-	"\x0fGenerationUsage\x12\x18\n" +
-	"\aattempt\x18\x01 \x01(\x05R\aattempt\x12\x1a\n" +
-	"\bprovider\x18\x02 \x01(\tR\bprovider\x12\x14\n" +
-	"\x05model\x18\x03 \x01(\tR\x05model\x12)\n" +
-	"\x10reasoning_effort\x18\x04 \x01(\tR\x0freasoningEffort\x12!\n" +
-	"\finput_tokens\x18\x05 \x01(\x03R\vinputTokens\x12.\n" +
-	"\x13cached_input_tokens\x18\x06 \x01(\x03R\x11cachedInputTokens\x12#\n" +
-	"\routput_tokens\x18\a \x01(\x03R\foutputTokens\x12)\n" +
-	"\x10reasoning_tokens\x18\b \x01(\x03R\x0freasoningTokens\x12,\n" +
-	"\x12cache_write_tokens\x18\t \x01(\x03R\x10cacheWriteTokens*M\n" +
-	"\x04Tier\x12\x14\n" +
-	"\x10TIER_UNSPECIFIED\x10\x00\x12\r\n" +
-	"\tTIER_FAST\x10\x01\x12\x11\n" +
-	"\rTIER_BALANCED\x10\x02\x12\r\n" +
-	"\tTIER_DEEP\x10\x03*\xc1\x01\n" +
-	"\x11GenerationFailure\x12\"\n" +
-	"\x1eGENERATION_FAILURE_UNSPECIFIED\x10\x00\x12\x1e\n" +
-	"\x1aGENERATION_FAILURE_REFUSED\x10\x01\x12!\n" +
-	"\x1dGENERATION_FAILURE_INCOMPLETE\x10\x02\x12&\n" +
-	"\"GENERATION_FAILURE_INVALID_REQUEST\x10\x03\x12\x1d\n" +
-	"\x19GENERATION_FAILURE_FAILED\x10\x04*\xf6\x01\n" +
+	"expires_at\x18\f \x01(\tR\texpiresAt\x12\x1a\n" +
+	"\bprovider\x18\x10 \x01(\tR\bprovider\x12>\n" +
+	"\battempts\x18\x11 \x03(\v2\".anovel.genai.v0.GenerationAttemptR\battemptsJ\x04\b\a\x10\bJ\x04\b\x0e\x10\x0fJ\x04\b\x0f\x10\x10J\x04\b\x05\x10\x06J\x04\b\x06\x10\aJ\x04\b\r\x10\x0eR\x06outputR\afailureR\x05usageR\aattemptR\fmax_attemptsR\x10provider_call_id\"G\n" +
+	"\x11GenerationAttempt\x12\x16\n" +
+	"\x06number\x18\x01 \x01(\x05R\x06number\x12\x1a\n" +
+	"\bresponse\x18\x02 \x01(\fR\bresponse*\xf6\x01\n" +
 	"\x10GenerationStatus\x12!\n" +
 	"\x1dGENERATION_STATUS_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19GENERATION_STATUS_PENDING\x10\x01\x12\x1d\n" +
@@ -541,24 +334,21 @@ func file_anovel_genai_v0_generation_proto_rawDescGZIP() []byte {
 	return file_anovel_genai_v0_generation_proto_rawDescData
 }
 
-var file_anovel_genai_v0_generation_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_anovel_genai_v0_generation_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_anovel_genai_v0_generation_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
 var file_anovel_genai_v0_generation_proto_goTypes = []any{
-	(Tier)(0),               // 0: anovel.genai.v0.Tier
-	(GenerationFailure)(0),  // 1: anovel.genai.v0.GenerationFailure
-	(GenerationStatus)(0),   // 2: anovel.genai.v0.GenerationStatus
-	(*Generation)(nil),      // 3: anovel.genai.v0.Generation
-	(*GenerationUsage)(nil), // 4: anovel.genai.v0.GenerationUsage
+	(GenerationStatus)(0),     // 0: anovel.genai.v0.GenerationStatus
+	(*Generation)(nil),        // 1: anovel.genai.v0.Generation
+	(*GenerationAttempt)(nil), // 2: anovel.genai.v0.GenerationAttempt
 }
 var file_anovel_genai_v0_generation_proto_depIdxs = []int32{
-	2, // 0: anovel.genai.v0.Generation.status:type_name -> anovel.genai.v0.GenerationStatus
-	1, // 1: anovel.genai.v0.Generation.failure:type_name -> anovel.genai.v0.GenerationFailure
-	4, // 2: anovel.genai.v0.Generation.usage:type_name -> anovel.genai.v0.GenerationUsage
-	3, // [3:3] is the sub-list for method output_type
-	3, // [3:3] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	0, // 0: anovel.genai.v0.Generation.status:type_name -> anovel.genai.v0.GenerationStatus
+	2, // 1: anovel.genai.v0.Generation.attempts:type_name -> anovel.genai.v0.GenerationAttempt
+	2, // [2:2] is the sub-list for method output_type
+	2, // [2:2] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_anovel_genai_v0_generation_proto_init() }
@@ -571,7 +361,7 @@ func file_anovel_genai_v0_generation_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_anovel_genai_v0_generation_proto_rawDesc), len(file_anovel_genai_v0_generation_proto_rawDesc)),
-			NumEnums:      3,
+			NumEnums:      1,
 			NumMessages:   2,
 			NumExtensions: 0,
 			NumServices:   0,

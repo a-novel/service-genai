@@ -27,8 +27,6 @@ func TestGenerationElectCheck(t *testing.T) {
 		checkedAgo time.Duration
 		settled    bool
 		owner      uuid.UUID
-		// newerEpoch hands the generation to a newer provider configuration than the reader's.
-		newerEpoch bool
 
 		expectErr error
 	}{
@@ -57,16 +55,6 @@ func TestGenerationElectCheck(t *testing.T) {
 			expectErr: dao.ErrGenerationCheckNotDue,
 		},
 		{
-			// The reader would not check it, so it must not take the slot from a replica that would.
-			name: "Error/NewerEpoch",
-
-			checkedAgo: time.Minute,
-			owner:      testOwner,
-			newerEpoch: true,
-
-			expectErr: dao.ErrGenerationCheckNotDue,
-		},
-		{
 			name: "Error/OtherOwner",
 
 			checkedAgo: time.Minute,
@@ -91,14 +79,10 @@ func TestGenerationElectCheck(t *testing.T) {
 					settleGeneration(ctx, t, generation)
 				}
 
-				if testCase.newerEpoch {
-					execute(ctx, t, "UPDATE generations SET provider_epoch = ?1 WHERE id = ?0", generation.ID, testEpoch+1)
-				}
-
 				setCheckedAt(ctx, t, generation.ID, -testCase.checkedAgo)
 
 				elected, err := daoElectCheck.Exec(ctx, &dao.GenerationElectCheckRequest{
-					ID: generation.ID, OwnerID: testCase.owner, Interval: interval, ProviderEpoch: testEpoch,
+					ID: generation.ID, OwnerID: testCase.owner, Interval: interval,
 				})
 				require.ErrorIs(t, err, testCase.expectErr)
 
@@ -110,7 +94,7 @@ func TestGenerationElectCheck(t *testing.T) {
 
 				// The election itself refreshes the check, so a concurrent reader is refused.
 				_, err = daoElectCheck.Exec(ctx, &dao.GenerationElectCheckRequest{
-					ID: generation.ID, OwnerID: testCase.owner, Interval: interval, ProviderEpoch: testEpoch,
+					ID: generation.ID, OwnerID: testCase.owner, Interval: interval,
 				})
 				require.ErrorIs(t, err, dao.ErrGenerationCheckNotDue)
 			})

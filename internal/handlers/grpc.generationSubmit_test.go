@@ -22,7 +22,7 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 
 	// Every request field reaches the request key: it is how a resend finds its generation. A new
 	// field must be mapped below and added to the key, or two different requests would share one.
-	keyFields := []string{"owner_id", "purpose", "tier", "instructions", "input", "output_schema", "variant"}
+	keyFields := []string{"owner_id", "purpose", "provider", "payload", "variant"}
 
 	fields := (&genaiv0.GenerationSubmitRequest{}).ProtoReflect().Descriptor().Fields()
 	for index := range fields.Len() {
@@ -33,6 +33,8 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 		resp *core.GenerationSubmitResult
 		err  error
 	}
+
+	payload := []byte(`{"model": "a-model", "input": "Continue."}`)
 
 	testCases := []struct {
 		name string
@@ -50,9 +52,7 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 			name: "Success",
 
 			request: &genaiv0.GenerationSubmitRequest{
-				OwnerId: testOwnerID, Purpose: "studio.generation",
-				Tier: genaiv0.Tier_TIER_BALANCED, Instructions: "Continue.",
-				Input: []byte(`{"scene": "a door"}`), OutputSchema: []byte(`{"type": "object"}`), Variant: 2,
+				OwnerId: testOwnerID, Purpose: "studio.generation", Provider: "openai", Payload: payload, Variant: 2,
 			},
 			serviceMock: &serviceMock{resp: &core.GenerationSubmitResult{
 				Generation: testGeneration(), Created: true,
@@ -66,9 +66,7 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 			name: "Success/Replayed",
 
 			request: &genaiv0.GenerationSubmitRequest{
-				OwnerId: testOwnerID, Purpose: "studio.generation",
-				Tier: genaiv0.Tier_TIER_BALANCED, Instructions: "Continue.",
-				Input: []byte(`{"scene": "a door"}`), OutputSchema: []byte(`{"type": "object"}`),
+				OwnerId: testOwnerID, Purpose: "studio.generation", Provider: "openai", Payload: payload,
 			},
 			serviceMock: &serviceMock{resp: &core.GenerationSubmitResult{
 				Generation: testGeneration(), Created: false,
@@ -78,33 +76,38 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 			name: "Error/InvalidOwnerID",
 
 			request: &genaiv0.GenerationSubmitRequest{
-				OwnerId: "not-a-uuid", Purpose: "studio.generation",
-				Tier: genaiv0.Tier_TIER_BALANCED, Instructions: "Continue.",
-				Input: []byte(`{"scene": "a door"}`), OutputSchema: []byte(`{"type": "object"}`),
+				OwnerId: "not-a-uuid", Purpose: "studio.generation", Provider: "openai", Payload: payload,
 			},
 
 			expectStatus: codes.InvalidArgument,
 		},
 		{
-			// An unspecified Tier maps to none, which the core layer refuses.
-			name: "Error/UnspecifiedTier",
+			name: "Error/InvalidRequest",
 
 			request: &genaiv0.GenerationSubmitRequest{
-				OwnerId: testOwnerID, Purpose: "studio.generation",
-				Instructions: "Continue.", Input: []byte(`{}`), OutputSchema: []byte(`{"type": "object"}`),
+				OwnerId: testOwnerID, Purpose: "studio.generation", Provider: "unknown", Payload: payload,
 			},
-			serviceMock: &serviceMock{err: fmt.Errorf("%w: tier is required", core.ErrInvalidRequest)},
+			serviceMock: &serviceMock{err: fmt.Errorf("%w: unknown provider", core.ErrInvalidRequest)},
 
 			expectStatus:  codes.InvalidArgument,
-			expectMessage: "tier is required",
+			expectMessage: "unknown provider",
+		},
+		{
+			name: "Error/ModeUnsupported",
+
+			request: &genaiv0.GenerationSubmitRequest{
+				OwnerId: testOwnerID, Purpose: "studio.generation", Provider: "sync-only", Payload: payload,
+			},
+			serviceMock: &serviceMock{err: fmt.Errorf("provider: %w", lib.ErrModeUnsupported)},
+
+			expectStatus:  codes.Unimplemented,
+			expectMessage: "Async mode",
 		},
 		{
 			name: "Error/Internal",
 
 			request: &genaiv0.GenerationSubmitRequest{
-				OwnerId: testOwnerID, Purpose: "studio.generation",
-				Tier: genaiv0.Tier_TIER_BALANCED, Instructions: "Continue.",
-				Input: []byte(`{"scene": "a door"}`), OutputSchema: []byte(`{"type": "object"}`),
+				OwnerId: testOwnerID, Purpose: "studio.generation", Provider: "openai", Payload: payload,
 			},
 			serviceMock: &serviceMock{err: errFoo},
 
@@ -121,13 +124,10 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 			if testCase.serviceMock != nil {
 				service.EXPECT().
 					Exec(mock.Anything, mock.MatchedBy(func(request *core.GenerationSubmitRequest) bool {
-						expectTier := map[genaiv0.Tier]lib.Tier{genaiv0.Tier_TIER_BALANCED: lib.TierBalanced}
-
 						return request.OwnerID == uuid.MustParse(testCase.request.GetOwnerId()) &&
-							request.Tier == expectTier[testCase.request.GetTier()] &&
-							request.Instructions == testCase.request.GetInstructions() &&
-							string(request.Input) == string(testCase.request.GetInput()) &&
-							string(request.OutputSchema) == string(testCase.request.GetOutputSchema()) &&
+							request.Purpose == testCase.request.GetPurpose() &&
+							request.Provider == testCase.request.GetProvider() &&
+							string(request.Payload) == string(testCase.request.GetPayload()) &&
 							request.Variant == testCase.request.GetVariant()
 					})).
 					Return(testCase.serviceMock.resp, testCase.serviceMock.err)

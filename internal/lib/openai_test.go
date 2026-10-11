@@ -3,7 +3,6 @@ package lib_test
 import (
 	"encoding/json"
 	"io"
-	"maps"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -57,15 +56,9 @@ func (script *scriptedProvider) serve(t *testing.T) *httptest.Server {
 	return server
 }
 
-var testTiers = map[lib.Tier]lib.TierBinding{
-	lib.TierFast:     {Model: "gpt-5.6-luna", ReasoningEffort: "low", MaxInputTokens: 8192, MaxOutputTokens: 1024},
-	lib.TierBalanced: {Model: "gpt-5.6-terra", ReasoningEffort: "medium", MaxInputTokens: 8192, MaxOutputTokens: 2048},
-	lib.TierDeep:     {Model: "gpt-5.6-sol", MaxInputTokens: 8192, MaxOutputTokens: 4096},
-}
-
 // testConfig points the adapter at the given endpoint.
 func testConfig(baseURL string) lib.OpenAIConfig {
-	return lib.OpenAIConfig{BaseURL: baseURL, APIKey: "test-key", Tiers: testTiers}
+	return lib.OpenAIConfig{BaseURL: baseURL, APIKey: "test-key"}
 }
 
 func newTestProvider(t *testing.T, script *scriptedProvider) *lib.OpenAI {
@@ -85,16 +78,12 @@ func newTestProvider(t *testing.T, script *scriptedProvider) *lib.OpenAI {
 	return provider
 }
 
-func testStartRequest(tier lib.Tier) *lib.ProviderStartRequest {
-	return &lib.ProviderStartRequest{
-		Tier:         tier,
-		Instructions: "Continue the scene.",
-		Input:        json.RawMessage(`{"scene": "a door"}`),
-		OutputSchema: json.RawMessage(`{"type":"object","properties":{"z":{"type":"string"},"a":{"type":"string"}}}`),
-		EndUserID:    "00000000-0000-0000-0000-000000000001",
-		GenerationID: "01999999-0000-7000-8000-000000000001",
-		Attempt:      1,
-	}
+// testPayload is a caller's request: its schema lists z before a, and its input holds an ampersand.
+const testPayload = `{"model": "gpt-5.6-terra", "input": "a & b", ` +
+	`"text": {"format": {"type": "json_schema", "schema": {"properties": {"z": {}, "a": {}}}}}}`
+
+func testStartRequest() *lib.AsyncStartRequest {
+	return &lib.AsyncStartRequest{Payload: json.RawMessage(testPayload)}
 }
 
 // response builds a Responses API body around the given status and extra fields.
@@ -108,22 +97,10 @@ func response(status string, extra string) string {
 	return body + "}"
 }
 
-const (
-	testUsage = `"usage": {
-		"input_tokens": 1000, "input_tokens_details": {"cached_tokens": 200, "cache_write_tokens": 300},
-		"output_tokens": 500, "output_tokens_details": {"reasoning_tokens": 100}, "total_tokens": 1500
-	}`
-	testOutput  = `"output": [{"type": "message", "content": [{"type": "output_text", "text": "{\"text\": \"done\"}"}]}]`
-	testRefusal = `"output": [{"type": "message", "content": [{"type": "refusal", "refusal": "no"}]}]`
-	testProse   = `"output": [{"type": "message", "content": [{"type": "output_text", "text": "not json"}]}]`
-)
+const testRefusal = `"output": [{"type": "message", "content": [{"type": "refusal", "refusal": "no"}]}]`
 
 func TestOpenAI(t *testing.T) {
 	t.Parallel()
-
-	fullUsage := &lib.ProviderUsage{
-		InputTokens: 1000, CachedInputTokens: 200, CacheWriteTokens: 300, OutputTokens: 500, ReasoningTokens: 100,
-	}
 
 	testCases := []struct {
 		name string
@@ -131,23 +108,19 @@ func TestOpenAI(t *testing.T) {
 		script *scriptedProvider
 
 		expectState     lib.ProviderCallState
-		expectOutput    string
-		expectUsage     *lib.ProviderUsage
-		expectFailure   *lib.Failure
+		expectReason    string
 		expectRetryable bool
 		expectErr       error
-		// expectRejection is the failure a definitive start rejection carries.
-		expectRejection *lib.Failure
+		// expectRejection marks a definitive start rejection; expectBody is the error body it carries.
+		expectRejection bool
+		expectBody      string
 	}{
 		{
-			// The output is the schema document itself, not the provider's envelope.
 			name: "Success/Completed",
 
-			script: &scriptedProvider{status: http.StatusOK, body: response("completed", testOutput+", "+testUsage)},
+			script: &scriptedProvider{status: http.StatusOK, body: response("completed", "")},
 
-			expectState:  lib.ProviderCallSucceeded,
-			expectOutput: `{"text": "done"}`,
-			expectUsage:  fullUsage,
+			expectState: lib.ProviderCallSucceeded,
 		},
 		{
 			// Background mode answers before the model has run: the identifier is recorded now and
@@ -159,50 +132,22 @@ func TestOpenAI(t *testing.T) {
 			expectState: lib.ProviderCallRunning,
 		},
 		{
+			// A refusal is an answer: the caller reads it from the response.
 			name: "Success/Refused",
 
-			script: &scriptedProvider{status: http.StatusOK, body: response("completed", testRefusal+", "+testUsage)},
+			script: &scriptedProvider{status: http.StatusOK, body: response("completed", testRefusal)},
 
-			expectState:   lib.ProviderCallFailed,
-			expectUsage:   fullUsage,
-			expectFailure: &lib.Failure{Kind: lib.FailureRefused, Message: "the model refused the request"},
+			expectState: lib.ProviderCallSucceeded,
 		},
 		{
-			name: "Success/OutputNotAnObject",
-
-			script: &scriptedProvider{status: http.StatusOK, body: response("completed", testProse+", "+testUsage)},
-
-			expectState: lib.ProviderCallFailed,
-			expectUsage: fullUsage,
-			expectFailure: &lib.Failure{
-				Kind: lib.FailureFailed, Message: "the provider returned an output that is not a JSON object",
-			},
-		},
-		{
-			// Terminal, and it consumed tokens: the usage is kept.
-			name: "Success/IncompleteAtCeiling",
+			// The output stopped at the caller's own max_output_tokens. Finished, and the caller's to read.
+			name: "Success/Incomplete",
 
 			script: &scriptedProvider{status: http.StatusOK, body: response(
-				"incomplete", `"incomplete_details": {"reason": "max_output_tokens"}, `+testUsage,
+				"incomplete", `"incomplete_details": {"reason": "max_output_tokens"}`,
 			)},
 
-			expectState: lib.ProviderCallFailed,
-			expectUsage: fullUsage,
-			expectFailure: &lib.Failure{
-				Kind: lib.FailureIncomplete, Message: "the output reached the tier's output token ceiling",
-			},
-		},
-		{
-			name: "Success/IncompleteContentFilter",
-
-			script: &scriptedProvider{status: http.StatusOK, body: response(
-				"incomplete", `"incomplete_details": {"reason": "content_filter"}`,
-			)},
-
-			expectState: lib.ProviderCallFailed,
-			expectFailure: &lib.Failure{
-				Kind: lib.FailureRefused, Message: "the provider's content filter stopped the output",
-			},
+			expectState: lib.ProviderCallSucceeded,
 		},
 		{
 			name: "Success/RetryableFailure",
@@ -212,7 +157,7 @@ func TestOpenAI(t *testing.T) {
 			)},
 
 			expectState:     lib.ProviderCallFailed,
-			expectFailure:   &lib.Failure{Kind: lib.FailureFailed, Message: "the provider failed to complete the call"},
+			expectReason:    "the model failed",
 			expectRetryable: true,
 		},
 		{
@@ -222,10 +167,8 @@ func TestOpenAI(t *testing.T) {
 				"failed", `"error": {"code": "invalid_prompt", "message": "the prompt was rejected"}`,
 			)},
 
-			expectState: lib.ProviderCallFailed,
-			expectFailure: &lib.Failure{
-				Kind: lib.FailureRefused, Message: "the provider's usage policy refused the request",
-			},
+			expectState:  lib.ProviderCallFailed,
+			expectReason: "the prompt was rejected",
 		},
 		{
 			name: "Success/Cancelled",
@@ -250,7 +193,7 @@ func TestOpenAI(t *testing.T) {
 			expectErr: lib.ErrProviderStartAmbiguous,
 		},
 		{
-			// Retrying cannot help until an operator adds credit, so the generation fails with a reason.
+			// Retrying cannot help until an operator adds credit, so the generation fails with the body.
 			name: "Error/QuotaExhausted",
 
 			script: &scriptedProvider{
@@ -258,46 +201,36 @@ func TestOpenAI(t *testing.T) {
 				body:   `{"error":{"message":"You exceeded your current quota","code":"insufficient_quota"}}`,
 			},
 
-			expectRejection: &lib.Failure{Kind: lib.FailureFailed, Message: "the provider account has no quota left"},
+			expectRejection: true,
+			expectBody:      `{"error":{"message":"You exceeded your current quota","code":"insufficient_quota"}}`,
 		},
 		{
-			name: "Error/ContextExceeded",
-
-			script: &scriptedProvider{
-				status: http.StatusBadRequest,
-				body:   `{"error":{"message":"too long","code":"context_length_exceeded"}}`,
-			},
-
-			expectRejection: &lib.Failure{
-				Kind: lib.FailureInvalidRequest, Message: "the input exceeds the model's context window",
-			},
-		},
-		{
-			name: "Error/SchemaRejected",
+			// The caller built the request, so the provider's reason is what tells it what to fix.
+			name: "Error/BadRequest",
 
 			script: &scriptedProvider{
 				status: http.StatusBadRequest,
 				body:   `{"error":{"message":"bad schema","param":"text.format.schema"}}`,
 			},
 
-			expectRejection: &lib.Failure{
-				Kind: lib.FailureInvalidRequest, Message: "the provider rejected the output schema",
-			},
+			expectRejection: true,
+			expectBody:      `{"error":{"message":"bad schema","param":"text.format.schema"}}`,
 		},
 		{
-			name: "Error/BadRequest",
-
-			script: &scriptedProvider{status: http.StatusBadRequest, body: `{"error":{"message":"nope"}}`},
-
-			expectRejection: &lib.Failure{Kind: lib.FailureInvalidRequest, Message: "the provider rejected the request"},
-		},
-		{
-			// The service's credentials, not the caller's request: fixing the request would not help.
 			name: "Error/Unauthorized",
 
 			script: &scriptedProvider{status: http.StatusUnauthorized, body: `{"error":{"message":"bad key"}}`},
 
-			expectRejection: &lib.Failure{Kind: lib.FailureFailed, Message: "the provider refused the call"},
+			expectRejection: true,
+			expectBody:      `{"error":{"message":"bad key"}}`,
+		},
+		{
+			// A proxy in front of the provider may answer with anything; nothing is passed on.
+			name: "Error/NoErrorBody",
+
+			script: &scriptedProvider{status: http.StatusForbidden, body: `forbidden`},
+
+			expectRejection: true,
 		},
 	}
 
@@ -307,16 +240,23 @@ func TestOpenAI(t *testing.T) {
 
 			provider := newTestProvider(t, testCase.script)
 
-			call, err := provider.Start(t.Context(), testStartRequest(lib.TierBalanced))
+			call, err := provider.Start(t.Context(), testStartRequest())
 
-			if testCase.expectRejection != nil {
+			if testCase.expectRejection {
 				var rejection *lib.ProviderRejectionError
 
 				require.ErrorAs(t, err, &rejection)
-				require.Equal(t, *testCase.expectRejection, rejection.Failure)
 				require.NotErrorIs(t, err, lib.ErrProviderRetryable)
 
-				// The provider's own explanation reaches server logs; the caller reads only the Failure.
+				if testCase.expectBody == "" {
+					require.Empty(t, rejection.Response)
+
+					return
+				}
+
+				require.JSONEq(t, testCase.expectBody, string(rejection.Response))
+
+				// The provider's own explanation reaches server logs too.
 				var body struct {
 					Error struct {
 						Message string `json:"message"`
@@ -337,53 +277,43 @@ func TestOpenAI(t *testing.T) {
 
 			require.Equal(t, "resp_1", call.ID)
 			require.Equal(t, testCase.expectState, call.State)
-			// What the provider served, not what the Tier asked for.
-			require.Equal(t, "gpt-5.6-terra-2026-01-01", call.Model)
-			require.Equal(t, "medium", call.ReasoningEffort)
-			require.Equal(t, testCase.expectUsage, call.Usage)
-			require.Equal(t, testCase.expectFailure, call.Failure)
+			require.Equal(t, testCase.expectReason, call.Reason)
 			require.Equal(t, testCase.expectRetryable, call.Retryable)
 
-			if testCase.expectOutput != "" {
-				require.JSONEq(t, testCase.expectOutput, string(call.Output))
-			} else {
-				require.Empty(t, call.Output)
+			if !call.State.Terminal() {
+				require.Empty(t, call.Response)
+
+				return
 			}
+
+			// The provider's answer, as it sent it.
+			require.Equal(t, testCase.script.body, string(call.Response))
 		})
 	}
 }
 
-// The request is composed here from the Tier's binding: the caller never names a model, and the
-// fields crash-safety and privacy depend on are always set.
+// The adapter writes the fields the Async mode owns and forwards everything else as the caller wrote
+// it.
 func TestOpenAIRequest(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
 		name string
 
-		tier lib.Tier
-
-		expectModel     string
-		expectReasoning any
-		expectMaxOutput float64
+		payload string
 	}{
 		{
-			name: "Success/Balanced",
+			name: "Success",
 
-			tier: lib.TierBalanced,
-
-			expectModel:     "gpt-5.6-terra",
-			expectReasoning: map[string]any{"effort": "medium"},
-			expectMaxOutput: 2048,
+			payload: testPayload,
 		},
 		{
-			// A binding without an effort sends none rather than an empty one the provider rejects.
-			name: "Success/NoEffort",
+			// A caller asking for a synchronous or streamed call through the Async mode still gets one
+			// the service can recover.
+			name: "Success/ModeFieldsReplaced",
 
-			tier: lib.TierDeep,
-
-			expectModel:     "gpt-5.6-sol",
-			expectMaxOutput: 4096,
+			payload: `{"model": "gpt-5.6-terra", "input": "a & b", "background": false, "stream": true, ` +
+				`"text": {"format": {"type": "json_schema", "schema": {"properties": {"z": {}, "a": {}}}}}}`,
 		},
 	}
 
@@ -394,46 +324,35 @@ func TestOpenAIRequest(t *testing.T) {
 			script := &scriptedProvider{status: http.StatusOK, body: response("queued", "")}
 			provider := newTestProvider(t, script)
 
-			_, err := provider.Start(t.Context(), testStartRequest(testCase.tier))
+			_, err := provider.Start(t.Context(), &lib.AsyncStartRequest{Payload: json.RawMessage(testCase.payload)})
 			require.NoError(t, err)
 			require.Equal(t, "/responses", script.lastPath)
 
 			var sent map[string]any
 			require.NoError(t, json.Unmarshal(script.lastBody, &sent))
 
-			require.Equal(t, testCase.expectModel, sent["model"])
-			require.Equal(t, testCase.expectReasoning, sent["reasoning"])
-			require.InDelta(t, testCase.expectMaxOutput, sent["max_output_tokens"], 0)
-			require.Equal(t, "Continue the scene.", sent["instructions"])
-			require.JSONEq(t, `{"scene": "a door"}`, sent["input"].(string))
-			require.Equal(t, true, sent["background"])
-			require.Equal(t, false, sent["store"])
 			require.Equal(t, map[string]any{
-				"generation_id": "01999999-0000-7000-8000-000000000001", "attempt": "1",
-			}, sent["metadata"])
-			// Hashed: the provider attributes abuse without learning the platform's own identifier.
-			require.Len(t, sent["safety_identifier"], 64)
-			require.NotContains(t, sent["safety_identifier"], "00000000-0000-0000-0000-000000000001")
+				"model":      "gpt-5.6-terra",
+				"input":      "a & b",
+				"background": true,
+				"stream":     false,
+				"text": map[string]any{"format": map[string]any{
+					"type": "json_schema",
+					"schema": map[string]any{
+						"properties": map[string]any{"z": map[string]any{}, "a": map[string]any{}},
+					},
+				}},
+			}, sent)
 
-			// The schema reaches the provider as the caller wrote it.
-			require.Contains(t, string(script.lastBody),
-				`"schema":{"type":"object","properties":{"z":{"type":"string"},"a":{"type":"string"}}}`)
-			require.Contains(t, string(script.lastBody), `"strict":true`)
+			// Nested values reach the provider as written: unescaped, and in the caller's order.
+			require.Contains(t, string(script.lastBody), `"input":"a & b"`)
+			require.Contains(t, string(script.lastBody), `"properties":{"z":{},"a":{}}`)
 		})
 	}
 }
 
 func TestNewOpenAI(t *testing.T) {
 	t.Parallel()
-
-	// withTier replaces one Tier's binding in the valid configuration.
-	withTier := func(tier lib.Tier, binding lib.TierBinding) lib.OpenAIConfig {
-		config := testConfig("https://provider.test/v1")
-		config.Tiers = maps.Clone(testTiers)
-		config.Tiers[tier] = binding
-
-		return config
-	}
 
 	testCases := []struct {
 		name string
@@ -457,41 +376,9 @@ func TestNewOpenAI(t *testing.T) {
 		{
 			name: "Error/NoAPIKey",
 
-			config: lib.OpenAIConfig{BaseURL: "https://provider.test/v1", Tiers: testTiers},
+			config: lib.OpenAIConfig{BaseURL: "https://provider.test/v1"},
 
 			expectErr: lib.ErrProviderNotConfigured,
-		},
-		{
-			name: "Error/TierUnbound",
-
-			config: lib.OpenAIConfig{
-				BaseURL: "https://provider.test/v1",
-				APIKey:  "test-key",
-				Tiers:   map[lib.Tier]lib.TierBinding{lib.TierFast: testTiers[lib.TierFast]},
-			},
-
-			expectErr: lib.ErrTierNotBound,
-		},
-		{
-			name: "Error/NoModel",
-
-			config: withTier(lib.TierFast, lib.TierBinding{MaxInputTokens: 8192, MaxOutputTokens: 1024}),
-
-			expectErr: lib.ErrTierNotBound,
-		},
-		{
-			name: "Error/NoInputCeiling",
-
-			config: withTier(lib.TierFast, lib.TierBinding{Model: "a-model", MaxOutputTokens: 1024}),
-
-			expectErr: lib.ErrTierNotBound,
-		},
-		{
-			name: "Error/NoOutputCeiling",
-
-			config: withTier(lib.TierFast, lib.TierBinding{Model: "a-model", MaxInputTokens: 8192}),
-
-			expectErr: lib.ErrTierNotBound,
 		},
 	}
 
@@ -519,7 +406,7 @@ func TestOpenAIGet(t *testing.T) {
 		{
 			name: "Success",
 
-			script: &scriptedProvider{status: http.StatusOK, body: response("completed", testOutput)},
+			script: &scriptedProvider{status: http.StatusOK, body: response("completed", "")},
 
 			expectState: lib.ProviderCallSucceeded,
 		},
@@ -569,6 +456,7 @@ func TestOpenAIGet(t *testing.T) {
 
 			require.NoError(t, err)
 			require.Equal(t, testCase.expectState, call.State)
+			require.Equal(t, testCase.script.body, string(call.Response))
 			require.Equal(t, "/responses/resp_1", testCase.script.lastPath)
 		})
 	}
@@ -601,7 +489,7 @@ func TestOpenAICancel(t *testing.T) {
 
 			script: &scriptedProvider{
 				status: http.StatusOK,
-				body:   response("completed", testOutput),
+				body:   response("completed", ""),
 				cancel: &scriptedProvider{
 					status: http.StatusBadRequest, body: `{"error":{"message":"Cannot cancel a completed response."}}`,
 				},
@@ -659,7 +547,7 @@ func TestOpenAIStartTimeoutIsAmbiguous(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	_, err = provider.Start(t.Context(), testStartRequest(lib.TierFast))
+	_, err = provider.Start(t.Context(), testStartRequest())
 	require.ErrorIs(t, err, lib.ErrProviderStartAmbiguous)
 	require.Equal(t, int32(1), requests.Load())
 }
@@ -673,7 +561,7 @@ func TestOpenAITransportFailure(t *testing.T) {
 	provider, err := lib.NewOpenAI(testConfig("https://127.0.0.1:1"), option.WithMaxRetries(0))
 	require.NoError(t, err)
 
-	_, err = provider.Start(t.Context(), testStartRequest(lib.TierFast))
+	_, err = provider.Start(t.Context(), testStartRequest())
 	require.ErrorIs(t, err, lib.ErrProviderRetryable)
 }
 
@@ -722,7 +610,7 @@ func TestOpenAIStartStalledBeforeSending(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	_, err = provider.Start(t.Context(), testStartRequest(lib.TierFast))
+	_, err = provider.Start(t.Context(), testStartRequest())
 	require.ErrorIs(t, err, lib.ErrProviderRetryable)
 }
 
@@ -733,7 +621,7 @@ func TestOpenAIUnknownStatus(t *testing.T) {
 
 	provider := newTestProvider(t, &scriptedProvider{status: http.StatusOK, body: response("thinking", "")})
 
-	call, err := provider.Start(t.Context(), testStartRequest(lib.TierFast))
+	call, err := provider.Start(t.Context(), testStartRequest())
 	require.NoError(t, err)
 	require.Equal(t, lib.ProviderCallRunning, call.State)
 	require.False(t, call.State.Terminal())

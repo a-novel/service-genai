@@ -96,7 +96,7 @@ func TestGenerationRequeue(t *testing.T) {
 				require.Equal(t, dao.GenerationStatusPending, requeued.Status)
 				require.Nil(t, requeued.ProviderCallID)
 				require.Nil(t, requeued.StartRequestedAt)
-				// The attempt keeps its number: its usage row is keyed by it.
+				// The attempt keeps its number: its recorded answer is keyed by it.
 				require.Equal(t, int16(1), requeued.Attempt)
 				require.GreaterOrEqual(t, requeued.RunAt.Sub(*generation.StartRequestedAt), delay)
 			})

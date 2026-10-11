@@ -24,9 +24,9 @@ type (
 	GenerationCancelGetDao interface {
 		Exec(ctx context.Context, request *dao.GenerationGetRequest) (*dao.Generation, error)
 	}
-	// GenerationCancelUsageListDao reads what the generation consumed.
-	GenerationCancelUsageListDao interface {
-		Exec(ctx context.Context, request *dao.GenerationUsageListRequest) ([]*dao.GenerationUsage, error)
+	// GenerationCancelAttemptListDao reads the provider's answers to the generation's attempts.
+	GenerationCancelAttemptListDao interface {
+		Exec(ctx context.Context, request *dao.GenerationAttemptListRequest) ([]*dao.GenerationAttempt, error)
 	}
 	// GenerationCancelServiceCheck stops a running provider call.
 	GenerationCancelServiceCheck interface {
@@ -49,22 +49,22 @@ type GenerationCancelRequest struct {
 // A GenerationCancel stops a generation.
 //
 // One that never started is settled at once. One whose provider call is known is checked right
-// away, which cancels the call and settles it with whatever it consumed: a cancelled call is not a
+// away, which cancels the call and settles it with the provider's answer: a cancelled call is not a
 // free one. One whose start is in flight is only marked, and the next check stops it. One already
 // settled is returned as it stands, so a cancel that lost a race or is retried still succeeds.
 type GenerationCancel struct {
-	config   GenerationCancelConfig
-	dao      GenerationCancelDao
-	getDao   GenerationCancelGetDao
-	usageDao GenerationCancelUsageListDao
-	check    GenerationCancelServiceCheck
+	config     GenerationCancelConfig
+	dao        GenerationCancelDao
+	getDao     GenerationCancelGetDao
+	attemptDao GenerationCancelAttemptListDao
+	check      GenerationCancelServiceCheck
 }
 
 func NewGenerationCancel(
 	config GenerationCancelConfig,
 	cancelDao GenerationCancelDao,
 	getDao GenerationCancelGetDao,
-	usageDao GenerationCancelUsageListDao,
+	attemptDao GenerationCancelAttemptListDao,
 	check GenerationCancelServiceCheck,
 ) (*GenerationCancel, error) {
 	err := validate.Struct(config)
@@ -72,7 +72,9 @@ func NewGenerationCancel(
 		return nil, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 	}
 
-	return &GenerationCancel{config: config, dao: cancelDao, getDao: getDao, usageDao: usageDao, check: check}, nil
+	return &GenerationCancel{
+		config: config, dao: cancelDao, getDao: getDao, attemptDao: attemptDao, check: check,
+	}, nil
 }
 
 func (service *GenerationCancel) Exec(
@@ -118,10 +120,10 @@ func (service *GenerationCancel) Exec(
 		}
 	}
 
-	usage, err := service.usageDao.Exec(ctx, &dao.GenerationUsageListRequest{GenerationID: generation.ID})
+	attempts, err := service.attemptDao.Exec(ctx, &dao.GenerationAttemptListRequest{GenerationID: generation.ID})
 	if err != nil {
-		return nil, otel.ReportError(span, fmt.Errorf("list usage: %w", err))
+		return nil, otel.ReportError(span, fmt.Errorf("list attempts: %w", err))
 	}
 
-	return newGeneration(generation, usage), nil
+	return newGeneration(generation, attempts), nil
 }

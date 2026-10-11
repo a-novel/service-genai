@@ -11,7 +11,6 @@ import (
 	"github.com/a-novel/service-genai/internal/core"
 	coremocks "github.com/a-novel/service-genai/internal/core/mocks"
 	"github.com/a-novel/service-genai/internal/dao"
-	"github.com/a-novel/service-genai/internal/lib"
 )
 
 func TestGenerationGet(t *testing.T) {
@@ -23,10 +22,7 @@ func TestGenerationGet(t *testing.T) {
 	updatedAt := createdAt.Add(time.Minute)
 	settledAt := updatedAt.Add(time.Minute)
 	expiresAt := settledAt.Add(time.Hour)
-	generationError := "the provider rejected the request"
-	failureKind := "invalid_request"
-	coreFailure := lib.FailureInvalidRequest
-	effort := "medium"
+	generationError := "the provider failed the call"
 
 	const checkInterval = 2 * time.Second
 
@@ -40,10 +36,10 @@ func TestGenerationGet(t *testing.T) {
 
 		request *core.GenerationGetRequest
 
-		daoMock   *daoMock
-		electMock *daoMock
-		checkMock *daoMock
-		usageErr  error
+		daoMock    *daoMock
+		electMock  *daoMock
+		checkMock  *daoMock
+		attemptErr error
 
 		expect       *core.Generation
 		expectStatus core.GenerationStatus
@@ -54,21 +50,18 @@ func TestGenerationGet(t *testing.T) {
 
 			request: &core.GenerationGetRequest{ID: generationID, OwnerID: owner},
 			daoMock: &daoMock{resp: &dao.Generation{
-				ID: generationID, OwnerID: owner, Purpose: "studio.generation",
-				Failure: &failureKind, Error: &generationError,
+				ID: generationID, OwnerID: owner, Purpose: testPurpose, Provider: testProvider, Payload: testPayload,
+				Error:  &generationError,
 				Status: dao.GenerationStatusFailed, Attempt: 2, MaxAttempts: 3,
 				CreatedAt: createdAt, UpdatedAt: updatedAt, SettledAt: &settledAt,
 				ExpiresAt: &expiresAt,
 			}},
-			// A failure still reports what it consumed.
+			// A failure still returns the provider's answers, and with them what each attempt consumed.
 			expect: &core.Generation{
-				ID: generationID, OwnerID: owner, Purpose: "studio.generation",
-				Failure: &coreFailure, Error: &generationError,
-				Status: core.GenerationStatusFailed,
-				Usage: []*core.GenerationUsage{{
-					Attempt: 1, Provider: "openai", Model: "a-model-snapshot", ReasoningEffort: &effort,
-					InputTokens: 1000, CachedInputTokens: 200, CacheWriteTokens: 300, OutputTokens: 500,
-				}},
+				ID: generationID, OwnerID: owner, Purpose: testPurpose, Provider: testProvider,
+				Error:     &generationError,
+				Status:    core.GenerationStatusFailed,
+				Attempts:  []*core.GenerationAttempt{{Number: 1, Response: testResponse}},
 				CreatedAt: createdAt, UpdatedAt: updatedAt, SettledAt: &settledAt,
 				ExpiresAt: &expiresAt,
 			},
@@ -94,11 +87,11 @@ func TestGenerationGet(t *testing.T) {
 			expectStatus: core.GenerationStatusSucceeded,
 		},
 		{
-			name: "Error/Usage",
+			name: "Error/Attempts",
 
-			request:  &core.GenerationGetRequest{ID: generationID, OwnerID: owner},
-			daoMock:  &daoMock{resp: settledGeneration(dao.GenerationStatusSucceeded)},
-			usageErr: errFoo,
+			request:    &core.GenerationGetRequest{ID: generationID, OwnerID: owner},
+			daoMock:    &daoMock{resp: settledGeneration(dao.GenerationStatusSucceeded)},
+			attemptErr: errFoo,
 
 			expectErr: errFoo,
 		},
@@ -162,12 +155,12 @@ func TestGenerationGet(t *testing.T) {
 			getDao := coremocks.NewMockGenerationGetDao(t)
 			electDao := coremocks.NewMockGenerationGetElectCheckDao(t)
 			check := coremocks.NewMockGenerationGetServiceCheck(t)
-			usageDao := coremocks.NewMockGenerationGetUsageListDao(t)
+			attemptDao := coremocks.NewMockGenerationGetAttemptListDao(t)
 
-			if testCase.expect != nil || testCase.expectStatus != "" || testCase.usageErr != nil {
-				usageDao.EXPECT().
-					Exec(mock.Anything, &dao.GenerationUsageListRequest{GenerationID: testCase.request.ID}).
-					Return(testUsageRows(), testCase.usageErr)
+			if testCase.expect != nil || testCase.expectStatus != "" || testCase.attemptErr != nil {
+				attemptDao.EXPECT().
+					Exec(mock.Anything, &dao.GenerationAttemptListRequest{GenerationID: testCase.request.ID}).
+					Return(testAttemptRows(), testCase.attemptErr)
 			}
 
 			if testCase.daoMock != nil {
@@ -181,10 +174,9 @@ func TestGenerationGet(t *testing.T) {
 			if testCase.electMock != nil {
 				electDao.EXPECT().
 					Exec(mock.Anything, &dao.GenerationElectCheckRequest{
-						ID:            testCase.request.ID,
-						OwnerID:       testCase.request.OwnerID,
-						Interval:      checkInterval,
-						ProviderEpoch: testEpoch,
+						ID:       testCase.request.ID,
+						OwnerID:  testCase.request.OwnerID,
+						Interval: checkInterval,
 					}).
 					Return(testCase.electMock.resp, testCase.electMock.err)
 			}
@@ -196,8 +188,8 @@ func TestGenerationGet(t *testing.T) {
 			}
 
 			service, err := core.NewGenerationGet(
-				core.GenerationGetConfig{CheckInterval: checkInterval, ProviderEpoch: testEpoch},
-				getDao, electDao, usageDao, check,
+				core.GenerationGetConfig{CheckInterval: checkInterval},
+				getDao, electDao, attemptDao, check,
 			)
 			require.NoError(t, err)
 
@@ -216,7 +208,7 @@ func TestGenerationGet(t *testing.T) {
 			getDao.AssertExpectations(t)
 			electDao.AssertExpectations(t)
 			check.AssertExpectations(t)
-			usageDao.AssertExpectations(t)
+			attemptDao.AssertExpectations(t)
 		})
 	}
 }

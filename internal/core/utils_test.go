@@ -1,7 +1,6 @@
 package core_test
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -17,14 +16,16 @@ var errFoo = errors.New("foo")
 
 const (
 	testCallID = "resp_1"
-	// testProviderName and testEpoch are the configured provider the checks under test run on.
-	testProviderName       = "openai"
-	testEpoch        int32 = 2
+	// testProvider is the provider the generations under test run on.
+	testProvider = "openai"
+	testPurpose  = "studio.generation"
 )
 
-// testStoredRequest is a generation's provider-neutral request as it is stored.
-var testStoredRequest = json.RawMessage(
-	`{"tier":"balanced","instructions":"Continue.","input":{"scene":"a door"},"outputSchema":{"type":"object"}}`,
+var (
+	// testPayload is a generation's provider request as the caller built it.
+	testPayload = json.RawMessage(`{"model":"a-model","input":"Continue the scene & more."}`)
+	// testResponse is the provider's answer to a call, as it sent it.
+	testResponse = json.RawMessage(`{"id":"resp_1","status":"completed","usage":{"output_tokens":5}}`)
 )
 
 var (
@@ -44,8 +45,9 @@ func pendingGeneration() *dao.Generation {
 	return &dao.Generation{
 		ID:          testGenerationID,
 		OwnerID:     testOwner,
-		Purpose:     "studio.generation",
-		Request:     testStoredRequest,
+		Purpose:     testPurpose,
+		Provider:    testProvider,
+		Payload:     testPayload,
 		Status:      dao.GenerationStatusPending,
 		MaxAttempts: 2,
 		CheckedAt:   testNow,
@@ -58,7 +60,6 @@ func startingGeneration(age time.Duration) *dao.Generation {
 	requested := testNow.Add(-age)
 	generation.Attempt = 1
 	generation.StartRequestedAt = &requested
-	generation.ProviderEpoch = new(testEpoch)
 
 	return generation
 }
@@ -82,9 +83,9 @@ func withCancel(generation *dao.Generation) *dao.Generation {
 	return generation
 }
 
-// withEpoch sets the provider configuration the generation was last started or restarted on.
-func withEpoch(generation *dao.Generation, epoch int32) *dao.Generation {
-	generation.ProviderEpoch = &epoch
+// withProvider moves the generation to another provider.
+func withProvider(generation *dao.Generation, provider string) *dao.Generation {
+	generation.Provider = provider
 
 	return generation
 }
@@ -101,44 +102,26 @@ func settledGeneration(status dao.GenerationStatus) *dao.Generation {
 	return generation
 }
 
+// providerCall is the provider's view of the call, with its answer once terminal.
 func providerCall(state lib.ProviderCallState) *lib.ProviderCall {
-	call := &lib.ProviderCall{ID: testCallID, State: state, Model: "a-model-snapshot", ReasoningEffort: "medium"}
+	call := &lib.ProviderCall{ID: testCallID, State: state}
 	if state.Terminal() {
-		call.Usage = &lib.ProviderUsage{InputTokens: 1000, CachedInputTokens: 200, CacheWriteTokens: 300, OutputTokens: 500}
+		call.Response = testResponse
 	}
 
 	return call
 }
 
-// failedCall is a terminal call that ended in the given failure.
-func failedCall(failure lib.Failure) *lib.ProviderCall {
+// failedCall is a call the provider reports failed.
+func failedCall(retryable bool) *lib.ProviderCall {
 	call := providerCall(lib.ProviderCallFailed)
-	call.Failure = &failure
+	call.Reason = "the model failed"
+	call.Retryable = retryable
 
 	return call
 }
 
-// testUsageRows is what a generation's provider calls consumed, as stored.
-func testUsageRows() []*dao.GenerationUsage {
-	effort := "medium"
-
-	return []*dao.GenerationUsage{
-		{
-			GenerationID: testGenerationID, Attempt: 1, Provider: "openai", Model: "a-model-snapshot",
-			ReasoningEffort: &effort, InputTokens: 1000, CachedInputTokens: 200, CacheWriteTokens: 300,
-			OutputTokens: 500,
-		},
-	}
-}
-
-// compact is how a request's JSON reads once stored: whitespace removed, key order kept.
-func compact(value json.RawMessage) string {
-	var buffer bytes.Buffer
-
-	err := json.Compact(&buffer, value)
-	if err != nil {
-		panic(err)
-	}
-
-	return buffer.String()
+// testAttemptRows are the provider's answers to a generation's attempts, as stored.
+func testAttemptRows() []*dao.GenerationAttempt {
+	return []*dao.GenerationAttempt{{GenerationID: testGenerationID, Attempt: 1, Response: testResponse}}
 }

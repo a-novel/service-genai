@@ -30,7 +30,7 @@ type GenerationRequeueRequest struct {
 // GenerationRequeue returns a generation whose attempt failed retryably to the queue for a fresh
 // provider call.
 //
-// It does not write the attempt's usage row; the caller wraps both in one transaction.
+// It does not record the attempt's answer; the caller wraps both in one transaction.
 type GenerationRequeue struct{}
 
 func NewGenerationRequeue() *GenerationRequeue {

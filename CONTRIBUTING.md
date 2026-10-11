@@ -31,7 +31,7 @@ There is no REST surface: callers are other services on the internal network, so
 
 ## Retention purge
 
-The `database` image schedules a `pg_cron` job that deletes settled generations once `expires_at` has passed. Their usage rows go with them: callers keep the long-term usage record.
+The `database` image schedules a `pg_cron` job that deletes settled generations once `expires_at` has passed. Their attempts go with them: callers keep what they need of the provider's responses.
 
 It is scheduled in the image's init SQL rather than in a migration: `postgres.RunDBTest` clones a database with no `cron` schema, so a migration calling `cron.schedule` would fail every data-access test.
 
@@ -45,9 +45,7 @@ Its jobs run as background workers inside PostgreSQL. Under SCRAM authentication
 
 `store` asks the provider to keep the response after the call ends. OpenAI holds a stored response for about thirty days: it can be read back with `GET /v1/responses/{id}`, and a later request can reference it through `previous_response_id` to continue a conversation without resending its history.
 
-Neither is worth thirty days of user content sitting with the provider. Output that outlives the call is already stored here, in `generations`, and chaining is ruled out by the request boundary — a caller hands over a self-contained payload, so there is no prior response to name.
-
-Every request goes out with `store: false`. This service composes the request, so no caller can ask otherwise, and it is the platform's only path to a provider. A caller that chains anyway gets `Item not found` back.
+`store` is part of the caller's payload, like every field the execution does not need: this service forwards it as sent. A caller keeping user prose away from the provider sends `store: false`; the answers it needs are kept here for the retention window, in `generation_attempts`.
 
 Re-attach does not depend on it: a finished background response stays retrievable for a while, which `store` does not govern. OpenAI documents about ten minutes; on 2026-10-08 a response was still readable three hours after it finished. The sweep reaches every unpolled generation within a minute, and a check re-attaches as soon as a poll or the sweep reaches it. **Revisit this** if a re-attach starts failing with a not-found on an operation that should still be running — that window has moved. A 404 settles the generation as failed, so being wrong costs one result, not a second paid call.
 
@@ -72,7 +70,7 @@ err := service.transactor.WithinTx(ctx, func(ctx context.Context) error {
 service := core.NewSomeService(daoSomething, postgres.NewTransactor(nil))
 ```
 
-A check uses one where a settle or requeue writes the usage row and the generation together. A single write needs no transaction.
+A check uses one where a settle or requeue records the attempt's answer and the generation together. A single write needs no transaction.
 
 **Pass the callback's `ctx` down, not the outer one.** Data-access objects resolve their database handle from the context, and the transaction is installed on the context the callback receives. An inner call given the outer context runs on the connection pool and commits on its own, while the surrounding block still reports success. That is not hypothetical: it is what a sibling service did in four operations for months, with a green build the whole time.
 

@@ -26,10 +26,11 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// GenerationSubmitService records a generation and starts it. Resending the same request is a
-// replay: it returns the generation already running or succeeded rather than paying again. A request
-// whose generation failed or was cancelled runs again from scratch. An invalid request answers
-// INVALID_ARGUMENT with the reason, naming the field and limit to fix.
+// GenerationSubmitService records a generation and starts it in the Async mode: the call runs on the
+// provider's side while the caller polls GenerationGet. Resending the same request is a replay: it
+// returns the generation already running or succeeded rather than paying again. A request whose
+// generation failed or was cancelled runs again from scratch. An invalid request answers
+// INVALID_ARGUMENT with the reason; a provider without the Async mode answers UNIMPLEMENTED.
 type GenerationSubmitServiceClient interface {
 	GenerationSubmit(ctx context.Context, in *GenerationSubmitRequest, opts ...grpc.CallOption) (*GenerationSubmitResponse, error)
 }
@@ -56,10 +57,11 @@ func (c *generationSubmitServiceClient) GenerationSubmit(ctx context.Context, in
 // All implementations must embed UnimplementedGenerationSubmitServiceServer
 // for forward compatibility.
 //
-// GenerationSubmitService records a generation and starts it. Resending the same request is a
-// replay: it returns the generation already running or succeeded rather than paying again. A request
-// whose generation failed or was cancelled runs again from scratch. An invalid request answers
-// INVALID_ARGUMENT with the reason, naming the field and limit to fix.
+// GenerationSubmitService records a generation and starts it in the Async mode: the call runs on the
+// provider's side while the caller polls GenerationGet. Resending the same request is a replay: it
+// returns the generation already running or succeeded rather than paying again. A request whose
+// generation failed or was cancelled runs again from scratch. An invalid request answers
+// INVALID_ARGUMENT with the reason; a provider without the Async mode answers UNIMPLEMENTED.
 type GenerationSubmitServiceServer interface {
 	GenerationSubmit(context.Context, *GenerationSubmitRequest) (*GenerationSubmitResponse, error)
 	mustEmbedUnimplementedGenerationSubmitServiceServer()

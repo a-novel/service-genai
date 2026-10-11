@@ -11,12 +11,13 @@ INSERT INTO
     id,
     owner_id,
     purpose,
+    provider,
     request_key,
-    request,
+    payload,
     max_attempts
   )
 VALUES
-  (?0, ?1, ?2, ?3, ?4, ?5)
+  (?0, ?1, ?2, ?3, ?4, ?5, ?6)
 ON CONFLICT (request_key)
 WHERE
   status NOT IN ('failed', 'cancelled') DO UPDATE

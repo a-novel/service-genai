@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -24,9 +25,9 @@ type (
 	GenerationSubmitDao interface {
 		Exec(ctx context.Context, request *dao.GenerationSubmitRequest) (*dao.GenerationSubmitResult, error)
 	}
-	// GenerationSubmitUsageListDao reads what a replayed generation consumed.
-	GenerationSubmitUsageListDao interface {
-		Exec(ctx context.Context, request *dao.GenerationUsageListRequest) ([]*dao.GenerationUsage, error)
+	// GenerationSubmitAttemptListDao reads the attempts of a replayed generation.
+	GenerationSubmitAttemptListDao interface {
+		Exec(ctx context.Context, request *dao.GenerationAttemptListRequest) ([]*dao.GenerationAttempt, error)
 	}
 	// GenerationSubmitServiceCheck starts a newly recorded generation.
 	GenerationSubmitServiceCheck interface {
@@ -44,17 +45,14 @@ type GenerationSubmitConfig struct {
 type GenerationSubmitRequest struct {
 	// OwnerID is the user the generation acts for, supplied by a caller that already verified it.
 	OwnerID uuid.UUID `validate:"required"`
-	// Purpose is what the caller attributes this spend to, up to 255 characters. Free-form: the
-	// vocabulary belongs to the caller, and this service only groups by it.
+	// Purpose is why the caller makes the call, up to 255 characters, in the caller's own vocabulary.
 	Purpose string `validate:"required,notblank,max=255"`
-	// Tier is the level of model capability wanted.
-	Tier lib.Tier `validate:"required,oneof=fast balanced deep"`
-	// Instructions are the trusted channel.
-	Instructions string `validate:"required,notblank"`
-	// Input is the untrusted channel: any JSON value.
-	Input json.RawMessage `validate:"required"`
-	// OutputSchema is the JSON Schema the output conforms to: a JSON object.
-	OutputSchema json.RawMessage `validate:"required"`
+	// Provider names the service to run the call on. It must have an adapter offering the Async
+	// mode.
+	Provider string `validate:"required"`
+	// Payload is the provider's own request, built by the caller: a JSON object this service
+	// forwards without reading.
+	Payload json.RawMessage `validate:"required"`
 	// Variant asks for another generation of a request that already succeeded.
 	Variant uint32
 }
@@ -66,23 +64,25 @@ type GenerationSubmitResult struct {
 	Created bool
 }
 
-// A GenerationSubmit records a generation and starts its provider call.
+// A GenerationSubmit records a generation and starts its provider call in the Async mode.
 //
 // The generation is identified by a key derived from the request and the owner, so a caller that
 // lost track of it recovers by resending the same request. A replay returns the recorded generation
 // as it stands, without checking it: the caller polls it next, and the poll checks it. A failed or
 // cancelled generation does not count, so resending its request runs it again.
 type GenerationSubmit struct {
-	config   GenerationSubmitConfig
-	dao      GenerationSubmitDao
-	usageDao GenerationSubmitUsageListDao
-	check    GenerationSubmitServiceCheck
+	config     GenerationSubmitConfig
+	adapters   lib.Adapters
+	dao        GenerationSubmitDao
+	attemptDao GenerationSubmitAttemptListDao
+	check      GenerationSubmitServiceCheck
 }
 
 func NewGenerationSubmit(
 	config GenerationSubmitConfig,
+	adapters lib.Adapters,
 	submitDao GenerationSubmitDao,
-	usageDao GenerationSubmitUsageListDao,
+	attemptDao GenerationSubmitAttemptListDao,
 	check GenerationSubmitServiceCheck,
 ) (*GenerationSubmit, error) {
 	err := validate.Struct(config)
@@ -90,7 +90,9 @@ func NewGenerationSubmit(
 		return nil, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 	}
 
-	return &GenerationSubmit{config: config, dao: submitDao, usageDao: usageDao, check: check}, nil
+	return &GenerationSubmit{
+		config: config, adapters: adapters, dao: submitDao, attemptDao: attemptDao, check: check,
+	}, nil
 }
 
 func (service *GenerationSubmit) Exec(
@@ -102,23 +104,13 @@ func (service *GenerationSubmit) Exec(
 	span.SetAttributes(
 		attribute.String("generation.owner_id", request.OwnerID.String()),
 		attribute.String("generation.purpose", request.Purpose),
-		attribute.String("generation.tier", string(request.Tier)),
-		attribute.Int("generation.request_bytes", requestBytes(request)),
+		attribute.String("generation.provider", request.Provider),
+		attribute.Int("generation.payload_bytes", len(request.Payload)),
 	)
 
-	err := validateSubmit(request)
+	err := service.validateRequest(request)
 	if err != nil {
 		return nil, otel.ReportError(span, err)
-	}
-
-	stored, err := encodeJSON(&generationRequest{
-		Tier:         request.Tier,
-		Instructions: request.Instructions,
-		Input:        request.Input,
-		OutputSchema: request.OutputSchema,
-	})
-	if err != nil {
-		return nil, otel.ReportError(span, fmt.Errorf("encode request: %w", err))
 	}
 
 	key, err := requestKey(request)
@@ -132,8 +124,9 @@ func (service *GenerationSubmit) Exec(
 		ID:          uuid.Must(uuid.NewV7()),
 		OwnerID:     request.OwnerID,
 		Purpose:     request.Purpose,
+		Provider:    request.Provider,
 		RequestKey:  key,
-		Request:     stored,
+		Payload:     request.Payload,
 		MaxAttempts: service.config.MaxAttempts,
 	})
 	if err != nil {
@@ -151,31 +144,23 @@ func (service *GenerationSubmit) Exec(
 		}
 	}
 
-	usage, err := service.usageDao.Exec(ctx, &dao.GenerationUsageListRequest{GenerationID: generation.ID})
+	attempts, err := service.attemptDao.Exec(ctx, &dao.GenerationAttemptListRequest{GenerationID: generation.ID})
 	if err != nil {
-		return nil, otel.ReportError(span, fmt.Errorf("list usage: %w", err))
+		return nil, otel.ReportError(span, fmt.Errorf("list attempts: %w", err))
 	}
 
 	return &GenerationSubmitResult{
-		Generation: newGeneration(generation, usage),
+		Generation: newGeneration(generation, attempts),
 		Created:    result.Created,
 	}, nil
 }
 
-func requestBytes(request *GenerationSubmitRequest) int {
-	return len(request.Instructions) + len(request.Input) + len(request.OutputSchema)
-}
-
-func validateSubmit(request *GenerationSubmitRequest) error {
+// validateRequest checks the envelope of a request, never its payload's content, which belongs to the
+// caller and the provider.
+func (service *GenerationSubmit) validateRequest(request *GenerationSubmitRequest) error {
 	err := validate.Struct(request)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalidRequest, err)
-	}
-
-	if size := requestBytes(request); size > RequestSizeCeiling {
-		return fmt.Errorf(
-			"%w: request contains %d bytes, limit is %d", ErrInvalidRequest, size, RequestSizeCeiling,
-		)
 	}
 
 	// A NUL byte cannot be stored in a PostgreSQL text column.
@@ -183,16 +168,25 @@ func validateSubmit(request *GenerationSubmitRequest) error {
 		return fmt.Errorf("%w: purpose contains a NUL character", ErrInvalidRequest)
 	}
 
-	// I-JSON (RFC 7493) refuses duplicate names, invalid UTF-8 and unpaired surrogates: canonicalizing
-	// any of them would give two different requests one key.
-	if !request.Input.IsValid() {
-		return fmt.Errorf("%w: input is not valid I-JSON (RFC 7493)", ErrInvalidRequest)
+	if size := len(request.Payload); size > PayloadSizeCeiling {
+		return fmt.Errorf(
+			"%w: payload contains %d bytes, limit is %d", ErrInvalidRequest, size, PayloadSizeCeiling,
+		)
 	}
 
-	// The schema's content is the provider's to judge; its shape is not. A strict schema's root is
-	// always an object.
-	if !request.OutputSchema.IsValid() || request.OutputSchema.Kind() != '{' {
-		return fmt.Errorf("%w: output schema is not a valid I-JSON object (RFC 7493)", ErrInvalidRequest)
+	// I-JSON (RFC 7493) refuses duplicate names, invalid UTF-8 and unpaired surrogates: canonicalizing
+	// any of them would give two different requests one key. A provider request is always an object.
+	if !request.Payload.IsValid() || request.Payload.Kind() != '{' {
+		return fmt.Errorf("%w: payload is not a valid I-JSON object (RFC 7493)", ErrInvalidRequest)
+	}
+
+	_, err = service.adapters.Async(request.Provider)
+	if errors.Is(err, lib.ErrProviderUnknown) {
+		return fmt.Errorf("%w: %w: %q", ErrInvalidRequest, err, request.Provider)
+	}
+
+	if err != nil {
+		return fmt.Errorf("provider %q: %w", request.Provider, err)
 	}
 
 	return nil
@@ -200,23 +194,22 @@ func validateSubmit(request *GenerationSubmitRequest) error {
 
 // requestKeyTag versions what the request key covers. Changing the construction changes the tag, so
 // a key of one version never matches a key of another.
-const requestKeyTag = "a-novel/genai/request-key/v1"
+const requestKeyTag = "a-novel/genai/request-key/v2"
+
+// asyncMode names the Async mode in the request key, so the same payload submitted in another mode
+// is another request.
+const asyncMode = "async"
 
 // requestKey identifies a request among an owner's generations. The same content always yields the
 // same key, which is what lets a caller recover by resending: it holds no key of its own.
 //
 // Each field is length-prefixed, so no two different requests can concatenate to the same bytes, and
-// JSON is canonicalized, so formatting or key order cannot split one request into two. The key never
-// leaves the generation row: it fingerprints user content, and is purged with it.
+// the payload is canonicalized, so formatting or key order cannot split one request into two. The
+// key never leaves the generation row: it fingerprints user content, and is purged with it.
 func requestKey(request *GenerationSubmitRequest) ([]byte, error) {
-	input, err := canonicalJSON(request.Input)
+	payload, err := canonicalJSON(request.Payload)
 	if err != nil {
-		return nil, fmt.Errorf("canonicalize input: %w", err)
-	}
-
-	schema, err := canonicalJSON(request.OutputSchema)
-	if err != nil {
-		return nil, fmt.Errorf("canonicalize output schema: %w", err)
+		return nil, fmt.Errorf("canonicalize payload: %w", err)
 	}
 
 	digest := sha256.New()
@@ -225,10 +218,9 @@ func requestKey(request *GenerationSubmitRequest) ([]byte, error) {
 		[]byte(requestKeyTag),
 		request.OwnerID[:],
 		[]byte(request.Purpose),
-		[]byte(request.Tier),
-		[]byte(request.Instructions),
-		input,
-		schema,
+		[]byte(request.Provider),
+		[]byte(asyncMode),
+		payload,
 		binary.BigEndian.AppendUint32(nil, request.Variant),
 	} {
 		digest.Write(binary.BigEndian.AppendUint64(nil, uint64(len(field))))
@@ -254,8 +246,8 @@ func canonicalJSON(value json.RawMessage) ([]byte, error) {
 	return encodeJSON(decoded)
 }
 
-// encodeJSON encodes without escaping <, > and &. json.Marshal would escape them, inside a caller's
-// raw input too, and the model would then read \u0026 where the user wrote &.
+// encodeJSON encodes without escaping <, > and &, so the canonical form keeps the caller's
+// characters.
 func encodeJSON(value any) ([]byte, error) {
 	var buffer bytes.Buffer
 

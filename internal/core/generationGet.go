@@ -24,9 +24,9 @@ type (
 	GenerationGetElectCheckDao interface {
 		Exec(ctx context.Context, request *dao.GenerationElectCheckRequest) (*dao.Generation, error)
 	}
-	// GenerationGetUsageListDao reads what the generation consumed.
-	GenerationGetUsageListDao interface {
-		Exec(ctx context.Context, request *dao.GenerationUsageListRequest) ([]*dao.GenerationUsage, error)
+	// GenerationGetAttemptListDao reads the provider's answers to the generation's attempts.
+	GenerationGetAttemptListDao interface {
+		Exec(ctx context.Context, request *dao.GenerationAttemptListRequest) ([]*dao.GenerationAttempt, error)
 	}
 	// GenerationGetServiceCheck checks the generation.
 	GenerationGetServiceCheck interface {
@@ -39,9 +39,6 @@ type GenerationGetConfig struct {
 	// CheckInterval is how long a check stays fresh. However often callers poll, a generation reaches
 	// the provider at most once per interval.
 	CheckInterval time.Duration `validate:"required,gt=0"`
-	// ProviderEpoch is this replica's provider configuration. A poll does not take the check of a
-	// generation a newer one took over.
-	ProviderEpoch int32 `validate:"required,min=1"`
 }
 
 // GenerationGetRequest holds the parameters for a [GenerationGet.Exec] call.
@@ -55,18 +52,18 @@ type GenerationGetRequest struct {
 //
 // A caller's polls are what keep its generation fresh: there is no worker following it.
 type GenerationGet struct {
-	config   GenerationGetConfig
-	dao      GenerationGetDao
-	electDao GenerationGetElectCheckDao
-	usageDao GenerationGetUsageListDao
-	check    GenerationGetServiceCheck
+	config     GenerationGetConfig
+	dao        GenerationGetDao
+	electDao   GenerationGetElectCheckDao
+	attemptDao GenerationGetAttemptListDao
+	check      GenerationGetServiceCheck
 }
 
 func NewGenerationGet(
 	config GenerationGetConfig,
 	getDao GenerationGetDao,
 	electDao GenerationGetElectCheckDao,
-	usageDao GenerationGetUsageListDao,
+	attemptDao GenerationGetAttemptListDao,
 	check GenerationGetServiceCheck,
 ) (*GenerationGet, error) {
 	err := validate.Struct(config)
@@ -74,7 +71,7 @@ func NewGenerationGet(
 		return nil, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 	}
 
-	return &GenerationGet{config: config, dao: getDao, electDao: electDao, usageDao: usageDao, check: check}, nil
+	return &GenerationGet{config: config, dao: getDao, electDao: electDao, attemptDao: attemptDao, check: check}, nil
 }
 
 func (service *GenerationGet) Exec(ctx context.Context, request *GenerationGetRequest) (*Generation, error) {
@@ -110,12 +107,12 @@ func (service *GenerationGet) Exec(ctx context.Context, request *GenerationGetRe
 		}
 	}
 
-	usage, err := service.usageDao.Exec(ctx, &dao.GenerationUsageListRequest{GenerationID: generation.ID})
+	attempts, err := service.attemptDao.Exec(ctx, &dao.GenerationAttemptListRequest{GenerationID: generation.ID})
 	if err != nil {
-		return nil, otel.ReportError(span, fmt.Errorf("list usage: %w", err))
+		return nil, otel.ReportError(span, fmt.Errorf("list attempts: %w", err))
 	}
 
-	return newGeneration(generation, usage), nil
+	return newGeneration(generation, attempts), nil
 }
 
 // checkIfStale checks the generation when no one checked it within the interval.
@@ -124,10 +121,9 @@ func (service *GenerationGet) checkIfStale(ctx context.Context, generation *dao.
 	defer span.End()
 
 	elected, err := service.electDao.Exec(ctx, &dao.GenerationElectCheckRequest{
-		ID:            generation.ID,
-		OwnerID:       generation.OwnerID,
-		Interval:      service.config.CheckInterval,
-		ProviderEpoch: service.config.ProviderEpoch,
+		ID:       generation.ID,
+		OwnerID:  generation.OwnerID,
+		Interval: service.config.CheckInterval,
 	})
 
 	// Checked within the interval, by this caller or another: the read is current enough.

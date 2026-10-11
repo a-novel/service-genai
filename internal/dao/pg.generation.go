@@ -17,7 +17,7 @@ const (
 	GenerationStatusPending GenerationStatus = "pending"
 	// GenerationStatusRunning means the provider accepted the call and it has not settled yet.
 	GenerationStatusRunning GenerationStatus = "running"
-	// GenerationStatusSucceeded means the provider returned a usable output.
+	// GenerationStatusSucceeded means the provider finished the call.
 	GenerationStatusSucceeded GenerationStatus = "succeeded"
 	// GenerationStatusFailed means the generation failed with no attempt left to retry.
 	GenerationStatusFailed GenerationStatus = "failed"
@@ -26,40 +26,35 @@ const (
 	GenerationStatusCancelled GenerationStatus = "cancelled"
 )
 
-// Generation is the durable record of one AI generative call.
+// Generation is the durable record of one provider call.
 //
-// Request and Output hold user content, so this row is purged on a retention schedule while the
-// usage rows describing it are kept. The generation_usage table gains its model with the settle
-// operation that writes it.
+// Payload, and the attempts recorded against the row, hold user content, so the row is purged on a
+// retention schedule and its attempts with it.
 type Generation struct {
 	bun.BaseModel `bun:"table:generations,alias:generations"`
 
 	ID      uuid.UUID `bun:"id,pk,type:uuid"`
 	OwnerID uuid.UUID `bun:"owner_id,type:uuid"`
-	Purpose string    `bun:"purpose"`
-
+	// Purpose is why the caller makes the call, in its own vocabulary.
+	Purpose string `bun:"purpose"`
+	// Provider names the service the payload is built for.
+	Provider string `bun:"provider"`
 	// RequestKey identifies the request among live and succeeded generations.
 	RequestKey []byte `bun:"request_key"`
-	// Request is the caller's provider-neutral request, stored as sent.
-	Request json.RawMessage `bun:"request,type:json"`
-	Output  json.RawMessage `bun:"output,type:json,nullzero"`
-	// Failure is the kind of failure that ended a failed generation.
-	Failure *string `bun:"failure,nullzero"`
+	// Payload is the provider's own request, built by the caller and stored as sent.
+	Payload json.RawMessage `bun:"payload,type:json"`
 	// Error names the cause of a failure or cancellation in this service's own words.
 	Error *string `bun:"error,nullzero"`
 
 	Status      GenerationStatus `bun:"status"`
 	Attempt     int16            `bun:"attempt"`
 	MaxAttempts int16            `bun:"max_attempts"`
-
 	// RunAt is the earliest time the next start may be sent.
 	RunAt time.Time `bun:"run_at"`
 	// StartRequestedAt records that paid work may exist even before its provider ID is durable.
 	StartRequestedAt  *time.Time `bun:"start_requested_at,nullzero"`
 	ProviderCallID    *string    `bun:"provider_call_id,nullzero"`
 	CancelRequestedAt *time.Time `bun:"cancel_requested_at,nullzero"`
-	// ProviderEpoch is the newest provider configuration that started or restarted an attempt.
-	ProviderEpoch *int32 `bun:"provider_epoch,nullzero"`
 	// CheckedAt is when a check last looked at the generation, by the database clock.
 	CheckedAt time.Time `bun:"checked_at"`
 

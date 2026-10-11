@@ -1,6 +1,6 @@
 # GenAI service
 
-Every AI generation on the platform runs here: the call to the provider, the record that survives a crash without paying twice, and what each call consumed.
+Every AI provider call on the platform runs here: the caller builds the request, and this service executes it durably, never pays for it twice, and returns what the provider answered.
 
 [![X (formerly Twitter) Follow](https://img.shields.io/twitter/follow/agorastoryverse)](https://twitter.com/agorastoryverse)
 [![Discord](https://img.shields.io/discord/1315240114691248138?logo=discord)](https://discord.gg/rp4Qr8cA)
@@ -18,21 +18,19 @@ Every AI generation on the platform runs here: the call to the provider, the rec
 
 ## What it does
 
-A generation takes minutes, costs real money, and must never be paid for twice. A caller states what it wants: a Tier, its instructions, the user's input and an output schema. This service picks the model for that Tier, calls the provider, survives its own restarts without re-billing, and hands back a document conforming to the schema, with what each provider call consumed.
+A provider call can take minutes, costs real money, and must never be paid for twice. This service owns how such a call executes; the caller owns what is executed. It never reads the request it runs or the answers it returns.
 
-Callers keep their domain. Prompt assembly stays with them, so instructions, input and schema arrive already built, but nothing about talking to a provider, recovering a crashed call or counting tokens is written twice.
+It is an execution service, not a proxy. The caller holds no connection while the provider works: it submits the call, then polls for the result, so the call outlives the caller's request, a restart of either side, and a deploy.
 
-Five things shape the contract:
+Four things shape the contract:
 
-**Callers never name a model.** They pick a Tier (`FAST`, `BALANCED`, `DEEP`), and the provider configuration binds each Tier to a model and a reasoning effort. `TierList` reports each Tier's input and output token ceilings, so a caller sizes its request without knowing the model. Switching provider is a configuration change that edits no caller, and work in flight restarts on the new provider.
+**The caller builds the request.** A submission names why it is made (its `purpose`, in the caller's own vocabulary) and a provider (`openai` today), and carries the payload: the provider's own request body, as raw JSON. The model, the prompt, the output schema, the limits and the privacy fields such as `store` belong to the caller. The provider's adapter writes only the fields the execution mode needs, and authenticates with the platform's only provider credential. Calls run in the Async mode: the provider accepts the call and runs it on its side while the caller polls.
 
-**A resend is a replay.** The service derives each generation's key from the request and its owner, so a caller that lost its connection or crashed sends the same request again and gets the same generation back, running or finished. It keeps no key of its own. A failed or cancelled generation is not served again: resending its request runs it from scratch. To ask for another result of a request that succeeded, send it with the next `variant`.
+**A resend is a replay.** The service derives each generation's key from its owner, its purpose, its provider and its payload, so a caller that lost its connection or crashed sends the same request again and gets the same generation back, running or finished. It keeps no key of its own; the same bytes are the same call. A failed or cancelled generation is not served again: resending its request runs it from scratch. To ask for another result of a request that succeeded, send it with the next `variant`.
 
-**A crash re-attaches instead of re-paying.** The provider's own identifier for an in-flight operation is recorded the moment the call starts, and every later check reads it back. No process holds a generation, so a restart or a deploy loses nothing: the next poll or sweep picks up the operation already paid for.
+**A crash re-attaches instead of re-paying.** The provider's own identifier for an in-flight operation is recorded the moment the call starts, and every later check reads it back. No process holds a generation, so a restart or a deploy loses nothing: the next poll or sweep picks up the operation already paid for. Every accepted call is followed until it settles, whether anyone polls it or not.
 
-**A failure says why.** A failed generation carries the kind of failure that ended it (refused, incomplete, invalid request, or failed) and the cause in this service's own words. The caller decides what to do; raw provider text stays in server logs.
-
-**Usage is reported, not kept.** Each generation lists what every provider call consumed, failed ones included, with the model and effort that actually ran. Callers keep the long-term record; this service purges usage with the generation it describes.
+**The provider's answers come back as sent.** Each generation lists every attempt that reached an answer, retried and cancelled ones included, with the provider's raw response, which holds the output and the usage. The service reports usage as the provider states it and computes nothing: callers keep what they need, and the purge deletes the rest with the generation. A generation that holds no finished response says why in the service's own words, and a request the provider rejected comes back with the provider's error body.
 
 The surface is **gRPC only**. Callers are other services on the internal network, so there is no browser client and no REST API to keep in step.
 
@@ -49,7 +47,7 @@ The service runs as published OCI images plus a PostgreSQL database. All state l
 | `service-genai/database`        | PostgreSQL with `pg_cron` and pgBackRest — or bring your own Postgres.      |
 | `service-genai/standalone-grpc` | Server plus migrations in one image. Local development only.                |
 
-Pin every image to the same release tag — see the [latest release](https://github.com/a-novel/service-genai/releases/latest). A production deployment runs `database`, then the migrations job to completion, then any number of `grpc` replicas. Provide `POSTGRES_HOST`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DATABASE` and `PROVIDER_API_KEY` through the orchestrator; store the password and the API key as secrets.
+Pin every image to the same release tag — see the [latest release](https://github.com/a-novel/service-genai/releases/latest). A production deployment runs `database`, then the migrations job to completion, then any number of `grpc` replicas. Provide `POSTGRES_HOST`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DATABASE` and `OPENAI_API_KEY` through the orchestrator; store the password and the API key as secrets. A caller controls the whole payload, including the model and the provider's built-in tools, so grant invocation to calling services only and restrict the OpenAI key to the Responses endpoints.
 
 Callers poll for results, and each poll checks its generation with the provider. The sweep inside the `grpc` process checks the generations nobody polled, so a result is captured before the provider discards it. Give each replica CPU outside of requests (on Cloud Run, CPU always allocated with at least one instance) and outbound access to the provider's API.
 
@@ -93,7 +91,7 @@ services:
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
       POSTGRES_DATABASE: "${POSTGRES_DATABASE}"
       POSTGRES_TLS_ENABLED: "false"
-      PROVIDER_API_KEY: "${PROVIDER_API_KEY}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY}"
     networks: [api]
 
 networks:
@@ -124,19 +122,16 @@ Every variable is read from the process environment. Names can be globally prefi
 | `POSTGRES_DATABASE`    | PostgreSQL database name. **Required when `POSTGRES_HOST` is set.**                                                           | all                       |
 | `POSTGRES_TLS_ENABLED` | Encrypt the PostgreSQL connection. Defaults to `true`; disable only when another trusted boundary protects the database link. | all                       |
 | `POSTGRES_DSN`         | Connection URL, read only when `POSTGRES_HOST` is empty. Local development uses it.                                           | all                       |
-| `PROVIDER_API_KEY`     | Provider credential. **Required; inject it as a secret.** The server refuses to start without it. No caller holds one.        | `grpc`, `standalone-grpc` |
+| `OPENAI_API_KEY`       | OpenAI credential. **Required; inject it as a secret.** The server refuses to start without it. No caller holds one.          | `grpc`, `standalone-grpc` |
 
 <details>
-<summary>Optional configuration (provider, checks, retention, gRPC, connection pool, OpenTelemetry)</summary>
+<summary>Optional configuration (OpenAI adapter, checks, retention, gRPC, connection pool, OpenTelemetry)</summary>
 
-Provider (images `grpc`, `standalone-grpc`). The defaults run on OpenAI; [switching provider](./docs/operations/generation-checks.md#switching-provider) sets every one of them, the key included, and raises the epoch. The endpoint must meet the [provider requirements](./docs/providers.md), which a conformance check verifies before the switch. The OpenAI SDK also reads `OPENAI_ORG_ID`, `OPENAI_PROJECT_ID` and `OPENAI_CUSTOM_HEADERS` from the environment, unprefixed; leave them unset unless the account needs them.
+OpenAI adapter (images `grpc`, `standalone-grpc`). The endpoint must meet the [provider requirements](./docs/providers.md), which a conformance check verifies. The OpenAI SDK also reads `OPENAI_ORG_ID`, `OPENAI_PROJECT_ID` and `OPENAI_CUSTOM_HEADERS` from the environment, never prefixed; leave them unset unless the account needs them.
 
-| Name                | Description                                                                                                                                                                                                                                                        | Default                                                |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------ |
-| `PROVIDER_NAME`     | Identifies the provider on usage records. Changed with the account or endpoint, not on key rotation.                                                                                                                                                               | `openai`                                               |
-| `PROVIDER_EPOCH`    | Orders provider configurations. Raise it on every switch, and never lower it: work started under a lower epoch restarts on this one, and work under a higher one waits for it.                                                                                     | `1`                                                    |
-| `PROVIDER_BASE_URL` | Responses API endpoint.                                                                                                                                                                                                                                            | `https://api.openai.com/v1/`                           |
-| `PROVIDER_TIERS`    | JSON object binding each of `fast`, `balanced` and `deep` to `{"model", "reasoningEffort", "maxInputTokens", "maxOutputTokens"}`. The effort is passed as is; `maxInputTokens` is the model's published maximum input. Every Tier needs a model and both ceilings. | [OpenAI bindings](./internal/config/tiers.openai.json) |
+| Name              | Description             | Default                      |
+| ----------------- | ----------------------- | ---------------------------- |
+| `OPENAI_BASE_URL` | Responses API endpoint. | `https://api.openai.com/v1/` |
 
 Checks and sweep (images `grpc`, `standalone-grpc`). [Generation checks](./docs/operations/generation-checks.md) explains how they move a generation forward.
 
@@ -146,7 +141,7 @@ Checks and sweep (images `grpc`, `standalone-grpc`). [Generation checks](./docs/
 | `SWEEP_INTERVAL`   | How often the sweep runs, and how stale a generation must be for it. At most `5m`.                                     | `1m`    |
 | `SWEEP_BATCH_SIZE` | Generations one sweep pass checks.                                                                                     | `50`    |
 | `MAX_ATTEMPTS`     | Provider calls a generation gets when a call fails retryably. Each one is paid.                                        | `2`     |
-| `RETENTION`        | How long a settled generation, its usage and its request key survive before the purge deletes them.                    | `6h`    |
+| `RETENTION`        | How long a settled generation, its attempts and its request key survive before the purge deletes them.                 | `6h`    |
 
 gRPC server:
 

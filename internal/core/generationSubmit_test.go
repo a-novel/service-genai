@@ -15,17 +15,16 @@ import (
 	coremocks "github.com/a-novel/service-genai/internal/core/mocks"
 	"github.com/a-novel/service-genai/internal/dao"
 	"github.com/a-novel/service-genai/internal/lib"
+	libmocks "github.com/a-novel/service-genai/internal/lib/mocks"
 )
 
 // submitRequest is a valid submission; a case adjusts it.
 func submitRequest(adjust func(request *core.GenerationSubmitRequest)) *core.GenerationSubmitRequest {
 	request := &core.GenerationSubmitRequest{
-		OwnerID:      testOwner,
-		Purpose:      "studio.generation",
-		Tier:         lib.TierBalanced,
-		Instructions: "Continue.",
-		Input:        json.RawMessage(`{"scene": "a door"}`),
-		OutputSchema: json.RawMessage(`{"type": "object", "properties": {}}`),
+		OwnerID:  testOwner,
+		Purpose:  testPurpose,
+		Provider: testProvider,
+		Payload:  json.RawMessage(`{"model": "a-model", "input": "Continue the scene."}`),
 	}
 
 	if adjust != nil {
@@ -35,13 +34,23 @@ func submitRequest(adjust func(request *core.GenerationSubmitRequest)) *core.Gen
 	return request
 }
 
-// inputOfSize makes the request's three parts add up to the given number of bytes.
-func inputOfSize(size int) func(request *core.GenerationSubmitRequest) {
+// payloadOfSize makes the payload the given number of bytes.
+func payloadOfSize(size int) func(request *core.GenerationSubmitRequest) {
 	return func(request *core.GenerationSubmitRequest) {
-		const quotes = 2
+		const envelope = len(`{"input":""}`)
 
-		filler := size - len(request.Instructions) - len(request.OutputSchema) - quotes
-		request.Input = json.RawMessage(`"` + strings.Repeat("x", filler) + `"`)
+		request.Payload = json.RawMessage(`{"input":"` + strings.Repeat("x", size-envelope) + `"}`)
+	}
+}
+
+// testAdapters serve the test provider in the Async mode, and another provider without it.
+func testAdapters(t *testing.T) lib.Adapters {
+	t.Helper()
+
+	return lib.Adapters{
+		testProvider: libmocks.NewMockAsyncAdapter(t),
+		"another":    libmocks.NewMockAsyncAdapter(t),
+		"sync-only":  struct{}{},
 	}
 }
 
@@ -62,8 +71,8 @@ func TestGenerationSubmit(t *testing.T) {
 
 		daoMock *daoMock
 		// checkErr is what starting a created generation returns. A replay is never started here.
-		checkErr error
-		usageErr error
+		checkErr   error
+		attemptErr error
 
 		expectCreated bool
 		expectErr     error
@@ -84,30 +93,20 @@ func TestGenerationSubmit(t *testing.T) {
 			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration()}},
 		},
 		{
-			name: "Success/AnyJSONInput",
-
-			request: submitRequest(func(request *core.GenerationSubmitRequest) {
-				request.Input = json.RawMessage(`"a plain string is JSON too"`)
-			}),
-			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration(), Created: true}},
-
-			expectCreated: true,
-		},
-		{
-			// Stored and sent as written: an escaped & would reach the model as \u0026.
+			// Stored as written, so it reaches the provider as written.
 			name: "Success/HTMLCharacters",
 
 			request: submitRequest(func(request *core.GenerationSubmitRequest) {
-				request.Input = json.RawMessage(`{"text": "Tom & Jerry <3>"}`)
+				request.Payload = json.RawMessage(`{"input": "Tom & Jerry <3>"}`)
 			}),
 			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration(), Created: true}},
 
 			expectCreated: true,
 		},
 		{
-			name: "Success/RequestAtCeiling",
+			name: "Success/PayloadAtCeiling",
 
-			request: submitRequest(inputOfSize(core.RequestSizeCeiling)),
+			request: submitRequest(payloadOfSize(core.PayloadSizeCeiling)),
 			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration(), Created: true}},
 
 			expectCreated: true,
@@ -122,75 +121,7 @@ func TestGenerationSubmit(t *testing.T) {
 		{
 			name: "Error/NoPurpose",
 
-			request: submitRequest(func(request *core.GenerationSubmitRequest) { request.Purpose = "" }),
-
-			expectErr: core.ErrInvalidRequest,
-		},
-		{
-			name: "Error/NoTier",
-
-			request: submitRequest(func(request *core.GenerationSubmitRequest) { request.Tier = "" }),
-
-			expectErr: core.ErrInvalidRequest,
-		},
-		{
-			name: "Error/UnknownTier",
-
-			request: submitRequest(func(request *core.GenerationSubmitRequest) { request.Tier = "gpt-5" }),
-
-			expectErr: core.ErrInvalidRequest,
-		},
-		{
-			name: "Error/BlankInstructions",
-
-			request: submitRequest(func(request *core.GenerationSubmitRequest) { request.Instructions = " " }),
-
-			expectErr: core.ErrInvalidRequest,
-		},
-		{
-			name: "Error/InputNotJSON",
-
-			request: submitRequest(func(request *core.GenerationSubmitRequest) {
-				request.Input = json.RawMessage(`not json`)
-			}),
-
-			expectErr: core.ErrInvalidRequest,
-		},
-		{
-			// A strict schema's root is always an object; anything else is a caller bug.
-			name: "Error/SchemaNotAnObject",
-
-			request: submitRequest(func(request *core.GenerationSubmitRequest) {
-				request.OutputSchema = json.RawMessage(`["type", "object"]`)
-			}),
-
-			expectErr: core.ErrInvalidRequest,
-		},
-		{
-			name: "Error/SchemaNull",
-
-			request: submitRequest(func(request *core.GenerationSubmitRequest) {
-				request.OutputSchema = json.RawMessage(`null`)
-			}),
-
-			expectErr: core.ErrInvalidRequest,
-		},
-		{
-			// Canonicalizing would keep one of the values, so two different requests would share a key.
-			name: "Error/InputDuplicateNames",
-
-			request: submitRequest(func(request *core.GenerationSubmitRequest) {
-				request.Input = json.RawMessage(`{"scene": "a door", "scene": "a window"}`)
-			}),
-
-			expectErr: core.ErrInvalidRequest,
-		},
-		{
-			name: "Error/InputUnpairedSurrogate",
-
-			request: submitRequest(func(request *core.GenerationSubmitRequest) {
-				request.Input = json.RawMessage(`{"scene": "\ud800"}`)
-			}),
+			request: submitRequest(func(request *core.GenerationSubmitRequest) { request.Purpose = " " }),
 
 			expectErr: core.ErrInvalidRequest,
 		},
@@ -203,10 +134,79 @@ func TestGenerationSubmit(t *testing.T) {
 			expectErr: core.ErrInvalidRequest,
 		},
 		{
-			// Refused here rather than at the transport, so the caller gets an error it can act on.
-			name: "Error/RequestTooLarge",
+			name: "Error/NoProvider",
 
-			request: submitRequest(inputOfSize(core.RequestSizeCeiling + 1)),
+			request: submitRequest(func(request *core.GenerationSubmitRequest) { request.Provider = "" }),
+
+			expectErr: core.ErrInvalidRequest,
+		},
+		{
+			name: "Error/UnknownProvider",
+
+			request: submitRequest(func(request *core.GenerationSubmitRequest) { request.Provider = "gpt-5" }),
+
+			expectErr: core.ErrInvalidRequest,
+		},
+		{
+			// The request is valid; this service cannot run it in the Async mode.
+			name: "Error/ModeUnsupported",
+
+			request: submitRequest(func(request *core.GenerationSubmitRequest) { request.Provider = "sync-only" }),
+
+			expectErr: lib.ErrModeUnsupported,
+		},
+		{
+			name: "Error/PayloadNotJSON",
+
+			request: submitRequest(func(request *core.GenerationSubmitRequest) {
+				request.Payload = json.RawMessage(`not json`)
+			}),
+
+			expectErr: core.ErrInvalidRequest,
+		},
+		{
+			// A provider request is always an object; anything else is a caller bug.
+			name: "Error/PayloadNotAnObject",
+
+			request: submitRequest(func(request *core.GenerationSubmitRequest) {
+				request.Payload = json.RawMessage(`["model", "a-model"]`)
+			}),
+
+			expectErr: core.ErrInvalidRequest,
+		},
+		{
+			name: "Error/PayloadNull",
+
+			request: submitRequest(func(request *core.GenerationSubmitRequest) {
+				request.Payload = json.RawMessage(`null`)
+			}),
+
+			expectErr: core.ErrInvalidRequest,
+		},
+		{
+			// Canonicalizing would keep one of the values, so two different requests would share a key.
+			name: "Error/PayloadDuplicateNames",
+
+			request: submitRequest(func(request *core.GenerationSubmitRequest) {
+				request.Payload = json.RawMessage(`{"input": "a door", "input": "a window"}`)
+			}),
+
+			expectErr: core.ErrInvalidRequest,
+		},
+		{
+			name: "Error/PayloadUnpairedSurrogate",
+
+			request: submitRequest(func(request *core.GenerationSubmitRequest) {
+				request.Payload = json.RawMessage(`{"input": "\ud800"}`)
+			}),
+
+			expectErr: core.ErrInvalidRequest,
+		},
+		{
+			// Refused here rather than at the transport, so the caller gets an error it can act on.
+			name: "Error/PayloadTooLarge",
+
+			request: submitRequest(payloadOfSize(core.PayloadSizeCeiling + 1)),
 
 			expectErr: core.ErrInvalidRequest,
 		},
@@ -221,11 +221,11 @@ func TestGenerationSubmit(t *testing.T) {
 			expectErr: errFoo,
 		},
 		{
-			name: "Error/Usage",
+			name: "Error/Attempts",
 
-			request:  submitRequest(nil),
-			daoMock:  &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration()}},
-			usageErr: errFoo,
+			request:    submitRequest(nil),
+			daoMock:    &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration()}},
+			attemptErr: errFoo,
 
 			expectErr: errFoo,
 		},
@@ -244,26 +244,17 @@ func TestGenerationSubmit(t *testing.T) {
 			t.Parallel()
 
 			submitDao := coremocks.NewMockGenerationSubmitDao(t)
-			usageDao := coremocks.NewMockGenerationSubmitUsageListDao(t)
+			attemptDao := coremocks.NewMockGenerationSubmitAttemptListDao(t)
 			check := coremocks.NewMockGenerationSubmitServiceCheck(t)
 
 			if testCase.daoMock != nil {
 				submitDao.EXPECT().
 					Exec(mock.Anything, mock.MatchedBy(func(request *dao.GenerationSubmitRequest) bool {
-						var stored struct {
-							Tier         lib.Tier        `json:"tier"`
-							Instructions string          `json:"instructions"`
-							Input        json.RawMessage `json:"input"`
-							OutputSchema json.RawMessage `json:"outputSchema"`
-						}
-
-						// The stored request carries the caller's fields as sent, and the digest is
-						// derived rather than left empty.
-						return json.Unmarshal(request.Request, &stored) == nil &&
-							stored.Tier == testCase.request.Tier &&
-							stored.Instructions == testCase.request.Instructions &&
-							string(stored.Input) == compact(testCase.request.Input) &&
-							string(stored.OutputSchema) == compact(testCase.request.OutputSchema) &&
+						// The payload is stored exactly as sent, and the digest is derived rather than
+						// left empty.
+						return request.Purpose == testCase.request.Purpose &&
+							request.Provider == testCase.request.Provider &&
+							string(request.Payload) == string(testCase.request.Payload) &&
 							request.MaxAttempts == maxAttempts &&
 							len(request.RequestKey) == 32 &&
 							request.ID != uuid.Nil
@@ -277,14 +268,14 @@ func TestGenerationSubmit(t *testing.T) {
 				}
 
 				if testCase.daoMock.resp != nil && testCase.checkErr == nil {
-					usageDao.EXPECT().
-						Exec(mock.Anything, &dao.GenerationUsageListRequest{GenerationID: testGenerationID}).
-						Return([]*dao.GenerationUsage{}, testCase.usageErr)
+					attemptDao.EXPECT().
+						Exec(mock.Anything, &dao.GenerationAttemptListRequest{GenerationID: testGenerationID}).
+						Return([]*dao.GenerationAttempt{}, testCase.attemptErr)
 				}
 			}
 
 			service, err := core.NewGenerationSubmit(
-				core.GenerationSubmitConfig{MaxAttempts: maxAttempts}, submitDao, usageDao, check,
+				core.GenerationSubmitConfig{MaxAttempts: maxAttempts}, testAdapters(t), submitDao, attemptDao, check,
 			)
 			require.NoError(t, err)
 
@@ -299,7 +290,7 @@ func TestGenerationSubmit(t *testing.T) {
 			}
 
 			submitDao.AssertExpectations(t)
-			usageDao.AssertExpectations(t)
+			attemptDao.AssertExpectations(t)
 			check.AssertExpectations(t)
 		})
 	}
@@ -320,32 +311,18 @@ func TestGenerationSubmit(t *testing.T) {
 			name: "ReformattedJSON",
 
 			adjust: func(request *core.GenerationSubmitRequest) {
-				request.Input = json.RawMessage(`{ "scene" : "a door" }`)
-				request.OutputSchema = json.RawMessage(`{"properties":{},"type":"object"}`)
+				request.Payload = json.RawMessage(`{ "input" : "Continue the scene.", "model" : "a-model" }`)
 			},
 
 			expectSame: true,
 		},
 		{name: "Owner", adjust: func(request *core.GenerationSubmitRequest) { request.OwnerID = uuid.New() }},
 		{name: "Purpose", adjust: func(request *core.GenerationSubmitRequest) { request.Purpose = "studio.analysis" }},
-		{name: "Tier", adjust: func(request *core.GenerationSubmitRequest) { request.Tier = lib.TierDeep }},
-		{name: "Instructions", adjust: func(request *core.GenerationSubmitRequest) { request.Instructions = "Stop." }},
-		{name: "Input", adjust: func(request *core.GenerationSubmitRequest) {
-			request.Input = json.RawMessage(`{"scene": "a window"}`)
-		}},
-		{name: "OutputSchema", adjust: func(request *core.GenerationSubmitRequest) {
-			request.OutputSchema = json.RawMessage(`{"type": "object", "properties": {"text": {"type": "string"}}}`)
+		{name: "Provider", adjust: func(request *core.GenerationSubmitRequest) { request.Provider = "another" }},
+		{name: "Payload", adjust: func(request *core.GenerationSubmitRequest) {
+			request.Payload = json.RawMessage(`{"model": "a-model", "input": "Stop."}`)
 		}},
 		{name: "Variant", adjust: func(request *core.GenerationSubmitRequest) { request.Variant = 1 }},
-		{
-			// Moving bytes from one field to the next must not produce the same key.
-			name: "FieldBoundary",
-
-			adjust: func(request *core.GenerationSubmitRequest) {
-				request.Purpose = "studio.generationContinue"
-				request.Instructions = "."
-			},
-		},
 	}
 
 	baseKey := submittedKey(t, submitRequest(nil))
@@ -382,8 +359,9 @@ func submittedKey(t *testing.T, request *core.GenerationSubmitRequest) []byte {
 
 	service, err := core.NewGenerationSubmit(
 		core.GenerationSubmitConfig{MaxAttempts: 1},
+		testAdapters(t),
 		submitDao,
-		coremocks.NewMockGenerationSubmitUsageListDao(t),
+		coremocks.NewMockGenerationSubmitAttemptListDao(t),
 		coremocks.NewMockGenerationSubmitServiceCheck(t),
 	)
 	if err != nil {
