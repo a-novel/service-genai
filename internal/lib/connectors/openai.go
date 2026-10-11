@@ -6,14 +6,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"iter"
 	"math"
 	"net/http"
 	"net/http/httptrace"
+	"strconv"
 	"sync/atomic"
 	"time"
 
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
+	"github.com/openai/openai-go/v3/packages/ssestream"
 	"github.com/openai/openai-go/v3/responses"
 	"github.com/openai/openai-go/v3/shared"
 	"go.opentelemetry.io/otel/attribute"
@@ -89,7 +92,7 @@ func (provider *OpenAI) Start(ctx context.Context, request *AsyncStartRequest) (
 	ctx, span := otel.Tracer().Start(ctx, "connectors.OpenAI.Start")
 	defer span.End()
 
-	body, err := asyncEnvelope(request.Payload)
+	body, err := asyncEnvelope(request.Payload, request.Stream)
 	if err != nil {
 		return nil, otel.ReportError(span, fmt.Errorf("write async envelope: %w", err))
 	}
@@ -103,6 +106,15 @@ func (provider *OpenAI) Start(ctx context.Context, request *AsyncStartRequest) (
 		WroteRequest: func(info httptrace.WroteRequestInfo) { sent.Store(info.Err == nil) },
 	})
 
+	if request.Stream {
+		call, err := provider.holdStream(ctx, body)
+		if err != nil {
+			return nil, otel.ReportError(span, classifyOpenAIStartError(err, sent.Load()))
+		}
+
+		return call, nil
+	}
+
 	response := &responses.Response{}
 
 	err = provider.client.Post(ctx, responsesPath, body, response, option.WithMaxRetries(0))
@@ -111,6 +123,85 @@ func (provider *OpenAI) Start(ctx context.Context, request *AsyncStartRequest) (
 	}
 
 	return providerCallOf(response), nil
+}
+
+// Stream reads the operation's events after the cursor. openai-go's GetStreaming sends a body on
+// the GET, which the API refuses (openai-go#660), so the request is built here.
+func (provider *OpenAI) Stream(ctx context.Context, request *StreamRequest) iter.Seq2[*StreamEvent, error] {
+	return func(yield func(*StreamEvent, error) bool) {
+		ctx, span := otel.Tracer().Start(ctx, "connectors.OpenAI.Stream")
+		defer span.End()
+
+		opts := []option.RequestOption{option.WithMaxRetries(0), option.WithQuery("stream", "true")}
+		if request.StartingAfter != nil {
+			opts = append(opts, option.WithQuery("starting_after", strconv.FormatInt(*request.StartingAfter, 10)))
+		}
+
+		var raw *http.Response
+
+		err := provider.client.Get(ctx, responsesPath+"/"+request.ID, nil, &raw, opts...)
+		if err != nil {
+			yield(nil, otel.ReportError(span, classifyOpenAIStreamError(err)))
+
+			return
+		}
+
+		decoder := ssestream.NewDecoder(raw)
+		defer func() { _ = decoder.Close() }()
+
+		for decoder.Next() {
+			data := decoder.Event().Data
+
+			var head responses.ResponseStreamEventUnion
+
+			err = json.Unmarshal(data, &head)
+			if err != nil {
+				yield(nil, otel.ReportError(span, fmt.Errorf("decode event: %w", err)))
+
+				return
+			}
+
+			event := &StreamEvent{Sequence: head.SequenceNumber, Data: data, Terminal: terminalEvents[head.Type]}
+			if !yield(event, nil) || event.Terminal {
+				return
+			}
+		}
+
+		// A stream cut before its terminal event resumes after the last event the caller received.
+		err = decoder.Err()
+		if err != nil {
+			yield(nil, otel.ReportError(span, fmt.Errorf("%w: %w", ErrRetryable, err)))
+		}
+	}
+}
+
+// terminalEvents end an operation's stream. A cancelled operation has none: its stream just ends.
+var terminalEvents = map[string]bool{
+	"response.completed":  true,
+	"response.failed":     true,
+	"response.incomplete": true,
+	"error":               true,
+}
+
+// classifyOpenAIStreamError tells a stream the provider refuses from one worth opening again.
+func classifyOpenAIStreamError(err error) error {
+	var apiErr *openai.Error
+
+	if !errors.As(err, &apiErr) {
+		return fmt.Errorf("%w: %w", ErrRetryable, err)
+	}
+
+	err = withProviderMessage(err, apiErr)
+
+	switch status := apiErr.StatusCode; {
+	case status == http.StatusBadRequest, status == http.StatusNotFound:
+		// Past the stream window, or never created to be streamed.
+		return fmt.Errorf("%w: %w", ErrStreamUnavailable, err)
+	case status == http.StatusTooManyRequests, status >= http.StatusInternalServerError:
+		return fmt.Errorf("%w: %w", ErrRetryable, err)
+	}
+
+	return err
 }
 
 // Get reads an operation, and is also the re-attach path.
@@ -155,10 +246,50 @@ func (provider *OpenAI) Cancel(ctx context.Context, id string) (*Call, error) {
 	return providerCallOf(response), nil
 }
 
+// holdStream creates the operation in streaming mode and reads its stream until the provider begins
+// it: leaving while it is still queued can leave it queued for good. A deadline cut short after
+// the operation's id came returns the call still queued, for checks to follow.
+func (provider *OpenAI) holdStream(ctx context.Context, body json.RawMessage) (*Call, error) {
+	ctx, span := otel.Tracer().Start(ctx, "connectors.OpenAI(holdStream)")
+	defer span.End()
+
+	var raw *http.Response
+
+	err := provider.client.Post(ctx, responsesPath, body, &raw, option.WithMaxRetries(0))
+	if err != nil {
+		return nil, otel.ReportError(span, err)
+	}
+
+	decoder := ssestream.NewDecoder(raw)
+	defer func() { _ = decoder.Close() }()
+
+	var call *Call
+
+	for decoder.Next() {
+		var event responses.ResponseStreamEventUnion
+
+		if json.Unmarshal(decoder.Event().Data, &event) != nil || event.Response.ID == "" {
+			continue
+		}
+
+		call = providerCallOf(&event.Response)
+		if call.State != CallQueued {
+			break
+		}
+	}
+
+	if call == nil {
+		// The request left, so the provider may hold the operation; nothing names it.
+		return nil, otel.ReportError(span, fmt.Errorf("%w: the stream ended before the operation's id", ErrStartAmbiguous))
+	}
+
+	return call, nil
+}
+
 // asyncEnvelope writes the fields the Async mode owns over the caller's payload. The other values
 // are forwarded as sent: they are decoded only as far as the top-level object, and re-encoded
 // without escaping.
-func asyncEnvelope(payload json.RawMessage) (json.RawMessage, error) {
+func asyncEnvelope(payload json.RawMessage, stream bool) (json.RawMessage, error) {
 	var fields map[string]json.RawMessage
 
 	err := json.Unmarshal(payload, &fields)
@@ -167,7 +298,7 @@ func asyncEnvelope(payload json.RawMessage) (json.RawMessage, error) {
 	}
 
 	fields["background"] = json.RawMessage("true")
-	fields["stream"] = json.RawMessage("false")
+	fields["stream"] = json.RawMessage(strconv.FormatBool(stream))
 
 	return encodeJSON(fields)
 }
@@ -205,7 +336,9 @@ func providerCallOf(response *responses.Response) *Call {
 		call.Retryable = retryableFailure(response.Error.Code)
 	case responses.ResponseStatusCancelled:
 		call.State = CallCancelled
-	case responses.ResponseStatusQueued, responses.ResponseStatusInProgress:
+	case responses.ResponseStatusQueued:
+		call.State = CallQueued
+	case responses.ResponseStatusInProgress:
 	default:
 		// An unknown status is treated as still running rather than terminal: polling again is
 		// cheap, and settling on a status we do not understand throws away work already paid for.

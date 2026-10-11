@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"iter"
 	"time"
 )
 
@@ -12,7 +13,9 @@ import (
 type CallState string
 
 const (
-	// CallRunning means the operation is queued or in progress and must be polled again.
+	// CallQueued means the provider accepted the operation and has not begun it.
+	CallQueued CallState = "queued"
+	// CallRunning means the operation is in progress and must be polled again.
 	CallRunning CallState = "running"
 	// CallSucceeded means the provider finished the operation. Whether its output is usable
 	// is the caller's reading of the response.
@@ -26,7 +29,7 @@ const (
 
 // Terminal reports whether the state needs no further polling.
 func (state CallState) Terminal() bool {
-	return state != CallRunning
+	return state != CallQueued && state != CallRunning
 }
 
 var (
@@ -40,6 +43,9 @@ var (
 	ErrProviderUnknown = errors.New("unknown provider")
 	// ErrModeUnsupported is returned for a provider whose connector does not offer the mode.
 	ErrModeUnsupported = errors.New("provider does not support this mode")
+	// ErrStreamUnavailable means the provider no longer streams the operation, or never did: its
+	// result is read with [Async.Get].
+	ErrStreamUnavailable = errors.New("provider does not stream this operation")
 )
 
 // RejectionError is a start the provider refused outright. Nothing ran, so nothing was paid.
@@ -101,6 +107,9 @@ type AsyncStartRequest struct {
 	// Payload is the provider's own request, built by the caller. The connector writes the fields the
 	// Async mode needs over it and reads nothing else.
 	Payload json.RawMessage
+	// Stream creates the operation in streaming mode, so [Streaming] can read its events while it
+	// runs.
+	Stream bool
 }
 
 // An Async runs calls in the Async mode: the provider accepts a call and runs it on its side,
@@ -118,9 +127,51 @@ type Async interface {
 	Cancel(ctx context.Context, id string) (*Call, error)
 }
 
+// A Streaming reads the events of an operation started with [AsyncStartRequest.Stream], as the
+// provider produces them.
+type Streaming interface {
+	// Stream yields the operation's events after the cursor, or from its first one when there is
+	// none, and stops after a terminal event. [ErrStreamUnavailable] means the provider no longer
+	// streams the operation.
+	Stream(ctx context.Context, request *StreamRequest) iter.Seq2[*StreamEvent, error]
+}
+
+// StreamRequest is the input to [Streaming.Stream].
+type StreamRequest struct {
+	// ID identifies the operation.
+	ID string
+	// StartingAfter is the cursor: the sequence number of the last event already received.
+	StartingAfter *int64
+}
+
+// StreamEvent is one event of an operation, as the provider sent it.
+type StreamEvent struct {
+	// Sequence orders the operation's events; a stream resumes after it.
+	Sequence int64
+	// Data is the event as sent.
+	Data json.RawMessage
+	// Terminal marks the operation's last event.
+	Terminal bool
+}
+
 // Registry names the connector serving each provider. A connector offers a mode by implementing the
 // mode's interface, so what a provider supports is decided by its code and cannot be misdeclared.
 type Registry map[string]any
+
+// Streaming returns the connector serving the provider in the Streaming mode.
+func (registry Registry) Streaming(provider string) (Streaming, error) {
+	connector, ok := registry[provider]
+	if !ok {
+		return nil, ErrProviderUnknown
+	}
+
+	streaming, ok := connector.(Streaming)
+	if !ok {
+		return nil, ErrModeUnsupported
+	}
+
+	return streaming, nil
+}
 
 // Async returns the connector running the provider's calls in the Async mode.
 func (registry Registry) Async(provider string) (Async, error) {
