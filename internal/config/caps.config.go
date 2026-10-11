@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/samber/lo"
 )
 
 // DefaultTier is the user tier every cap must declare, applied when a user's tier is absent or unknown.
@@ -25,6 +27,29 @@ type Caps struct {
 	Global TierCaps `json:"global" yaml:"global"`
 }
 
+// Validate refuses caps a submit could not apply.
+func (caps Caps) Validate() error {
+	for purpose, tiers := range caps.Purposes {
+		err := tiers.validate()
+		if err != nil {
+			return fmt.Errorf("purpose %q: %w", purpose, err)
+		}
+	}
+
+	err := caps.Global.validate()
+	if err != nil {
+		return fmt.Errorf("global: %w", err)
+	}
+
+	// A user whose tier is unknown must always be bounded: -1 lifts the limit, but only on purpose.
+	if globalDefault := caps.Global[DefaultTier]; globalDefault.Concurrency == nil &&
+		!globalDefault.Unlimited && !globalDefault.Forbidden {
+		return fmt.Errorf("%w: global: the %q tier sets no concurrency", ErrInvalidConfig, DefaultTier)
+	}
+
+	return nil
+}
+
 // TierCaps maps each user tier to its cap.
 type TierCaps map[string]Cap
 
@@ -36,6 +61,38 @@ func (caps TierCaps) For(tier string) Cap {
 	}
 
 	return capOfTier
+}
+
+func (caps TierCaps) validate() error {
+	if _, ok := caps[DefaultTier]; !ok {
+		return fmt.Errorf("%w: no %q tier", ErrInvalidConfig, DefaultTier)
+	}
+
+	for tier, capOfTier := range caps {
+		if capOfTier.Unlimited || capOfTier.Forbidden {
+			continue
+		}
+
+		if len(capOfTier.Windows) == 0 && capOfTier.Concurrency == nil {
+			return fmt.Errorf("%w: tier %q declares neither a window nor a concurrency", ErrInvalidConfig, tier)
+		}
+
+		if lo.FromPtr(capOfTier.Concurrency) < -1 {
+			return fmt.Errorf("%w: tier %q allows a concurrency below -1", ErrInvalidConfig, tier)
+		}
+
+		for window, limit := range capOfTier.Windows {
+			if limit.InputTokens == nil && limit.OutputTokens == nil {
+				return fmt.Errorf("%w: tier %q limits nothing over %s", ErrInvalidConfig, tier, window)
+			}
+
+			if lo.FromPtr(limit.InputTokens) < 0 || lo.FromPtr(limit.OutputTokens) < 0 {
+				return fmt.Errorf("%w: tier %q has a negative limit over %s", ErrInvalidConfig, tier, window)
+			}
+		}
+	}
+
+	return nil
 }
 
 // Cap is one user tier's limits within a scope: a purpose, or every purpose for the global caps.

@@ -66,7 +66,7 @@ windows:
 			expect: config.Cap{Concurrency: &concurrency, Windows: map[time.Duration]config.Limit{}},
 		},
 		{
-			// Windows written straight under the tier, as before, are unknown keys rather than limits.
+			// Windows written straight under the tier are unknown keys, not limits.
 			name: "Error/WindowsNotNested",
 
 			document: `
@@ -137,6 +137,121 @@ windows:
 				require.NoError(t, err)
 				require.Equal(t, testCase.expect, decoded)
 			}
+		})
+	}
+}
+
+func TestCaps(t *testing.T) {
+	t.Parallel()
+
+	someLimit := map[time.Duration]config.Limit{time.Hour: {InputTokens: new(int64(1))}}
+	someTiers := map[string]config.TierCaps{"studio.generation": {config.DefaultTier: {Windows: someLimit}}}
+	someGlobal := config.TierCaps{config.DefaultTier: {Concurrency: new(1), Windows: someLimit}}
+
+	testCases := []struct {
+		name string
+
+		caps config.Caps
+
+		expectErr error
+	}{
+		{
+			// The caps built into the image must always pass, or the service cannot start.
+			name: "Success/Embedded",
+
+			caps: config.CapsDefault,
+		},
+		{
+			name: "Success/ConcurrencyOnly",
+
+			caps: config.Caps{
+				Purposes: map[string]config.TierCaps{"studio.generation": {config.DefaultTier: {Concurrency: new(1)}}},
+				Global:   config.TierCaps{config.DefaultTier: {Concurrency: new(-1)}},
+			},
+		},
+		{
+			// Lifting every global limit for an unknown tier is a deliberate policy, not an omission.
+			name: "Success/GlobalDefaultUnlimited",
+
+			caps: config.Caps{Purposes: someTiers, Global: config.TierCaps{config.DefaultTier: {Unlimited: true}}},
+		},
+		{
+			name: "Error/PurposeWithoutDefault",
+
+			caps: config.Caps{
+				Purposes: map[string]config.TierCaps{"studio.generation": {"admin": {Unlimited: true}}},
+				Global:   someGlobal,
+			},
+
+			expectErr: config.ErrInvalidConfig,
+		},
+		{
+			name: "Error/GlobalWithoutDefault",
+
+			caps: config.Caps{Purposes: someTiers},
+
+			expectErr: config.ErrInvalidConfig,
+		},
+		{
+			// An unknown tier would run as many generations at once as it likes.
+			name: "Error/GlobalDefaultWithoutConcurrency",
+
+			caps: config.Caps{Purposes: someTiers, Global: config.TierCaps{config.DefaultTier: {Windows: someLimit}}},
+
+			expectErr: config.ErrInvalidConfig,
+		},
+		{
+			// An empty map is neither unlimited nor forbidden: a typo, not a policy.
+			name: "Error/NeitherWindowNorConcurrency",
+
+			caps: config.Caps{
+				Purposes: map[string]config.TierCaps{"studio.generation": {config.DefaultTier: {}}},
+				Global:   someGlobal,
+			},
+
+			expectErr: config.ErrInvalidConfig,
+		},
+		{
+			name: "Error/LimitsNothing",
+
+			caps: config.Caps{
+				Purposes: map[string]config.TierCaps{"studio.generation": {config.DefaultTier: {
+					Windows: map[time.Duration]config.Limit{time.Hour: {}},
+				}}},
+				Global: someGlobal,
+			},
+
+			expectErr: config.ErrInvalidConfig,
+		},
+		{
+			name: "Error/NegativeLimit",
+
+			caps: config.Caps{
+				Purposes: map[string]config.TierCaps{"studio.generation": {config.DefaultTier: {
+					Windows: map[time.Duration]config.Limit{time.Hour: {OutputTokens: new(int64(-1))}},
+				}}},
+				Global: someGlobal,
+			},
+
+			expectErr: config.ErrInvalidConfig,
+		},
+		{
+			name: "Error/ConcurrencyBelowUnlimited",
+
+			caps: config.Caps{
+				Purposes: map[string]config.TierCaps{"studio.generation": {config.DefaultTier: {Concurrency: new(-2)}}},
+				Global:   someGlobal,
+			},
+
+			expectErr: config.ErrInvalidConfig,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			require.ErrorIs(t, testCase.caps.Validate(), testCase.expectErr)
 		})
 	}
 }

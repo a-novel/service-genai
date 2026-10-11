@@ -1,5 +1,4 @@
--- Two numbers, not one: a count alone cannot tell a queue absorbing a burst from a stalled one, and
--- the oldest pending age is what separates them.
+-- The backlog: how many generations wait to start, and how long the oldest has waited.
 SELECT
   count(*) AS pending,
   coalesce(

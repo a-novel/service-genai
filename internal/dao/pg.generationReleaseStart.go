@@ -26,18 +26,19 @@ type GenerationReleaseStartRequest struct {
 	Delay time.Duration
 }
 
-// GenerationReleaseStart withdraws a start intent whose call the provider never accepted, giving
+// PgGenerationReleaseStart withdraws a start intent whose call the provider never accepted, giving
 // the attempt back.
-type GenerationReleaseStart struct{}
+type PgGenerationReleaseStart struct{}
 
-func NewGenerationReleaseStart() *GenerationReleaseStart {
-	return &GenerationReleaseStart{}
+// NewPgGenerationReleaseStart returns a new PgGenerationReleaseStart dao.
+func NewPgGenerationReleaseStart() *PgGenerationReleaseStart {
+	return &PgGenerationReleaseStart{}
 }
 
-func (dao *GenerationReleaseStart) Exec(
+func (dao *PgGenerationReleaseStart) Exec(
 	ctx context.Context, request *GenerationReleaseStartRequest,
 ) (*Generation, error) {
-	ctx, span := otel.Tracer().Start(ctx, "dao.GenerationReleaseStart")
+	ctx, span := otel.Tracer().Start(ctx, "dao.PgGenerationReleaseStart")
 	defer span.End()
 
 	tx, err := postgres.GetContext(ctx)

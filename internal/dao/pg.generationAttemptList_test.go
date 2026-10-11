@@ -15,7 +15,7 @@ import (
 	"github.com/a-novel/service-genai/internal/models/migrations"
 )
 
-func TestGenerationAttemptList(t *testing.T) {
+func TestPgGenerationAttemptList(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
@@ -39,7 +39,7 @@ func TestGenerationAttemptList(t *testing.T) {
 		},
 	}
 
-	daoAttemptList := dao.NewGenerationAttemptList()
+	daoAttemptList := dao.NewPgGenerationAttemptList()
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -53,7 +53,7 @@ func TestGenerationAttemptList(t *testing.T) {
 
 				for _, generationID := range []uuid.UUID{generation.ID, other.ID} {
 					for _, attempt := range testCase.attempts {
-						_, err := dao.NewGenerationAttemptInsert().Exec(ctx, &dao.GenerationAttemptInsertRequest{
+						_, err := dao.NewPgGenerationAttemptInsert().Exec(ctx, &dao.GenerationAttemptInsertRequest{
 							GenerationID: generationID, Attempt: attempt, Response: json.RawMessage(`{}`),
 						})
 						require.NoError(t, err)

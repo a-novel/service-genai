@@ -22,7 +22,7 @@ var generationAttemptInsertQuery string
 // that lands twice must not record it twice.
 var ErrGenerationAttemptExists = errors.New("attempt already recorded")
 
-// GenerationAttemptInsertRequest is the input to [GenerationAttemptInsert.Exec].
+// GenerationAttemptInsertRequest is the input to [PgGenerationAttemptInsert.Exec].
 type GenerationAttemptInsertRequest struct {
 	GenerationID uuid.UUID
 	Attempt      int16
@@ -30,24 +30,24 @@ type GenerationAttemptInsertRequest struct {
 	Response json.RawMessage
 }
 
-// GenerationAttemptInsert records the provider's answer to one attempt.
+// PgGenerationAttemptInsert records the provider's answer to one attempt.
 //
 // Call it in the same transaction as the settle or requeue it belongs to: a transition without its
 // answer loses what the attempt consumed.
-type GenerationAttemptInsert struct{}
+type PgGenerationAttemptInsert struct{}
 
-func NewGenerationAttemptInsert() *GenerationAttemptInsert {
-	return &GenerationAttemptInsert{}
+// NewPgGenerationAttemptInsert returns a new PgGenerationAttemptInsert dao.
+func NewPgGenerationAttemptInsert() *PgGenerationAttemptInsert {
+	return &PgGenerationAttemptInsert{}
 }
 
-func (dao *GenerationAttemptInsert) Exec(
+func (dao *PgGenerationAttemptInsert) Exec(
 	ctx context.Context, request *GenerationAttemptInsertRequest,
 ) (*GenerationAttempt, error) {
-	ctx, span := otel.Tracer().Start(ctx, "dao.GenerationAttemptInsert")
+	ctx, span := otel.Tracer().Start(ctx, "dao.PgGenerationAttemptInsert")
 	defer span.End()
 
 	span.SetAttributes(
-		attribute.String("generation.id", request.GenerationID.String()),
 		attribute.Int("generation.attempt", int(request.Attempt)),
 	)
 

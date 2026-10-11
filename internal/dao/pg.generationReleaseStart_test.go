@@ -14,7 +14,7 @@ import (
 	"github.com/a-novel/service-genai/internal/models/migrations"
 )
 
-func TestGenerationReleaseStart(t *testing.T) {
+func TestPgGenerationReleaseStart(t *testing.T) {
 	t.Parallel()
 
 	const delay = time.Minute
@@ -62,7 +62,7 @@ func TestGenerationReleaseStart(t *testing.T) {
 		},
 	}
 
-	daoReleaseStart := dao.NewGenerationReleaseStart()
+	daoReleaseStart := dao.NewPgGenerationReleaseStart()
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {

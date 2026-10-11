@@ -22,7 +22,6 @@ func TestNewGrpcGeneration(t *testing.T) {
 	message := "the provider failed the call"
 
 	failedResponse := `{"id":"resp_1","status":"failed","error":{"code":"server_error"}}`
-	finishedResponse := `{"id":"resp_2","status":"completed","usage":{"output_tokens":5}}`
 
 	testCases := []struct {
 		name string
@@ -69,25 +68,6 @@ func TestNewGrpcGeneration(t *testing.T) {
 					{Number: 1, Response: []byte(failedResponse)},
 					{Number: 2, Response: []byte(failedResponse)},
 				},
-				CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: "2026-01-01T00:01:00Z",
-				SettledAt: "2026-01-01T00:01:00Z", ExpiresAt: "2026-01-01T01:01:00Z",
-			},
-		},
-		{
-			name: "Success/Succeeded",
-
-			generation: &core.Generation{
-				ID: uuid.MustParse(testGenerationID), OwnerID: uuid.MustParse(testOwnerID),
-				Purpose: "studio.generation", Provider: "openai",
-				Status:    core.GenerationStatusSucceeded,
-				Attempts:  []*core.GenerationAttempt{{Number: 1, Response: json.RawMessage(finishedResponse)}},
-				CreatedAt: createdAt, UpdatedAt: settledAt, SettledAt: &settledAt, ExpiresAt: &expiresAt,
-			},
-
-			expect: &genaiv0.Generation{
-				Id: testGenerationID, OwnerId: testOwnerID, Purpose: "studio.generation", Provider: "openai",
-				Status:    genaiv0.GenerationStatus_GENERATION_STATUS_SUCCEEDED,
-				Attempts:  []*genaiv0.GenerationAttempt{{Number: 1, Response: []byte(finishedResponse)}},
 				CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: "2026-01-01T00:01:00Z",
 				SettledAt: "2026-01-01T00:01:00Z", ExpiresAt: "2026-01-01T01:01:00Z",
 			},

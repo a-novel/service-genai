@@ -26,6 +26,7 @@ type GrpcGenerationGet struct {
 	service GrpcGenerationGetService
 }
 
+// NewGrpcGenerationGet returns a new GrpcGenerationGet handler backed by the given service.
 func NewGrpcGenerationGet(service GrpcGenerationGetService) *GrpcGenerationGet {
 	return &GrpcGenerationGet{service: service}
 }

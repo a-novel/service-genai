@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/samber/lo"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/propagation"
 
@@ -25,40 +24,42 @@ import (
 	"github.com/a-novel/service-genai/internal/lib/connectors"
 )
 
-// Dependencies of [GenerationSubmit].
-type (
-	// GenerationSubmitDao records the generation.
-	GenerationSubmitDao interface {
-		Exec(ctx context.Context, request *dao.GenerationSubmitRequest) (*dao.GenerationSubmitResult, error)
-	}
-	// GenerationSubmitAttemptListDao reads the attempts of a replayed generation.
-	GenerationSubmitAttemptListDao interface {
-		Exec(ctx context.Context, request *dao.GenerationAttemptListRequest) ([]*dao.GenerationAttempt, error)
-	}
-	// GenerationSubmitUsageSumDao adds up a user's usage over a window.
-	GenerationSubmitUsageSumDao interface {
-		Exec(ctx context.Context, request *dao.GenerationUsageSumRequest) (*dao.GenerationUsageTotals, error)
-	}
-	// GenerationSubmitCountLiveDao counts a user's pending and running generations.
-	GenerationSubmitCountLiveDao interface {
-		Exec(ctx context.Context, request *dao.GenerationCountLiveRequest) (*dao.GenerationLiveCount, error)
-	}
-	// GenerationSubmitSettleDao fails a generation whose user is over a cap, so nothing starts it.
-	GenerationSubmitSettleDao interface {
-		Exec(ctx context.Context, request *dao.GenerationSettleRequest) (*dao.Generation, error)
-	}
-	// GenerationSubmitServiceCheck starts a newly recorded generation.
-	GenerationSubmitServiceCheck interface {
-		Exec(ctx context.Context, request *GenerationCheckRequest) (*dao.Generation, error)
-	}
-)
+// GenerationSubmitDao records the generation.
+type GenerationSubmitDao interface {
+	Exec(ctx context.Context, request *dao.GenerationSubmitRequest) (*dao.GenerationSubmitResult, error)
+}
+
+// GenerationSubmitDaoAttemptList reads the attempts of a replayed generation.
+type GenerationSubmitDaoAttemptList interface {
+	Exec(ctx context.Context, request *dao.GenerationAttemptListRequest) ([]*dao.GenerationAttempt, error)
+}
+
+// GenerationSubmitDaoUsageSum adds up a user's usage over a window.
+type GenerationSubmitDaoUsageSum interface {
+	Exec(ctx context.Context, request *dao.GenerationUsageSumRequest) (*dao.GenerationUsageTotals, error)
+}
+
+// GenerationSubmitDaoCountLive counts a user's pending and running generations.
+type GenerationSubmitDaoCountLive interface {
+	Exec(ctx context.Context, request *dao.GenerationCountLiveRequest) (*dao.GenerationLiveCount, error)
+}
+
+// GenerationSubmitDaoSettle fails a generation whose user is over a cap, so nothing starts it.
+type GenerationSubmitDaoSettle interface {
+	Exec(ctx context.Context, request *dao.GenerationSettleRequest) (*dao.Generation, error)
+}
+
+// GenerationSubmitServiceCheck starts a newly recorded generation.
+type GenerationSubmitServiceCheck interface {
+	Exec(ctx context.Context, request *GenerationCheckRequest) (*dao.Generation, error)
+}
 
 // GenerationSubmitConfig is what a [GenerationSubmit] needs to run.
 type GenerationSubmitConfig struct {
 	// MaxAttempts caps the provider calls a generation gets when a call fails retryably.
-	MaxAttempts int16 `validate:"required,min=1,max=10"`
+	MaxAttempts int16
 	// Retention is how long a settled generation's user content survives before the purge.
-	Retention time.Duration `validate:"required"`
+	Retention time.Duration
 	// Caps declares every purpose and the usage it allows.
 	Caps config.Caps
 }
@@ -95,38 +96,29 @@ type GenerationSubmitResult struct {
 // as it stands, without checking it: the caller polls it next, and the poll checks it. A failed or
 // cancelled generation does not count, so resending its request runs it again.
 type GenerationSubmit struct {
-	config   GenerationSubmitConfig
-	registry connectors.Registry
-	daos     GenerationSubmitDaos
-	check    GenerationSubmitServiceCheck
+	config       GenerationSubmitConfig
+	registry     connectors.Registry
+	daos         GenerationSubmitDaos
+	serviceCheck GenerationSubmitServiceCheck
 }
 
 // GenerationSubmitDaos are the data-access dependencies of a [GenerationSubmit].
 type GenerationSubmitDaos struct {
 	Submit   GenerationSubmitDao
-	Attempts GenerationSubmitAttemptListDao
-	Usage    GenerationSubmitUsageSumDao
-	Live     GenerationSubmitCountLiveDao
-	Settle   GenerationSubmitSettleDao
+	Attempts GenerationSubmitDaoAttemptList
+	Usage    GenerationSubmitDaoUsageSum
+	Live     GenerationSubmitDaoCountLive
+	Settle   GenerationSubmitDaoSettle
 }
 
+// NewGenerationSubmit returns a new GenerationSubmit service.
 func NewGenerationSubmit(
 	config GenerationSubmitConfig,
 	registry connectors.Registry,
 	daos GenerationSubmitDaos,
-	check GenerationSubmitServiceCheck,
-) (*GenerationSubmit, error) {
-	err := validate.Struct(config)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
-	}
-
-	err = validateCaps(config.Caps)
-	if err != nil {
-		return nil, fmt.Errorf("caps: %w", err)
-	}
-
-	return &GenerationSubmit{config: config, registry: registry, daos: daos, check: check}, nil
+	serviceCheck GenerationSubmitServiceCheck,
+) *GenerationSubmit {
+	return &GenerationSubmit{config: config, registry: registry, daos: daos, serviceCheck: serviceCheck}
 }
 
 func (service *GenerationSubmit) Exec(
@@ -182,7 +174,7 @@ func (service *GenerationSubmit) Exec(
 			return nil, otel.ReportError(span, err)
 		}
 
-		generation, err = service.check.Exec(ctx, &GenerationCheckRequest{Generation: generation})
+		generation, err = service.serviceCheck.Exec(ctx, &GenerationCheckRequest{Generation: generation})
 		if err != nil {
 			return nil, otel.ReportError(span, fmt.Errorf("start generation: %w", err))
 		}
@@ -204,7 +196,7 @@ func (service *GenerationSubmit) Exec(
 func (service *GenerationSubmit) validateRequest(request *GenerationSubmitRequest) error {
 	err := validate.Struct(request)
 	if err != nil {
-		return fmt.Errorf("%w: %w", ErrInvalidRequest, err)
+		return errors.Join(err, ErrInvalidRequest)
 	}
 
 	if _, declared := service.config.Caps.Purposes[request.Purpose]; !declared {
@@ -333,61 +325,6 @@ func (service *GenerationSubmit) capReached(ctx context.Context, request *Genera
 
 func reached(limit *int64, used int64) bool {
 	return limit != nil && used >= *limit
-}
-
-// validateCaps refuses caps a submit could not apply, so a bad file fails startup.
-func validateCaps(caps config.Caps) error {
-	for purpose, tiers := range caps.Purposes {
-		err := validateTierCaps(tiers)
-		if err != nil {
-			return fmt.Errorf("purpose %q: %w", purpose, err)
-		}
-	}
-
-	err := validateTierCaps(caps.Global)
-	if err != nil {
-		return fmt.Errorf("global: %w", err)
-	}
-
-	// A user whose tier is unknown must always be bounded: -1 lifts the limit, but only on purpose.
-	if globalDefault := caps.Global[config.DefaultTier]; globalDefault.Concurrency == nil &&
-		!globalDefault.Unlimited && !globalDefault.Forbidden {
-		return fmt.Errorf("%w: global: the %q tier sets no concurrency", ErrInvalidRequest, config.DefaultTier)
-	}
-
-	return nil
-}
-
-func validateTierCaps(tiers config.TierCaps) error {
-	if _, ok := tiers[config.DefaultTier]; !ok {
-		return fmt.Errorf("%w: no %q tier", ErrInvalidRequest, config.DefaultTier)
-	}
-
-	for tier, capOfTier := range tiers {
-		if capOfTier.Unlimited || capOfTier.Forbidden {
-			continue
-		}
-
-		if len(capOfTier.Windows) == 0 && capOfTier.Concurrency == nil {
-			return fmt.Errorf("%w: tier %q declares neither a window nor a concurrency", ErrInvalidRequest, tier)
-		}
-
-		if lo.FromPtr(capOfTier.Concurrency) < -1 {
-			return fmt.Errorf("%w: tier %q allows a concurrency below -1", ErrInvalidRequest, tier)
-		}
-
-		for window, limit := range capOfTier.Windows {
-			if limit.InputTokens == nil && limit.OutputTokens == nil {
-				return fmt.Errorf("%w: tier %q limits nothing over %s", ErrInvalidRequest, tier, window)
-			}
-
-			if lo.FromPtr(limit.InputTokens) < 0 || lo.FromPtr(limit.OutputTokens) < 0 {
-				return fmt.Errorf("%w: tier %q has a negative limit over %s", ErrInvalidRequest, tier, window)
-			}
-		}
-	}
-
-	return nil
 }
 
 // requestKeyTag versions what the request key covers. Changing the construction changes the tag, so

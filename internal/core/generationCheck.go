@@ -19,67 +19,73 @@ import (
 	"github.com/a-novel/service-genai/internal/lib/connectors"
 )
 
-// Dependencies of [GenerationCheck].
-type (
-	// GenerationCheckLogger records failures whose provider details must remain server-side.
-	GenerationCheckLogger interface {
-		Err(ctx context.Context, msg string, fields ...any)
-	}
-	// GenerationCheckBeginStartDao takes the next attempt.
-	GenerationCheckBeginStartDao interface {
-		Exec(ctx context.Context, request *dao.GenerationBeginStartRequest) (*dao.Generation, error)
-	}
-	// GenerationCheckReleaseStartDao gives back an attempt the provider never accepted.
-	GenerationCheckReleaseStartDao interface {
-		Exec(ctx context.Context, request *dao.GenerationReleaseStartRequest) (*dao.Generation, error)
-	}
-	// GenerationCheckRecordProviderCallDao attaches the accepted provider operation.
-	GenerationCheckRecordProviderCallDao interface {
-		Exec(ctx context.Context, request *dao.GenerationRecordProviderCallRequest) (*dao.Generation, error)
-	}
-	// GenerationCheckSettleDao records a terminal outcome.
-	GenerationCheckSettleDao interface {
-		Exec(ctx context.Context, request *dao.GenerationSettleRequest) (*dao.Generation, error)
-	}
-	// GenerationCheckRequeueDao returns a retryably failed attempt to the queue.
-	GenerationCheckRequeueDao interface {
-		Exec(ctx context.Context, request *dao.GenerationRequeueRequest) (*dao.Generation, error)
-	}
-	// GenerationCheckAttemptInsertDao records the provider's answer to one attempt.
-	GenerationCheckAttemptInsertDao interface {
-		Exec(ctx context.Context, request *dao.GenerationAttemptInsertRequest) (*dao.GenerationAttempt, error)
-	}
-	// GenerationCheckUsageInsertDao records what one attempt consumed.
-	GenerationCheckUsageInsertDao interface {
-		Exec(ctx context.Context, request *dao.GenerationUsageInsertRequest) (*dao.GenerationUsage, error)
-	}
-	// GenerationCheckGetDao re-reads a generation another check moved on.
-	GenerationCheckGetDao interface {
-		Exec(ctx context.Context, request *dao.GenerationGetRequest) (*dao.Generation, error)
-	}
-)
+// GenerationCheckLogger records failures whose provider details must remain server-side.
+type GenerationCheckLogger interface {
+	Err(ctx context.Context, msg string, fields ...any)
+}
+
+// GenerationCheckDaoBeginStart takes the next attempt.
+type GenerationCheckDaoBeginStart interface {
+	Exec(ctx context.Context, request *dao.GenerationBeginStartRequest) (*dao.Generation, error)
+}
+
+// GenerationCheckDaoReleaseStart gives back an attempt the provider never accepted.
+type GenerationCheckDaoReleaseStart interface {
+	Exec(ctx context.Context, request *dao.GenerationReleaseStartRequest) (*dao.Generation, error)
+}
+
+// GenerationCheckDaoRecordProviderCall attaches the accepted provider operation.
+type GenerationCheckDaoRecordProviderCall interface {
+	Exec(ctx context.Context, request *dao.GenerationRecordProviderCallRequest) (*dao.Generation, error)
+}
+
+// GenerationCheckDaoSettle records a terminal outcome.
+type GenerationCheckDaoSettle interface {
+	Exec(ctx context.Context, request *dao.GenerationSettleRequest) (*dao.Generation, error)
+}
+
+// GenerationCheckDaoRequeue returns a retryably failed attempt to the queue.
+type GenerationCheckDaoRequeue interface {
+	Exec(ctx context.Context, request *dao.GenerationRequeueRequest) (*dao.Generation, error)
+}
+
+// GenerationCheckDaoAttemptInsert records the provider's answer to one attempt.
+type GenerationCheckDaoAttemptInsert interface {
+	Exec(ctx context.Context, request *dao.GenerationAttemptInsertRequest) (*dao.GenerationAttempt, error)
+}
+
+// GenerationCheckDaoUsageInsert records what one attempt consumed.
+type GenerationCheckDaoUsageInsert interface {
+	Exec(ctx context.Context, request *dao.GenerationUsageInsertRequest) (*dao.GenerationUsage, error)
+}
+
+// GenerationCheckDaoGet re-reads a generation another check moved on.
+type GenerationCheckDaoGet interface {
+	Exec(ctx context.Context, request *dao.GenerationGetRequest) (*dao.Generation, error)
+}
 
 // GenerationCheckDaos are the data-access dependencies of a [GenerationCheck]. Grouping them
 // prevents positional swaps between interfaces that all take a request and return a generation.
 type GenerationCheckDaos struct {
-	BeginStart   GenerationCheckBeginStartDao
-	ReleaseStart GenerationCheckReleaseStartDao
-	Record       GenerationCheckRecordProviderCallDao
-	Settle       GenerationCheckSettleDao
-	Requeue      GenerationCheckRequeueDao
-	Attempt      GenerationCheckAttemptInsertDao
-	Usage        GenerationCheckUsageInsertDao
-	Get          GenerationCheckGetDao
+	BeginStart   GenerationCheckDaoBeginStart
+	ReleaseStart GenerationCheckDaoReleaseStart
+	Record       GenerationCheckDaoRecordProviderCall
+	Settle       GenerationCheckDaoSettle
+	Requeue      GenerationCheckDaoRequeue
+	Attempt      GenerationCheckDaoAttemptInsert
+	Usage        GenerationCheckDaoUsageInsert
+	Get          GenerationCheckDaoGet
 }
 
 // GenerationCheckConfig is what a [GenerationCheck] needs to run.
 type GenerationCheckConfig struct {
 	// Retention is how long a settled generation's user content survives before the purge.
-	Retention time.Duration `validate:"required"`
+	Retention time.Duration
 }
 
 // GenerationCheckRequest carries the generation to check, as last read.
 type GenerationCheckRequest struct {
+	// Generation is the generation as the caller last read it.
 	Generation *dao.Generation
 }
 
@@ -96,25 +102,17 @@ type GenerationCheck struct {
 	daos       GenerationCheckDaos
 }
 
+// NewGenerationCheck returns a new GenerationCheck service.
 func NewGenerationCheck(
 	config GenerationCheckConfig,
 	logger GenerationCheckLogger,
 	registry connectors.Registry,
 	transactor transaction.Transactor,
 	daos GenerationCheckDaos,
-) (*GenerationCheck, error) {
-	err := validate.Struct(config)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
-	}
-
-	if logger == nil {
-		return nil, fmt.Errorf("%w: logger is required", ErrInvalidRequest)
-	}
-
+) *GenerationCheck {
 	return &GenerationCheck{
 		config: config, logger: logger, registry: registry, transactor: transactor, daos: daos,
-	}, nil
+	}
 }
 
 // Exec returns the generation as the check left it.
@@ -588,8 +586,7 @@ func (service *GenerationCheck) recordUsage(
 		CompletedAt: call.CompletedAt,
 	})
 
-	// A replay of the same provider result finds the row already there. That is the idempotent
-	// outcome, not a failure.
+	// A replay of the same provider result finds the row already there, which is no failure.
 	if err != nil && !errors.Is(err, dao.ErrGenerationUsageExists) {
 		return otel.ReportError(span, fmt.Errorf("record usage: %w", err))
 	}
@@ -615,8 +612,6 @@ func (service *GenerationCheck) recordAttempt(
 		Response:     response,
 	})
 
-	// A replay of the same provider result finds the row already there. That is the idempotent
-	// outcome, not a failure.
 	if err != nil && !errors.Is(err, dao.ErrGenerationAttemptExists) {
 		return otel.ReportError(span, fmt.Errorf("record attempt: %w", err))
 	}
@@ -671,8 +666,8 @@ func settleOutcomeOf(call *connectors.Call) (dao.GenerationStatus, *string) {
 	case connectors.CallRunning:
 		fallthrough
 	default:
-		// Unreachable: observe only settles a terminal state. Failing rather than panicking keeps a
-		// provider that grows a new status from stranding the generation.
+		// Unreachable: observe only settles a terminal state. Failing keeps a provider that grows a
+		// new status from stranding the generation.
 		return dao.GenerationStatusFailed, new(failureCallFailed)
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/a-novel/service-genai/internal/core"
+	genaiv0 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v0"
 )
 
 var errFoo = errors.New("foo")
@@ -26,5 +27,19 @@ func testGeneration() *core.Generation {
 		Status:    core.GenerationStatusPending,
 		CreatedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 		UpdatedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+	}
+}
+
+// testGrpcGeneration is testGeneration as a caller reads it.
+func testGrpcGeneration() *genaiv0.Generation {
+	return &genaiv0.Generation{
+		Id:        testGenerationID,
+		OwnerId:   testOwnerID,
+		Purpose:   "studio.generation",
+		Provider:  "openai",
+		Status:    genaiv0.GenerationStatus_GENERATION_STATUS_PENDING,
+		Attempts:  []*genaiv0.GenerationAttempt{},
+		CreatedAt: "2026-01-01T00:00:00Z",
+		UpdatedAt: "2026-01-01T00:00:00Z",
 	}
 }

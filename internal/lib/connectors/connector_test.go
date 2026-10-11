@@ -14,7 +14,7 @@ type syncOnly struct{}
 
 func (syncOnly) Call(context.Context) {}
 
-func TestConnectors(t *testing.T) {
+func TestRegistry(t *testing.T) {
 	t.Parallel()
 
 	openAI, err := connectors.NewOpenAI(connectors.OpenAIConfig{BaseURL: "https://provider.test/v1", APIKey: "test-key"})

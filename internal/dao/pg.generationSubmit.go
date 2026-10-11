@@ -16,7 +16,7 @@ import (
 //go:embed pg.generationSubmit.sql
 var generationSubmitQuery string
 
-// GenerationSubmitRequest is the input to [GenerationSubmit.Exec].
+// GenerationSubmitRequest is the input to [PgGenerationSubmit.Exec].
 type GenerationSubmitRequest struct {
 	// ID the generation takes if this submission creates it. Minted by the caller, so created and
 	// replayed can be told apart without a second round-trip.
@@ -46,24 +46,19 @@ type GenerationSubmitResult struct {
 	Created bool
 }
 
-// GenerationSubmit records a generation, deduplicating on the request key.
-type GenerationSubmit struct{}
+// PgGenerationSubmit records a generation, deduplicating on the request key.
+type PgGenerationSubmit struct{}
 
-func NewGenerationSubmit() *GenerationSubmit {
-	return &GenerationSubmit{}
+// NewPgGenerationSubmit returns a new PgGenerationSubmit dao.
+func NewPgGenerationSubmit() *PgGenerationSubmit {
+	return &PgGenerationSubmit{}
 }
 
-func (dao *GenerationSubmit) Exec(
+func (dao *PgGenerationSubmit) Exec(
 	ctx context.Context, request *GenerationSubmitRequest,
 ) (*GenerationSubmitResult, error) {
-	ctx, span := otel.Tracer().Start(ctx, "dao.GenerationSubmit")
+	ctx, span := otel.Tracer().Start(ctx, "dao.PgGenerationSubmit")
 	defer span.End()
-
-	span.SetAttributes(
-		attribute.String("generation.id", request.ID.String()),
-		attribute.String("generation.provider", request.Provider),
-		attribute.Int("generation.max_attempts", int(request.MaxAttempts)),
-	)
 
 	tx, err := postgres.GetContext(ctx)
 	if err != nil {

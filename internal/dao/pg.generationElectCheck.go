@@ -29,18 +29,19 @@ type GenerationElectCheckRequest struct {
 	Interval time.Duration
 }
 
-// GenerationElectCheck marks a stale generation checked and returns it, electing the caller to run
+// PgGenerationElectCheck marks a stale generation checked and returns it, electing the caller to run
 // the check.
-type GenerationElectCheck struct{}
+type PgGenerationElectCheck struct{}
 
-func NewGenerationElectCheck() *GenerationElectCheck {
-	return &GenerationElectCheck{}
+// NewPgGenerationElectCheck returns a new PgGenerationElectCheck dao.
+func NewPgGenerationElectCheck() *PgGenerationElectCheck {
+	return &PgGenerationElectCheck{}
 }
 
-func (dao *GenerationElectCheck) Exec(
+func (dao *PgGenerationElectCheck) Exec(
 	ctx context.Context, request *GenerationElectCheckRequest,
 ) (*Generation, error) {
-	ctx, span := otel.Tracer().Start(ctx, "dao.GenerationElectCheck")
+	ctx, span := otel.Tracer().Start(ctx, "dao.PgGenerationElectCheck")
 	defer span.End()
 
 	tx, err := postgres.GetContext(ctx)

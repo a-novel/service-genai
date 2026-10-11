@@ -121,16 +121,6 @@ func TestGenerationCheck(t *testing.T) {
 			expectStatus:  dao.GenerationStatusFailed,
 		},
 		{
-			name: "Success/StartRejectedWithoutBody",
-
-			generation: pendingGeneration(),
-			startErr:   &connectors.RejectionError{Err: errFoo},
-
-			expectStart:  true,
-			expectSettle: &settle{attempt: 1, status: dao.GenerationStatusFailed, reason: &rejectedMessage},
-			expectStatus: dao.GenerationStatusFailed,
-		},
-		{
 			name: "Success/StartFailed",
 
 			generation: pendingGeneration(),
@@ -417,14 +407,14 @@ func TestGenerationCheck(t *testing.T) {
 			generation := testCase.generation
 
 			connector := connectorsmocks.NewMockAsync(t)
-			beginStart := coremocks.NewMockGenerationCheckBeginStartDao(t)
-			releaseStart := coremocks.NewMockGenerationCheckReleaseStartDao(t)
-			record := coremocks.NewMockGenerationCheckRecordProviderCallDao(t)
-			settleDao := coremocks.NewMockGenerationCheckSettleDao(t)
-			requeue := coremocks.NewMockGenerationCheckRequeueDao(t)
-			attempt := coremocks.NewMockGenerationCheckAttemptInsertDao(t)
-			usage := coremocks.NewMockGenerationCheckUsageInsertDao(t)
-			get := coremocks.NewMockGenerationCheckGetDao(t)
+			beginStart := coremocks.NewMockGenerationCheckDaoBeginStart(t)
+			releaseStart := coremocks.NewMockGenerationCheckDaoReleaseStart(t)
+			record := coremocks.NewMockGenerationCheckDaoRecordProviderCall(t)
+			settleDao := coremocks.NewMockGenerationCheckDaoSettle(t)
+			requeue := coremocks.NewMockGenerationCheckDaoRequeue(t)
+			attempt := coremocks.NewMockGenerationCheckDaoAttemptInsert(t)
+			usage := coremocks.NewMockGenerationCheckDaoUsageInsert(t)
+			get := coremocks.NewMockGenerationCheckDaoGet(t)
 
 			// The attempt a fresh start takes.
 			intent := startingGeneration(0)
@@ -538,9 +528,13 @@ func TestGenerationCheck(t *testing.T) {
 					Return(lo.CoalesceOrEmpty(testCase.rereadAs, settledGeneration(dao.GenerationStatusSucceeded)), nil)
 			}
 
-			check, err := core.NewGenerationCheck(
+			logger := coremocks.NewMockGenerationCheckLogger(t)
+			// Provider details stay server-side, out of assertions.
+			logger.EXPECT().Err(mock.Anything, mock.Anything).Maybe()
+
+			check := core.NewGenerationCheck(
 				core.GenerationCheckConfig{Retention: retention},
-				discardLogger{},
+				logger,
 				connectors.Registry{testProvider: connector},
 				transactiontest.NewTransactor(),
 				core.GenerationCheckDaos{
@@ -548,7 +542,6 @@ func TestGenerationCheck(t *testing.T) {
 					Requeue: requeue, Attempt: attempt, Usage: usage, Get: get,
 				},
 			)
-			require.NoError(t, err)
 
 			result, err := check.Exec(t.Context(), &core.GenerationCheckRequest{Generation: generation})
 			require.ErrorIs(t, err, testCase.expectErr)

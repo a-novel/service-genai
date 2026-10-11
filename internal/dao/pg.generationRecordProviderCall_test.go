@@ -13,7 +13,7 @@ import (
 	"github.com/a-novel/service-genai/internal/models/migrations"
 )
 
-func TestGenerationRecordProviderCall(t *testing.T) {
+func TestPgGenerationRecordProviderCall(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
@@ -67,7 +67,7 @@ func TestGenerationRecordProviderCall(t *testing.T) {
 		},
 	}
 
-	daoRecord := dao.NewGenerationRecordProviderCall()
+	daoRecord := dao.NewPgGenerationRecordProviderCall()
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {

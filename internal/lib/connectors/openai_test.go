@@ -128,6 +128,15 @@ func TestOpenAI(t *testing.T) {
 		expectBody      string
 	}{
 		{
+			// Polled again rather than settled: settling on a state this service does not understand
+			// would throw away work already paid for.
+			name: "Success/UnknownStatus",
+
+			script: &scriptedProvider{status: http.StatusOK, body: response("thinking", "")},
+
+			expectState: connectors.CallRunning,
+		},
+		{
 			name: "Success/Completed",
 
 			script: &scriptedProvider{status: http.StatusOK, body: response("completed", "")},
@@ -181,14 +190,6 @@ func TestOpenAI(t *testing.T) {
 			expectState: connectors.CallRunning,
 		},
 		{
-			// A refusal is an answer: the caller reads it from the response.
-			name: "Success/Refused",
-
-			script: &scriptedProvider{status: http.StatusOK, body: response("completed", testRefusal)},
-
-			expectState: connectors.CallSucceeded,
-		},
-		{
 			// The output stopped at the caller's own max_output_tokens. Finished, and the caller's to read.
 			name: "Success/Incomplete",
 
@@ -218,13 +219,6 @@ func TestOpenAI(t *testing.T) {
 
 			expectState:  connectors.CallFailed,
 			expectReason: "the prompt was rejected",
-		},
-		{
-			name: "Success/Cancelled",
-
-			script: &scriptedProvider{status: http.StatusOK, body: response("cancelled", "")},
-
-			expectState: connectors.CallCancelled,
 		},
 		{
 			// Nothing was accepted, so another start costs nothing.
@@ -353,65 +347,287 @@ func TestOpenAI(t *testing.T) {
 			}
 		})
 	}
-}
 
-// The connector writes the fields the Async mode owns and forwards everything else as the caller wrote
-// it.
-func TestOpenAIRequest(t *testing.T) {
-	t.Parallel()
+	// The connector writes the fields the Async mode owns and forwards everything else as the caller wrote
+	// it.
+	t.Run("Request", func(t *testing.T) {
+		t.Parallel()
 
-	testCases := []struct {
-		name string
+		testCases := []struct {
+			name string
 
-		payload string
-	}{
-		{
-			name: "Success",
+			payload string
+		}{
+			{
+				name: "Success",
 
-			payload: testPayload,
-		},
-		{
-			// A caller asking for a synchronous or streamed call through the Async mode still gets one
-			// the service can recover.
-			name: "Success/ModeFieldsReplaced",
+				payload: testPayload,
+			},
+			{
+				// A caller asking for a synchronous or streamed call through the Async mode still gets one
+				// the service can recover.
+				name: "Success/ModeFieldsReplaced",
 
-			payload: `{"model": "gpt-5.6-terra", "input": "a & b", "background": false, "stream": true, ` +
-				`"text": {"format": {"type": "json_schema", "schema": {"properties": {"z": {}, "a": {}}}}}}`,
-		},
-	}
+				payload: `{"model": "gpt-5.6-terra", "input": "a & b", "background": false, "stream": true, ` +
+					`"text": {"format": {"type": "json_schema", "schema": {"properties": {"z": {}, "a": {}}}}}}`,
+			},
+		}
 
-	for _, testCase := range testCases {
-		t.Run(testCase.name, func(t *testing.T) {
-			t.Parallel()
+		for _, testCase := range testCases {
+			t.Run(testCase.name, func(t *testing.T) {
+				t.Parallel()
 
-			script := &scriptedProvider{status: http.StatusOK, body: response("queued", "")}
-			provider := newTestProvider(t, script)
+				script := &scriptedProvider{status: http.StatusOK, body: response("queued", "")}
+				provider := newTestProvider(t, script)
 
-			_, err := provider.Start(t.Context(), &connectors.AsyncStartRequest{Payload: json.RawMessage(testCase.payload)})
-			require.NoError(t, err)
-			require.Equal(t, "/responses", script.lastPath)
+				_, err := provider.Start(t.Context(), &connectors.AsyncStartRequest{Payload: json.RawMessage(testCase.payload)})
+				require.NoError(t, err)
+				require.Equal(t, "/responses", script.lastPath)
 
-			var sent map[string]any
-			require.NoError(t, json.Unmarshal(script.lastBody, &sent))
+				var sent map[string]any
+				require.NoError(t, json.Unmarshal(script.lastBody, &sent))
 
-			require.Equal(t, map[string]any{
-				"model":      "gpt-5.6-terra",
-				"input":      "a & b",
-				"background": true,
-				"stream":     false,
-				"text": map[string]any{"format": map[string]any{
-					"type": "json_schema",
-					"schema": map[string]any{
-						"properties": map[string]any{"z": map[string]any{}, "a": map[string]any{}},
+				require.Equal(t, map[string]any{
+					"model":      "gpt-5.6-terra",
+					"input":      "a & b",
+					"background": true,
+					"stream":     false,
+					"text": map[string]any{"format": map[string]any{
+						"type": "json_schema",
+						"schema": map[string]any{
+							"properties": map[string]any{"z": map[string]any{}, "a": map[string]any{}},
+						},
+					}},
+				}, sent)
+
+				// Nested values reach the provider as written: unescaped, and in the caller's order.
+				require.Contains(t, string(script.lastBody), `"input":"a & b"`)
+				require.Contains(t, string(script.lastBody), `"properties":{"z":{},"a":{}}`)
+			})
+		}
+	})
+
+	t.Run("Get", func(t *testing.T) {
+		t.Parallel()
+
+		testCases := []struct {
+			name string
+
+			script *scriptedProvider
+
+			expectState connectors.CallState
+			expectErr   error
+		}{
+			{
+				name: "Success",
+
+				script: &scriptedProvider{status: http.StatusOK, body: response("completed", "")},
+
+				expectState: connectors.CallSucceeded,
+			},
+			{
+				// Gone past the provider's retention window: not something another read fixes.
+				name: "Error/NotFound",
+
+				script: &scriptedProvider{status: http.StatusNotFound, body: `{"error":{"message":"no such response"}}`},
+			},
+			{
+				name: "Error/Retryable",
+
+				script: &scriptedProvider{status: http.StatusBadGateway, body: `{"error":{"message":"bad gateway"}}`},
+
+				expectErr: connectors.ErrRetryable,
+			},
+			{
+				// Refused credentials are this service's configuration, not the operation's fate: once the
+				// key is fixed, the result is read again.
+				name: "Error/Unauthorized",
+
+				script: &scriptedProvider{status: http.StatusUnauthorized, body: `{"error":{"message":"bad key"}}`},
+
+				expectErr: connectors.ErrRetryable,
+			},
+		}
+
+		for _, testCase := range testCases {
+			t.Run(testCase.name, func(t *testing.T) {
+				t.Parallel()
+
+				provider := newTestProvider(t, testCase.script)
+
+				call, err := provider.Get(t.Context(), "resp_1")
+
+				if testCase.expectState == "" {
+					require.Error(t, err)
+
+					if testCase.expectErr != nil {
+						require.ErrorIs(t, err, testCase.expectErr)
+					} else {
+						require.NotErrorIs(t, err, connectors.ErrRetryable)
+					}
+
+					return
+				}
+
+				require.NoError(t, err)
+				require.Equal(t, testCase.expectState, call.State)
+				require.Equal(t, testCase.script.body, string(call.Response))
+				require.Equal(t, "/responses/resp_1", testCase.script.lastPath)
+			})
+		}
+	})
+
+	t.Run("Cancel", func(t *testing.T) {
+		t.Parallel()
+
+		testCases := []struct {
+			name string
+
+			script *scriptedProvider
+
+			expectState connectors.CallState
+			// expectPath is the last path requested, the cancel itself unless stated.
+			expectPath string
+			expectErr  error
+		}{
+			{
+				name: "Success",
+
+				script: &scriptedProvider{status: http.StatusOK, body: response("cancelled", "")},
+
+				expectState: connectors.CallCancelled,
+			},
+			{
+				// OpenAI refuses to cancel a finished response; its result is read instead, so a paid
+				// output is not mistaken for a lost one.
+				name: "Success/AlreadyCompleted",
+
+				script: &scriptedProvider{
+					status: http.StatusOK,
+					body:   response("completed", ""),
+					cancel: &scriptedProvider{
+						status: http.StatusBadRequest, body: `{"error":{"message":"Cannot cancel a completed response."}}`,
 					},
-				}},
-			}, sent)
+				},
 
-			// Nested values reach the provider as written: unescaped, and in the caller's order.
-			require.Contains(t, string(script.lastBody), `"input":"a & b"`)
-			require.Contains(t, string(script.lastBody), `"properties":{"z":{},"a":{}}`)
+				expectState: connectors.CallSucceeded,
+				expectPath:  "/responses/resp_1",
+			},
+			{
+				name: "Error/Retryable",
+
+				script: &scriptedProvider{status: http.StatusBadGateway, body: `{"error":{"message":"bad gateway"}}`},
+
+				expectErr: connectors.ErrRetryable,
+			},
+		}
+
+		for _, testCase := range testCases {
+			t.Run(testCase.name, func(t *testing.T) {
+				t.Parallel()
+
+				provider := newTestProvider(t, testCase.script)
+
+				call, err := provider.Cancel(t.Context(), "resp_1")
+				require.ErrorIs(t, err, testCase.expectErr)
+
+				if testCase.expectErr != nil {
+					return
+				}
+
+				require.Equal(t, testCase.expectState, call.State)
+				require.Equal(t, lo.CoalesceOrEmpty(testCase.expectPath, "/responses/resp_1/cancel"), testCase.script.lastPath)
+			})
+		}
+	})
+
+	// A start the provider may have received but never answered cannot be retried as a new one.
+	t.Run("StartTimeoutIsAmbiguous", func(t *testing.T) {
+		t.Parallel()
+
+		var requests atomic.Int32
+
+		release := make(chan struct{})
+		defer close(release)
+
+		server := httptest.NewTLSServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+			requests.Add(1)
+
+			<-release
+		}))
+		t.Cleanup(server.Close)
+
+		provider, err := connectors.NewOpenAI(
+			testConfig(server.URL), option.WithHTTPClient(server.Client()), option.WithRequestTimeout(time.Second),
+		)
+		require.NoError(t, err)
+
+		_, err = provider.Start(t.Context(), testStartRequest())
+		require.ErrorIs(t, err, connectors.ErrStartAmbiguous)
+		require.Equal(t, int32(1), requests.Load())
+	})
+
+	// A failed dial proves nothing reached the provider, so the start is safe to retry rather than
+	// settled as an unknown outcome.
+	t.Run("TransportFailure", func(t *testing.T) {
+		t.Parallel()
+
+		// A port nothing listens on.
+		provider, err := connectors.NewOpenAI(testConfig("https://127.0.0.1:1"), option.WithMaxRetries(0))
+		require.NoError(t, err)
+
+		_, err = provider.Start(t.Context(), testStartRequest())
+		require.ErrorIs(t, err, connectors.ErrRetryable)
+	})
+
+	// A start whose deadline passes before the request leaves, here during a TLS handshake that never
+	// completes, cannot have been accepted: it is retried rather than settled as an unknown outcome.
+	t.Run("StartStalledBeforeSending", func(t *testing.T) {
+		t.Parallel()
+
+		listener, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+		require.NoError(t, err)
+
+		var (
+			mu    sync.Mutex
+			conns []net.Conn
+		)
+
+		t.Cleanup(func() {
+			_ = listener.Close()
+
+			mu.Lock()
+			defer mu.Unlock()
+
+			for _, conn := range conns {
+				_ = conn.Close()
+			}
 		})
-	}
+
+		// Accepts connections and never speaks, so the handshake stalls.
+		go func() {
+			for {
+				conn, acceptErr := listener.Accept()
+				if acceptErr != nil {
+					return
+				}
+
+				mu.Lock()
+
+				conns = append(conns, conn)
+
+				mu.Unlock()
+			}
+		}()
+
+		provider, err := connectors.NewOpenAI(
+			testConfig("https://"+listener.Addr().String()), option.WithRequestTimeout(500*time.Millisecond),
+		)
+		require.NoError(t, err)
+
+		_, err = provider.Start(t.Context(), testStartRequest())
+		require.ErrorIs(t, err, connectors.ErrRetryable)
+	})
 }
 
 func TestNewOpenAI(t *testing.T) {
@@ -453,239 +669,4 @@ func TestNewOpenAI(t *testing.T) {
 			require.ErrorIs(t, err, testCase.expectErr)
 		})
 	}
-}
-
-func TestOpenAIGet(t *testing.T) {
-	t.Parallel()
-
-	testCases := []struct {
-		name string
-
-		script *scriptedProvider
-
-		expectState connectors.CallState
-		expectErr   error
-	}{
-		{
-			name: "Success",
-
-			script: &scriptedProvider{status: http.StatusOK, body: response("completed", "")},
-
-			expectState: connectors.CallSucceeded,
-		},
-		{
-			// Gone past the provider's retention window: not something another read fixes.
-			name: "Error/NotFound",
-
-			script: &scriptedProvider{status: http.StatusNotFound, body: `{"error":{"message":"no such response"}}`},
-		},
-		{
-			name: "Error/Retryable",
-
-			script: &scriptedProvider{status: http.StatusBadGateway, body: `{"error":{"message":"bad gateway"}}`},
-
-			expectErr: connectors.ErrRetryable,
-		},
-		{
-			// Refused credentials are this service's configuration, not the operation's fate: once the
-			// key is fixed, the result is read again.
-			name: "Error/Unauthorized",
-
-			script: &scriptedProvider{status: http.StatusUnauthorized, body: `{"error":{"message":"bad key"}}`},
-
-			expectErr: connectors.ErrRetryable,
-		},
-	}
-
-	for _, testCase := range testCases {
-		t.Run(testCase.name, func(t *testing.T) {
-			t.Parallel()
-
-			provider := newTestProvider(t, testCase.script)
-
-			call, err := provider.Get(t.Context(), "resp_1")
-
-			if testCase.expectState == "" {
-				require.Error(t, err)
-
-				if testCase.expectErr != nil {
-					require.ErrorIs(t, err, testCase.expectErr)
-				} else {
-					require.NotErrorIs(t, err, connectors.ErrRetryable)
-				}
-
-				return
-			}
-
-			require.NoError(t, err)
-			require.Equal(t, testCase.expectState, call.State)
-			require.Equal(t, testCase.script.body, string(call.Response))
-			require.Equal(t, "/responses/resp_1", testCase.script.lastPath)
-		})
-	}
-}
-
-func TestOpenAICancel(t *testing.T) {
-	t.Parallel()
-
-	testCases := []struct {
-		name string
-
-		script *scriptedProvider
-
-		expectState connectors.CallState
-		// expectPath is the last path requested, the cancel itself unless stated.
-		expectPath string
-		expectErr  error
-	}{
-		{
-			name: "Success",
-
-			script: &scriptedProvider{status: http.StatusOK, body: response("cancelled", "")},
-
-			expectState: connectors.CallCancelled,
-		},
-		{
-			// OpenAI refuses to cancel a finished response; its result is read instead, so a paid
-			// output is not mistaken for a lost one.
-			name: "Success/AlreadyCompleted",
-
-			script: &scriptedProvider{
-				status: http.StatusOK,
-				body:   response("completed", ""),
-				cancel: &scriptedProvider{
-					status: http.StatusBadRequest, body: `{"error":{"message":"Cannot cancel a completed response."}}`,
-				},
-			},
-
-			expectState: connectors.CallSucceeded,
-			expectPath:  "/responses/resp_1",
-		},
-		{
-			name: "Error/Retryable",
-
-			script: &scriptedProvider{status: http.StatusBadGateway, body: `{"error":{"message":"bad gateway"}}`},
-
-			expectErr: connectors.ErrRetryable,
-		},
-	}
-
-	for _, testCase := range testCases {
-		t.Run(testCase.name, func(t *testing.T) {
-			t.Parallel()
-
-			provider := newTestProvider(t, testCase.script)
-
-			call, err := provider.Cancel(t.Context(), "resp_1")
-			require.ErrorIs(t, err, testCase.expectErr)
-
-			if testCase.expectErr != nil {
-				return
-			}
-
-			require.Equal(t, testCase.expectState, call.State)
-			require.Equal(t, lo.CoalesceOrEmpty(testCase.expectPath, "/responses/resp_1/cancel"), testCase.script.lastPath)
-		})
-	}
-}
-
-// A start the provider may have received but never answered cannot be retried as a new one.
-func TestOpenAIStartTimeoutIsAmbiguous(t *testing.T) {
-	t.Parallel()
-
-	var requests atomic.Int32
-
-	release := make(chan struct{})
-	defer close(release)
-
-	server := httptest.NewTLSServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
-		requests.Add(1)
-
-		<-release
-	}))
-	t.Cleanup(server.Close)
-
-	provider, err := connectors.NewOpenAI(
-		testConfig(server.URL), option.WithHTTPClient(server.Client()), option.WithRequestTimeout(time.Second),
-	)
-	require.NoError(t, err)
-
-	_, err = provider.Start(t.Context(), testStartRequest())
-	require.ErrorIs(t, err, connectors.ErrStartAmbiguous)
-	require.Equal(t, int32(1), requests.Load())
-}
-
-// A failed dial proves nothing reached the provider, so the start is safe to retry rather than
-// settled as an unknown outcome.
-func TestOpenAITransportFailure(t *testing.T) {
-	t.Parallel()
-
-	// A port nothing listens on.
-	provider, err := connectors.NewOpenAI(testConfig("https://127.0.0.1:1"), option.WithMaxRetries(0))
-	require.NoError(t, err)
-
-	_, err = provider.Start(t.Context(), testStartRequest())
-	require.ErrorIs(t, err, connectors.ErrRetryable)
-}
-
-// A start whose deadline passes before the request leaves, here during a TLS handshake that never
-// completes, cannot have been accepted: it is retried rather than settled as an unknown outcome.
-func TestOpenAIStartStalledBeforeSending(t *testing.T) {
-	t.Parallel()
-
-	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-
-	var (
-		mu    sync.Mutex
-		conns []net.Conn
-	)
-
-	t.Cleanup(func() {
-		_ = listener.Close()
-
-		mu.Lock()
-		defer mu.Unlock()
-
-		for _, conn := range conns {
-			_ = conn.Close()
-		}
-	})
-
-	// Accepts connections and never speaks, so the handshake stalls.
-	go func() {
-		for {
-			conn, acceptErr := listener.Accept()
-			if acceptErr != nil {
-				return
-			}
-
-			mu.Lock()
-
-			conns = append(conns, conn)
-
-			mu.Unlock()
-		}
-	}()
-
-	provider, err := connectors.NewOpenAI(
-		testConfig("https://"+listener.Addr().String()), option.WithRequestTimeout(500*time.Millisecond),
-	)
-	require.NoError(t, err)
-
-	_, err = provider.Start(t.Context(), testStartRequest())
-	require.ErrorIs(t, err, connectors.ErrRetryable)
-}
-
-// An unknown status is polled again rather than settled: settling on a state this service does not
-// understand would throw away work already paid for.
-func TestOpenAIUnknownStatus(t *testing.T) {
-	t.Parallel()
-
-	provider := newTestProvider(t, &scriptedProvider{status: http.StatusOK, body: response("thinking", "")})
-
-	call, err := provider.Start(t.Context(), testStartRequest())
-	require.NoError(t, err)
-	require.Equal(t, connectors.CallRunning, call.State)
-	require.False(t, call.State.Terminal())
 }

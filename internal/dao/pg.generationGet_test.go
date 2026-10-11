@@ -16,7 +16,7 @@ import (
 	"github.com/a-novel/service-genai/internal/models/migrations"
 )
 
-func TestGenerationGet(t *testing.T) {
+func TestPgGenerationGet(t *testing.T) {
 	t.Parallel()
 
 	owner := uuid.MustParse("00000000-0000-0000-0000-000000000001")
@@ -75,7 +75,7 @@ func TestGenerationGet(t *testing.T) {
 		},
 	}
 
-	daoGenerationGet := dao.NewGenerationGet()
+	daoGenerationGet := dao.NewPgGenerationGet()
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {

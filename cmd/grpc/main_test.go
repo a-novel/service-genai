@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -13,17 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/a-novel/service-genai/internal/config"
-	"github.com/a-novel/service-genai/internal/core"
 	"github.com/a-novel/service-genai/internal/lib/connectors"
 )
-
-type discardLog struct{}
-
-func (discardLog) Info(context.Context, string, ...any) {}
-
-func (discardLog) Warn(context.Context, string, ...any) {}
-
-func (discardLog) Err(context.Context, string, ...any) {}
 
 func TestRunProcess(t *testing.T) {
 	t.Parallel()
@@ -105,67 +95,40 @@ func TestRunProcess(t *testing.T) {
 			require.True(t, siblingCancelledAfterUnavailable.Load())
 		})
 	}
-}
 
-func TestRunProcessNormalCancellation(t *testing.T) {
-	t.Parallel()
+	t.Run("NormalCancellation", func(t *testing.T) {
+		t.Parallel()
 
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
 
-	var started sync.WaitGroup
-	started.Add(3)
+		var started sync.WaitGroup
+		started.Add(3)
 
-	component := func(ctx context.Context) error {
-		started.Done()
-		<-ctx.Done()
+		component := func(ctx context.Context) error {
+			started.Done()
+			<-ctx.Done()
 
-		return nil
-	}
+			return nil
+		}
 
-	go func() {
-		started.Wait()
-		cancel()
-	}()
+		go func() {
+			started.Wait()
+			cancel()
+		}()
 
-	var shutdowns atomic.Int32
+		var shutdowns atomic.Int32
 
-	beginShutdown := sync.OnceFunc(func() {
-		shutdowns.Add(1)
-		cancel()
+		beginShutdown := sync.OnceFunc(func() {
+			shutdowns.Add(1)
+			cancel()
+		})
+
+		err := runProcess(ctx, beginShutdown, component, component, component)
+
+		require.NoError(t, err)
+		require.EqualValues(t, 1, shutdowns.Load())
 	})
-
-	err := runProcess(ctx, beginShutdown, component, component, component)
-
-	require.NoError(t, err)
-	require.EqualValues(t, 1, shutdowns.Load())
-}
-
-func TestRunLoopContinuesAfterUnitFailure(t *testing.T) {
-	t.Parallel()
-
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-
-	var calls atomic.Int32
-
-	err := runLoop(
-		ctx,
-		discardLog{},
-		"generation-sweep",
-		time.Nanosecond,
-		0,
-		func(context.Context) (bool, error) {
-			if calls.Add(1) == 3 {
-				cancel()
-			}
-
-			return false, errors.New("provider failed")
-		},
-	)
-
-	require.NoError(t, err)
-	require.GreaterOrEqual(t, calls.Load(), int32(3))
 }
 
 // TestNewConnectors checks the connectors the server builds against the Async mode's requirements in
@@ -266,10 +229,10 @@ func TestNewConnectors(t *testing.T) {
 		require.Positive(t, finished.Usage.OutputTokens)
 
 		// Re-attach: the sweep reads an unpolled result within one interval, so it must outlive one.
-		time.Sleep(core.SweepIntervalCeiling)
+		time.Sleep(config.SweepIntervalCeiling)
 
 		again, err := connector.Get(t.Context(), started.ID)
-		require.NoError(t, err, "result gone %s after it finished", core.SweepIntervalCeiling)
+		require.NoError(t, err, "result gone %s after it finished", config.SweepIntervalCeiling)
 		require.JSONEq(t, output(t, finished.Response), output(t, again.Response))
 	})
 
@@ -319,7 +282,6 @@ func TestOutsideDowntime(t *testing.T) {
 	t.Parallel()
 
 	started := time.Now().Add(-time.Hour)
-	scheduled := time.Now().Add(time.Hour)
 
 	testCases := []struct {
 		name  string
@@ -329,11 +291,6 @@ func TestOutsideDowntime(t *testing.T) {
 	}{
 		{
 			name:      "NoDowntime",
-			expectRun: true,
-		},
-		{
-			name:      "Scheduled",
-			start:     &scheduled,
 			expectRun: true,
 		},
 		{

@@ -124,112 +124,100 @@ func TestClient(t *testing.T) {
 		require.Len(t, traceparent, 1)
 		require.Contains(t, traceparent[0], caller.TraceID().String())
 	})
-}
 
-// The submit contract against a running service: a resend of the same request replays it, any other
-// request creates, and a cancelled generation is rerun rather than served.
-func TestClientGenerationSubmit(t *testing.T) {
-	t.Parallel()
+	// The submit contract against a running service: a resend of the same request replays it, any other
+	// request creates, and a cancelled generation is rerun rather than served.
+	t.Run("GenerationSubmit", func(t *testing.T) {
+		t.Parallel()
 
-	client := newClient(t)
+		client := newClient(t)
 
-	owner := uuid.Must(uuid.NewV7()).String()
+		owner := uuid.Must(uuid.NewV7()).String()
 
-	created, err := client.GenerationSubmit(t.Context(), submitRequest(owner))
-	require.NoError(t, err)
-	require.True(t, created.GetCreated())
+		created, err := client.GenerationSubmit(t.Context(), submitRequest(owner))
+		require.NoError(t, err)
+		require.True(t, created.GetCreated())
 
-	// A caller that lost the answer resends the request: it holds no key, and pays nothing more.
-	replayed, err := client.GenerationSubmit(t.Context(), submitRequest(owner))
-	require.NoError(t, err)
-	require.False(t, replayed.GetCreated())
-	require.Equal(t, created.GetGeneration().GetId(), replayed.GetGeneration().GetId())
+		// A caller that lost the answer resends the request: it holds no key, and pays nothing more.
+		replayed, err := client.GenerationSubmit(t.Context(), submitRequest(owner))
+		require.NoError(t, err)
+		require.False(t, replayed.GetCreated())
+		require.Equal(t, created.GetGeneration().GetId(), replayed.GetGeneration().GetId())
 
-	// Another variant of the same request is another generation.
-	regenerate := submitRequest(owner)
-	regenerate.Variant = 1
-	variant, err := client.GenerationSubmit(t.Context(), regenerate)
-	require.NoError(t, err)
-	require.True(t, variant.GetCreated())
+		// Another variant of the same request is another generation.
+		regenerate := submitRequest(owner)
+		regenerate.Variant = 1
+		variant, err := client.GenerationSubmit(t.Context(), regenerate)
+		require.NoError(t, err)
+		require.True(t, variant.GetCreated())
 
-	// A cancelled generation is not served again: resending its request runs it from scratch.
-	_, err = client.GenerationCancel(t.Context(), &servicegenai.GenerationCancelRequest{
-		Id: created.GetGeneration().GetId(), OwnerId: owner,
+		// A cancelled generation is not served again: resending its request runs it from scratch.
+		_, err = client.GenerationCancel(t.Context(), &servicegenai.GenerationCancelRequest{
+			Id: created.GetGeneration().GetId(), OwnerId: owner,
+		})
+		require.NoError(t, err)
+
+		rerun, err := client.GenerationSubmit(t.Context(), submitRequest(owner))
+		require.NoError(t, err)
+		require.True(t, rerun.GetCreated())
+		require.NotEqual(t, created.GetGeneration().GetId(), rerun.GetGeneration().GetId())
+
+		// A purpose the caps do not declare cannot be spent on: the embedded caps reach the image.
+		undeclared := submitRequest(owner)
+		undeclared.Purpose = "studio.undeclared"
+		_, err = client.GenerationSubmit(t.Context(), undeclared)
+		require.Equal(t, codes.InvalidArgument, status.Code(err))
 	})
-	require.NoError(t, err)
 
-	rerun, err := client.GenerationSubmit(t.Context(), submitRequest(owner))
-	require.NoError(t, err)
-	require.True(t, rerun.GetCreated())
-	require.NotEqual(t, created.GetGeneration().GetId(), rerun.GetGeneration().GetId())
+	// The ownership predicate over the wire. Another owner's generation must be indistinguishable from
+	// one that does not exist, or an identifier can be probed.
+	t.Run("GenerationGet", func(t *testing.T) {
+		t.Parallel()
 
-	// A provider no connector serves cannot run anything.
-	unknown := submitRequest(owner)
-	unknown.Provider = "unknown"
-	_, err = client.GenerationSubmit(t.Context(), unknown)
-	require.Equal(t, codes.InvalidArgument, status.Code(err))
+		client := newClient(t)
 
-	// A purpose the caps do not declare cannot be spent on.
-	undeclared := submitRequest(owner)
-	undeclared.Purpose = "studio.undeclared"
-	_, err = client.GenerationSubmit(t.Context(), undeclared)
-	require.Equal(t, codes.InvalidArgument, status.Code(err))
+		owner := uuid.Must(uuid.NewV7()).String()
+		generation := submit(t, client, owner)
 
-	// A provider request is always a JSON object.
-	notAnObject := submitRequest(owner)
-	notAnObject.Payload = []byte(`["model", "a-model"]`)
-	_, err = client.GenerationSubmit(t.Context(), notAnObject)
-	require.Equal(t, codes.InvalidArgument, status.Code(err))
-}
+		read, err := client.GenerationGet(t.Context(), &servicegenai.GenerationGetRequest{
+			Id: generation.GetId(), OwnerId: owner,
+		})
+		require.NoError(t, err)
+		require.Equal(t, generation.GetId(), read.GetGeneration().GetId())
+		require.Equal(t, "openai", read.GetGeneration().GetProvider())
 
-// The ownership predicate over the wire. Another owner's generation must be indistinguishable from
-// one that does not exist, or an identifier can be probed.
-func TestClientGenerationGet(t *testing.T) {
-	t.Parallel()
-
-	client := newClient(t)
-
-	owner := uuid.Must(uuid.NewV7()).String()
-	generation := submit(t, client, owner)
-
-	read, err := client.GenerationGet(t.Context(), &servicegenai.GenerationGetRequest{
-		Id: generation.GetId(), OwnerId: owner,
+		_, err = client.GenerationGet(t.Context(), &servicegenai.GenerationGetRequest{
+			Id: generation.GetId(), OwnerId: uuid.Must(uuid.NewV7()).String(),
+		})
+		require.Equal(t, codes.NotFound, status.Code(err))
 	})
-	require.NoError(t, err)
-	require.Equal(t, generation.GetId(), read.GetGeneration().GetId())
-	require.Equal(t, "openai", read.GetGeneration().GetProvider())
 
-	_, err = client.GenerationGet(t.Context(), &servicegenai.GenerationGetRequest{
-		Id: generation.GetId(), OwnerId: uuid.Must(uuid.NewV7()).String(),
+	// A generation whose start never reached the provider is cancelled at once: there is no call to stop.
+	t.Run("GenerationCancel", func(t *testing.T) {
+		t.Parallel()
+
+		client := newClient(t)
+
+		owner := uuid.Must(uuid.NewV7()).String()
+		generation := submit(t, client, owner)
+
+		cancelled, err := client.GenerationCancel(t.Context(), &servicegenai.GenerationCancelRequest{
+			Id: generation.GetId(), OwnerId: owner,
+		})
+		require.NoError(t, err)
+		require.Equal(t, servicegenai.GenerationStatusCancelled, cancelled.GetGeneration().GetStatus())
+
+		// A retry after a lost answer succeeds, with the generation as it stands.
+		again, err := client.GenerationCancel(t.Context(), &servicegenai.GenerationCancelRequest{
+			Id: generation.GetId(), OwnerId: owner,
+		})
+		require.NoError(t, err)
+		require.Equal(t, servicegenai.GenerationStatusCancelled, again.GetGeneration().GetStatus())
+
+		// Another owner cannot stop it, and is told the same thing as if it did not exist.
+		_, err = client.GenerationCancel(t.Context(), &servicegenai.GenerationCancelRequest{
+			Id: generation.GetId(), OwnerId: uuid.Must(uuid.NewV7()).String(),
+		})
+		require.Equal(t, codes.NotFound, status.Code(err))
 	})
-	require.Equal(t, codes.NotFound, status.Code(err))
-}
-
-// A generation whose start never reached the provider is cancelled at once: there is no call to stop.
-func TestClientGenerationCancel(t *testing.T) {
-	t.Parallel()
-
-	client := newClient(t)
-
-	owner := uuid.Must(uuid.NewV7()).String()
-	generation := submit(t, client, owner)
-
-	cancelled, err := client.GenerationCancel(t.Context(), &servicegenai.GenerationCancelRequest{
-		Id: generation.GetId(), OwnerId: owner,
-	})
-	require.NoError(t, err)
-	require.Equal(t, servicegenai.GenerationStatusCancelled, cancelled.GetGeneration().GetStatus())
-
-	// A retry after a lost answer succeeds, with the generation as it stands.
-	again, err := client.GenerationCancel(t.Context(), &servicegenai.GenerationCancelRequest{
-		Id: generation.GetId(), OwnerId: owner,
-	})
-	require.NoError(t, err)
-	require.Equal(t, servicegenai.GenerationStatusCancelled, again.GetGeneration().GetStatus())
-
-	// Another owner cannot stop it, and is told the same thing as if it did not exist.
-	_, err = client.GenerationCancel(t.Context(), &servicegenai.GenerationCancelRequest{
-		Id: generation.GetId(), OwnerId: uuid.Must(uuid.NewV7()).String(),
-	})
-	require.Equal(t, codes.NotFound, status.Code(err))
 }

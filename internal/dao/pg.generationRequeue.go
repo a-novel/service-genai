@@ -27,18 +27,19 @@ type GenerationRequeueRequest struct {
 	Delay time.Duration
 }
 
-// GenerationRequeue returns a generation whose attempt failed retryably to the queue for a fresh
+// PgGenerationRequeue returns a generation whose attempt failed retryably to the queue for a fresh
 // provider call.
 //
 // It does not record the attempt's answer; the caller wraps both in one transaction.
-type GenerationRequeue struct{}
+type PgGenerationRequeue struct{}
 
-func NewGenerationRequeue() *GenerationRequeue {
-	return &GenerationRequeue{}
+// NewPgGenerationRequeue returns a new PgGenerationRequeue dao.
+func NewPgGenerationRequeue() *PgGenerationRequeue {
+	return &PgGenerationRequeue{}
 }
 
-func (dao *GenerationRequeue) Exec(ctx context.Context, request *GenerationRequeueRequest) (*Generation, error) {
-	ctx, span := otel.Tracer().Start(ctx, "dao.GenerationRequeue")
+func (dao *PgGenerationRequeue) Exec(ctx context.Context, request *GenerationRequeueRequest) (*Generation, error) {
+	ctx, span := otel.Tracer().Start(ctx, "dao.PgGenerationRequeue")
 	defer span.End()
 
 	tx, err := postgres.GetContext(ctx)

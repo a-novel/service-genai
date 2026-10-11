@@ -1,7 +1,6 @@
 package core_test
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"time"
@@ -41,11 +40,6 @@ var (
 		TraceID: trace.TraceID{1}, SpanID: trace.SpanID{1}, TraceFlags: trace.FlagsSampled,
 	})
 )
-
-// discardLogger drops what checks log: provider details stay server-side, out of assertions.
-type discardLogger struct{}
-
-func (discardLogger) Err(context.Context, string, ...any) {}
 
 // pendingGeneration has never started.
 func pendingGeneration() *dao.Generation {

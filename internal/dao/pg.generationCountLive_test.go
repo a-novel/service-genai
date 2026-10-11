@@ -14,7 +14,7 @@ import (
 	"github.com/a-novel/service-genai/internal/models/migrations"
 )
 
-func TestGenerationCountLive(t *testing.T) {
+func TestPgGenerationCountLive(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
@@ -51,7 +51,7 @@ func TestGenerationCountLive(t *testing.T) {
 		},
 	}
 
-	daoCountLive := dao.NewGenerationCountLive()
+	daoCountLive := dao.NewPgGenerationCountLive()
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {

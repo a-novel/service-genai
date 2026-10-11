@@ -3,6 +3,7 @@ package handlers_test
 import (
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
@@ -29,15 +30,16 @@ func TestGrpcGenerationCancel(t *testing.T) {
 
 		serviceMock *serviceMock
 
+		expect       *genaiv0.GenerationCancelResponse
 		expectStatus codes.Code
 	}{
 		{
-			// The request is recorded and the status is unchanged: the next check settles it once the
-			// provider operation has actually stopped, recording what was spent.
 			name: "Success",
 
 			request:     &genaiv0.GenerationCancelRequest{Id: testGenerationID, OwnerId: testOwnerID},
 			serviceMock: &serviceMock{resp: testGeneration()},
+
+			expect: &genaiv0.GenerationCancelResponse{Generation: testGrpcGeneration()},
 		},
 		{
 			// Somebody else's generation reports as absent, so an id cannot be probed for existence.
@@ -80,22 +82,21 @@ func TestGrpcGenerationCancel(t *testing.T) {
 
 			if testCase.serviceMock != nil {
 				service.EXPECT().
-					Exec(mock.Anything, mock.Anything).
+					Exec(mock.Anything, &core.GenerationCancelRequest{
+						ID: uuid.MustParse(testCase.request.GetId()), OwnerID: uuid.MustParse(testCase.request.GetOwnerId()),
+					}).
 					Return(testCase.serviceMock.resp, testCase.serviceMock.err)
 			}
 
-			response, err := handlers.NewGrpcGenerationCancel(service).
-				GenerationCancel(t.Context(), testCase.request)
-
-			if testCase.expectStatus != codes.OK {
-				require.Equal(t, testCase.expectStatus, status.Code(err))
-				require.Nil(t, response)
-
-				return
-			}
-
-			require.NoError(t, err)
-			require.Equal(t, testGenerationID, response.GetGeneration().GetId())
+			res, err := handlers.NewGrpcGenerationCancel(service).GenerationCancel(t.Context(), testCase.request)
+			resSt, ok := status.FromError(err)
+			require.True(t, ok, resSt.Code().String())
+			require.Equal(
+				t,
+				testCase.expectStatus, resSt.Code(),
+				"expected status code %s, got %s (%v)", testCase.expectStatus, resSt.Code(), err,
+			)
+			require.Equal(t, testCase.expect, res)
 
 			service.AssertExpectations(t)
 		})

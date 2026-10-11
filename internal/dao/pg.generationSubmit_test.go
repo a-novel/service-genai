@@ -16,8 +16,6 @@ import (
 	"github.com/a-novel/service-genai/internal/models/migrations"
 )
 
-var submitOwner = uuid.MustParse("00000000-0000-0000-0000-000000000001")
-
 // submission is one call in a case's sequence.
 type submission struct {
 	// key overrides the base request key.
@@ -34,7 +32,7 @@ type submission struct {
 func (sub submission) build() *dao.GenerationSubmitRequest {
 	base := &dao.GenerationSubmitRequest{
 		ID:          uuid.Must(uuid.NewV7()),
-		OwnerID:     submitOwner,
+		OwnerID:     testOwner,
 		Purpose:     "studio.generation",
 		Provider:    "openai",
 		RequestKey:  []byte("the-request-key"),
@@ -58,7 +56,7 @@ func settleTo(ctx context.Context, t *testing.T, generation *dao.Generation, sta
 	case dao.GenerationStatusFailed:
 		settleGeneration(ctx, t, generation)
 	case dao.GenerationStatusCancelled:
-		_, err := dao.NewGenerationRequestCancel().Exec(ctx, &dao.GenerationRequestCancelRequest{
+		_, err := dao.NewPgGenerationRequestCancel().Exec(ctx, &dao.GenerationRequestCancelRequest{
 			ID: generation.ID, OwnerID: generation.OwnerID, Error: "generation cancelled", Retention: testRetention,
 		})
 		if err != nil {
@@ -67,7 +65,7 @@ func settleTo(ctx context.Context, t *testing.T, generation *dao.Generation, sta
 	case dao.GenerationStatusSucceeded:
 		running := runGeneration(ctx, t, generation.ID)
 
-		_, err := dao.NewGenerationSettle().Exec(ctx, &dao.GenerationSettleRequest{
+		_, err := dao.NewPgGenerationSettle().Exec(ctx, &dao.GenerationSettleRequest{
 			ID: running.ID, Attempt: running.Attempt, StartRequestedAt: running.StartRequestedAt,
 			ProviderCallID: running.ProviderCallID,
 			Status:         dao.GenerationStatusSucceeded,
@@ -82,7 +80,7 @@ func settleTo(ctx context.Context, t *testing.T, generation *dao.Generation, sta
 	}
 }
 
-func TestGenerationSubmit(t *testing.T) {
+func TestPgGenerationSubmit(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
@@ -150,7 +148,7 @@ func TestGenerationSubmit(t *testing.T) {
 		},
 	}
 
-	daoGenerationSubmit := dao.NewGenerationSubmit()
+	daoGenerationSubmit := dao.NewPgGenerationSubmit()
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -201,65 +199,65 @@ func TestGenerationSubmit(t *testing.T) {
 			})
 		})
 	}
-}
 
-// Kept out of the table above because it asserts a property of a set of concurrent calls rather
-// than a sequence of outcomes. It is the case that matters most: submit exists so a race cannot
-// produce two priced calls, so the race is what it is tested against.
-func TestGenerationSubmitConcurrent(t *testing.T) {
-	t.Parallel()
+	// Kept out of the table above because it asserts a property of a set of concurrent calls rather
+	// than a sequence of outcomes. It is the case that matters most: submit exists so a race cannot
+	// produce two priced calls, so the race is what it is tested against.
+	t.Run("Concurrent", func(t *testing.T) {
+		t.Parallel()
 
-	const concurrency = 8
+		const concurrency = 8
 
-	postgrestest.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
-		t.Helper()
+		postgrestest.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
+			t.Helper()
 
-		daoGenerationSubmit := dao.NewGenerationSubmit()
+			daoGenerationSubmit := dao.NewPgGenerationSubmit()
 
-		var (
-			wg      sync.WaitGroup
-			mu      sync.Mutex
-			results []*dao.GenerationSubmitResult
-		)
+			var (
+				wg      sync.WaitGroup
+				mu      sync.Mutex
+				results []*dao.GenerationSubmitResult
+			)
 
-		for range concurrency {
-			wg.Add(1)
+			for range concurrency {
+				wg.Add(1)
 
-			go func() {
-				defer wg.Done()
+				go func() {
+					defer wg.Done()
 
-				result, err := daoGenerationSubmit.Exec(ctx, submission{}.build())
-				if err != nil {
-					return
-				}
+					result, err := daoGenerationSubmit.Exec(ctx, submission{}.build())
+					if err != nil {
+						return
+					}
 
-				mu.Lock()
-				defer mu.Unlock()
+					mu.Lock()
+					defer mu.Unlock()
 
-				results = append(results, result)
-			}()
-		}
-
-		wg.Wait()
-
-		require.Len(t, results, concurrency)
-
-		var (
-			createdCount int
-			winner       uuid.UUID
-		)
-
-		for _, result := range results {
-			if result.Created {
-				createdCount++
-				winner = result.Generation.ID
+					results = append(results, result)
+				}()
 			}
-		}
 
-		require.Equal(t, 1, createdCount)
+			wg.Wait()
 
-		for _, result := range results {
-			require.Equal(t, winner, result.Generation.ID)
-		}
+			require.Len(t, results, concurrency)
+
+			var (
+				createdCount int
+				winner       uuid.UUID
+			)
+
+			for _, result := range results {
+				if result.Created {
+					createdCount++
+					winner = result.Generation.ID
+				}
+			}
+
+			require.Equal(t, 1, createdCount)
+
+			for _, result := range results {
+				require.Equal(t, winner, result.Generation.ID)
+			}
+		})
 	})
 }

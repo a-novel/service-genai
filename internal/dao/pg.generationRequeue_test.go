@@ -14,7 +14,7 @@ import (
 	"github.com/a-novel/service-genai/internal/models/migrations"
 )
 
-func TestGenerationRequeue(t *testing.T) {
+func TestPgGenerationRequeue(t *testing.T) {
 	t.Parallel()
 
 	const delay = time.Minute
@@ -66,7 +66,7 @@ func TestGenerationRequeue(t *testing.T) {
 		},
 	}
 
-	daoRequeue := dao.NewGenerationRequeue()
+	daoRequeue := dao.NewPgGenerationRequeue()
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {

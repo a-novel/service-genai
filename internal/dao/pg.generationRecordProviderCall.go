@@ -24,20 +24,21 @@ type GenerationRecordProviderCallRequest struct {
 	ProviderCallID string
 }
 
-// GenerationRecordProviderCall records the provider operation an attempt started.
+// PgGenerationRecordProviderCall records the provider operation an attempt started.
 //
 // [ErrGenerationChanged] means the generation settled while the start was in flight: the
 // accepted operation belongs to nothing and the caller stops it.
-type GenerationRecordProviderCall struct{}
+type PgGenerationRecordProviderCall struct{}
 
-func NewGenerationRecordProviderCall() *GenerationRecordProviderCall {
-	return &GenerationRecordProviderCall{}
+// NewPgGenerationRecordProviderCall returns a new PgGenerationRecordProviderCall dao.
+func NewPgGenerationRecordProviderCall() *PgGenerationRecordProviderCall {
+	return &PgGenerationRecordProviderCall{}
 }
 
-func (dao *GenerationRecordProviderCall) Exec(
+func (dao *PgGenerationRecordProviderCall) Exec(
 	ctx context.Context, request *GenerationRecordProviderCallRequest,
 ) (*Generation, error) {
-	ctx, span := otel.Tracer().Start(ctx, "dao.GenerationRecordProviderCall")
+	ctx, span := otel.Tracer().Start(ctx, "dao.PgGenerationRecordProviderCall")
 	defer span.End()
 
 	tx, err := postgres.GetContext(ctx)

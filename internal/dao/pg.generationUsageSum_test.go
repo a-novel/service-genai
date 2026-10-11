@@ -15,7 +15,7 @@ import (
 	"github.com/a-novel/service-genai/internal/models/migrations"
 )
 
-func TestGenerationUsageSum(t *testing.T) {
+func TestPgGenerationUsageSum(t *testing.T) {
 	t.Parallel()
 
 	otherOwner := uuid.MustParse("00000000-0000-0000-0000-000000000002")
@@ -65,7 +65,7 @@ func TestGenerationUsageSum(t *testing.T) {
 		},
 	}
 
-	daoUsageSum := dao.NewGenerationUsageSum()
+	daoUsageSum := dao.NewPgGenerationUsageSum()
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {

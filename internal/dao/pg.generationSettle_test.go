@@ -13,7 +13,7 @@ import (
 	"github.com/a-novel/service-genai/internal/models/migrations"
 )
 
-func TestGenerationSettle(t *testing.T) {
+func TestPgGenerationSettle(t *testing.T) {
 	t.Parallel()
 
 	failure := "the provider call failed"
@@ -121,7 +121,7 @@ func TestGenerationSettle(t *testing.T) {
 		},
 	}
 
-	daoSettle := dao.NewGenerationSettle()
+	daoSettle := dao.NewPgGenerationSettle()
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -145,19 +145,19 @@ func TestGenerationSettle(t *testing.T) {
 				}
 
 				if testCase.recordAfterRead {
-					_, err := dao.NewGenerationRecordProviderCall().Exec(ctx, &dao.GenerationRecordProviderCallRequest{
+					_, err := dao.NewPgGenerationRecordProviderCall().Exec(ctx, &dao.GenerationRecordProviderCallRequest{
 						ID: generation.ID, Attempt: 1, ProviderCallID: testCallID,
 					})
 					require.NoError(t, err)
 				}
 
 				if testCase.requeueAfterRead {
-					_, err := dao.NewGenerationRecordProviderCall().Exec(ctx, &dao.GenerationRecordProviderCallRequest{
+					_, err := dao.NewPgGenerationRecordProviderCall().Exec(ctx, &dao.GenerationRecordProviderCallRequest{
 						ID: generation.ID, Attempt: 1, ProviderCallID: testCallID,
 					})
 					require.NoError(t, err)
 
-					_, err = dao.NewGenerationRequeue().Exec(ctx, &dao.GenerationRequeueRequest{
+					_, err = dao.NewPgGenerationRequeue().Exec(ctx, &dao.GenerationRequeueRequest{
 						ID: generation.ID, Attempt: 1, ProviderCallID: testCallID,
 					})
 					require.NoError(t, err)
