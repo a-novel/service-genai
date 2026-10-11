@@ -61,6 +61,7 @@ var AppPresetDefault = App{
 		BaseURL: env.OpenAIBaseURL,
 	},
 	Retention: env.Retention,
+	Caps:      CapsDefault,
 
 	Otel: lo.If[otel.Config](!env.Otel, &otelpresets.Disabled{}).
 		ElseIf(env.GcloudProjectId == "", &otelpresets.Local{

@@ -61,6 +61,8 @@ type App struct {
 	MaxAttempts int16 `json:"maxAttempts" yaml:"maxAttempts"`
 	// Retention is how long a settled generation's user content survives before the purge.
 	Retention time.Duration `json:"retention" yaml:"retention"`
+	// Caps is the usage policy every submit answers to.
+	Caps Caps `json:"caps" yaml:"caps"`
 
 	Otel   otel.Config       `json:"otel"   yaml:"otel"`
 	Logger logging.RPCConfig `json:"logger" yaml:"logger"`
