@@ -108,6 +108,7 @@ func main() {
 			Submit:   dao.NewGenerationSubmit(),
 			Attempts: daoAttemptList,
 			Usage:    dao.NewGenerationUsageSum(),
+			Live:     dao.NewGenerationCountLive(),
 			Settle:   dao.NewGenerationSettle(),
 		},
 		serviceCheck,

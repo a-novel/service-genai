@@ -69,6 +69,7 @@ var testCaps = config.Caps{
 	Global: config.TierCaps{
 		config.DefaultTier: {Windows: map[time.Duration]config.Limit{720 * time.Hour: {OutputTokens: new(int64(500))}}},
 	},
+	Concurrency: map[string]int{config.DefaultTier: 2, "unlimited": -1},
 }
 
 // usageMock is one window sum admission reads, and what it finds.
@@ -98,6 +99,10 @@ func TestGenerationSubmit(t *testing.T) {
 		request *core.GenerationSubmitRequest
 
 		daoMock *daoMock
+		// live is how many generations the user has pending or running, the created one included:
+		// one when left zero. An unlimited tier is never counted.
+		live    int64
+		liveErr error
 		// usage lists the window sums admission reads, in order. Only a created generation is admitted.
 		usage []usageMock
 		// expectRefusal settles the created generation as failed for a reached cap.
@@ -156,6 +161,37 @@ func TestGenerationSubmit(t *testing.T) {
 			usage:   []usageMock{{window: 720 * time.Hour}},
 
 			expectCreated: true,
+		},
+		{
+			// The created generation is the second one running: exactly the limit.
+			name: "Success/AtConcurrencyLimit",
+
+			request: submitRequest(nil),
+			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration(), Created: true}},
+			live:    2,
+			usage:   underCaps,
+
+			expectCreated: true,
+		},
+		{
+			// Refused before any usage is read.
+			name: "Error/ConcurrencyReached",
+
+			request:       submitRequest(nil),
+			daoMock:       &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration(), Created: true}},
+			live:          3,
+			expectRefusal: true,
+
+			expectErr: core.ErrUsageCapReached,
+		},
+		{
+			name: "Error/CountLive",
+
+			request: submitRequest(nil),
+			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration(), Created: true}},
+			liveErr: errFoo,
+
+			expectErr: errFoo,
 		},
 		{
 			// A tier the caps do not know answers to the default caps.
@@ -369,10 +405,18 @@ func TestGenerationSubmit(t *testing.T) {
 			submitDao := coremocks.NewMockGenerationSubmitDao(t)
 			attemptDao := coremocks.NewMockGenerationSubmitAttemptListDao(t)
 			usageDao := coremocks.NewMockGenerationSubmitUsageSumDao(t)
+			liveDao := coremocks.NewMockGenerationSubmitCountLiveDao(t)
 			settleDao := coremocks.NewMockGenerationSubmitSettleDao(t)
 			check := coremocks.NewMockGenerationSubmitServiceCheck(t)
 
-			admitted := !testCase.expectRefusal
+			admitted := !testCase.expectRefusal && testCase.liveErr == nil
+			created := testCase.daoMock != nil && testCase.daoMock.resp != nil && testCase.daoMock.resp.Created
+
+			if created && testCase.request.UserTier != "unlimited" {
+				liveDao.EXPECT().
+					Exec(mock.Anything, &dao.GenerationCountLiveRequest{OwnerID: testCase.request.OwnerID}).
+					Return(&dao.GenerationLiveCount{Count: max(testCase.live, 1)}, testCase.liveErr)
+			}
 
 			for _, usage := range testCase.usage {
 				var purpose *string
@@ -415,8 +459,6 @@ func TestGenerationSubmit(t *testing.T) {
 					})).
 					Return(testCase.daoMock.resp, testCase.daoMock.err)
 
-				created := testCase.daoMock.resp != nil && testCase.daoMock.resp.Created
-
 				if created && admitted {
 					check.EXPECT().
 						Exec(mock.Anything, &core.GenerationCheckRequest{Generation: testCase.daoMock.resp.Generation}).
@@ -433,7 +475,9 @@ func TestGenerationSubmit(t *testing.T) {
 			service, err := core.NewGenerationSubmit(
 				core.GenerationSubmitConfig{MaxAttempts: maxAttempts, Retention: time.Hour, Caps: testCaps},
 				testConnectors(t),
-				core.GenerationSubmitDaos{Submit: submitDao, Attempts: attemptDao, Usage: usageDao, Settle: settleDao},
+				core.GenerationSubmitDaos{
+					Submit: submitDao, Attempts: attemptDao, Usage: usageDao, Live: liveDao, Settle: settleDao,
+				},
 				check,
 			)
 			require.NoError(t, err)
@@ -451,6 +495,7 @@ func TestGenerationSubmit(t *testing.T) {
 			submitDao.AssertExpectations(t)
 			attemptDao.AssertExpectations(t)
 			usageDao.AssertExpectations(t)
+			liveDao.AssertExpectations(t)
 			settleDao.AssertExpectations(t)
 			check.AssertExpectations(t)
 		})
@@ -540,6 +585,8 @@ func TestNewGenerationSubmit(t *testing.T) {
 	t.Parallel()
 
 	someLimit := map[time.Duration]config.Limit{time.Hour: {InputTokens: new(int64(1))}}
+	someConcurrency := map[string]int{config.DefaultTier: 1}
+	someTiers := map[string]config.TierCaps{testPurpose: {config.DefaultTier: {Windows: someLimit}}}
 
 	testCases := []struct {
 		name string
@@ -558,8 +605,9 @@ func TestNewGenerationSubmit(t *testing.T) {
 			name: "Error/PurposeWithoutDefault",
 
 			caps: config.Caps{
-				Purposes: map[string]config.TierCaps{testPurpose: {"admin": {Unlimited: true}}},
-				Global:   config.TierCaps{config.DefaultTier: {Windows: someLimit}},
+				Purposes:    map[string]config.TierCaps{testPurpose: {"admin": {Unlimited: true}}},
+				Global:      config.TierCaps{config.DefaultTier: {Windows: someLimit}},
+				Concurrency: someConcurrency,
 			},
 
 			expectErr: core.ErrInvalidRequest,
@@ -567,7 +615,10 @@ func TestNewGenerationSubmit(t *testing.T) {
 		{
 			name: "Error/GlobalWithoutDefault",
 
-			caps: config.Caps{Purposes: map[string]config.TierCaps{testPurpose: {config.DefaultTier: {Windows: someLimit}}}},
+			caps: config.Caps{
+				Purposes:    map[string]config.TierCaps{testPurpose: {config.DefaultTier: {Windows: someLimit}}},
+				Concurrency: someConcurrency,
+			},
 
 			expectErr: core.ErrInvalidRequest,
 		},
@@ -576,8 +627,9 @@ func TestNewGenerationSubmit(t *testing.T) {
 			name: "Error/NoWindow",
 
 			caps: config.Caps{
-				Purposes: map[string]config.TierCaps{testPurpose: {config.DefaultTier: {}}},
-				Global:   config.TierCaps{config.DefaultTier: {Windows: someLimit}},
+				Purposes:    map[string]config.TierCaps{testPurpose: {config.DefaultTier: {}}},
+				Global:      config.TierCaps{config.DefaultTier: {Windows: someLimit}},
+				Concurrency: someConcurrency,
 			},
 
 			expectErr: core.ErrInvalidRequest,
@@ -589,7 +641,8 @@ func TestNewGenerationSubmit(t *testing.T) {
 				Purposes: map[string]config.TierCaps{testPurpose: {config.DefaultTier: {
 					Windows: map[time.Duration]config.Limit{time.Hour: {}},
 				}}},
-				Global: config.TierCaps{config.DefaultTier: {Windows: someLimit}},
+				Global:      config.TierCaps{config.DefaultTier: {Windows: someLimit}},
+				Concurrency: someConcurrency,
 			},
 
 			expectErr: core.ErrInvalidRequest,
@@ -601,7 +654,30 @@ func TestNewGenerationSubmit(t *testing.T) {
 				Purposes: map[string]config.TierCaps{testPurpose: {config.DefaultTier: {
 					Windows: map[time.Duration]config.Limit{time.Hour: {OutputTokens: new(int64(-1))}},
 				}}},
-				Global: config.TierCaps{config.DefaultTier: {Windows: someLimit}},
+				Global:      config.TierCaps{config.DefaultTier: {Windows: someLimit}},
+				Concurrency: someConcurrency,
+			},
+
+			expectErr: core.ErrInvalidRequest,
+		},
+		{
+			name: "Error/ConcurrencyWithoutDefault",
+
+			caps: config.Caps{
+				Purposes:    someTiers,
+				Global:      config.TierCaps{config.DefaultTier: {Windows: someLimit}},
+				Concurrency: map[string]int{"admin": -1},
+			},
+
+			expectErr: core.ErrInvalidRequest,
+		},
+		{
+			name: "Error/ConcurrencyBelowUnlimited",
+
+			caps: config.Caps{
+				Purposes:    someTiers,
+				Global:      config.TierCaps{config.DefaultTier: {Windows: someLimit}},
+				Concurrency: map[string]int{config.DefaultTier: -2},
 			},
 
 			expectErr: core.ErrInvalidRequest,

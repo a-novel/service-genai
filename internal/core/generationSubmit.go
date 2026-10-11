@@ -38,6 +38,10 @@ type (
 	GenerationSubmitUsageSumDao interface {
 		Exec(ctx context.Context, request *dao.GenerationUsageSumRequest) (*dao.GenerationUsageTotals, error)
 	}
+	// GenerationSubmitCountLiveDao counts a user's pending and running generations.
+	GenerationSubmitCountLiveDao interface {
+		Exec(ctx context.Context, request *dao.GenerationCountLiveRequest) (*dao.GenerationLiveCount, error)
+	}
 	// GenerationSubmitSettleDao fails a generation whose user is over a cap, so nothing starts it.
 	GenerationSubmitSettleDao interface {
 		Exec(ctx context.Context, request *dao.GenerationSettleRequest) (*dao.Generation, error)
@@ -101,6 +105,7 @@ type GenerationSubmitDaos struct {
 	Submit   GenerationSubmitDao
 	Attempts GenerationSubmitAttemptListDao
 	Usage    GenerationSubmitUsageSumDao
+	Live     GenerationSubmitCountLiveDao
 	Settle   GenerationSubmitSettleDao
 }
 
@@ -229,10 +234,10 @@ func (service *GenerationSubmit) validateRequest(request *GenerationSubmitReques
 	return nil
 }
 
-// admit lets a newly created generation start unless its user's usage already reached a cap it
-// answers to: its purpose's, then the global one, for its tier. Nothing is reserved, so a call
-// admitted under a cap runs to the end past it. A refused generation is settled as failed, so no
-// later check starts it.
+// admit lets a newly created generation start unless its user already runs as many generations as
+// its tier allows, or its usage already reached a cap it answers to: its purpose's, then the global
+// one. Nothing is reserved, so a call admitted under a cap runs to the end past it; the concurrency
+// limit bounds how many can. A refused generation is settled as failed, so no later check starts it.
 func (service *GenerationSubmit) admit(
 	ctx context.Context, request *GenerationSubmitRequest, generation *dao.Generation,
 ) error {
@@ -264,10 +269,22 @@ func (service *GenerationSubmit) admit(
 	return otel.ReportError(span, fmt.Errorf("%w: %s", ErrUsageCapReached, refusal))
 }
 
-// capReached names the first cap the user's usage already reached, or returns empty when none is.
+// capReached names the first limit the user already reached, or returns empty when none is.
 func (service *GenerationSubmit) capReached(ctx context.Context, request *GenerationSubmitRequest) (string, error) {
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationSubmit(capReached)")
 	defer span.End()
+
+	if limit := service.config.Caps.ConcurrencyFor(request.UserTier); limit >= 0 {
+		live, err := service.daos.Live.Exec(ctx, &dao.GenerationCountLiveRequest{OwnerID: request.OwnerID})
+		if err != nil {
+			return "", otel.ReportError(span, fmt.Errorf("count live generations: %w", err))
+		}
+
+		// The count includes the generation this submit just created.
+		if live.Count > int64(limit) {
+			return fmt.Sprintf("concurrency: %d generations already pending or running", live.Count-1), nil
+		}
+	}
 
 	scopes := []struct {
 		name      string
@@ -322,6 +339,16 @@ func validateCaps(caps config.Caps) error {
 	err := validateTierCaps(caps.Global)
 	if err != nil {
 		return fmt.Errorf("global: %w", err)
+	}
+
+	if _, ok := caps.Concurrency[config.DefaultTier]; !ok {
+		return fmt.Errorf("%w: concurrency: no %q tier", ErrInvalidRequest, config.DefaultTier)
+	}
+
+	for tier, limit := range caps.Concurrency {
+		if limit < -1 {
+			return fmt.Errorf("%w: concurrency: tier %q allows %d, below -1", ErrInvalidRequest, tier, limit)
+		}
 	}
 
 	return nil
