@@ -26,9 +26,12 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// GenerationGetService reads one of an owner's generations. A generation owned by anyone else
-// reports not-found, so the read cannot be used to learn whether an id exists.
+// GenerationGetService reads one of an owner's generations.
 type GenerationGetServiceClient interface {
+	// Returns one of an owner's generations, checking it with the provider first when nobody checked
+	// it recently. Poll it until the generation settles. Returns NOT_FOUND if the owner has no such
+	// generation, including when another owner holds it, so the read cannot reveal whether an id
+	// exists. Returns INVALID_ARGUMENT if an id is not a UUID.
 	GenerationGet(ctx context.Context, in *GenerationGetRequest, opts ...grpc.CallOption) (*GenerationGetResponse, error)
 }
 
@@ -54,9 +57,12 @@ func (c *generationGetServiceClient) GenerationGet(ctx context.Context, in *Gene
 // All implementations must embed UnimplementedGenerationGetServiceServer
 // for forward compatibility.
 //
-// GenerationGetService reads one of an owner's generations. A generation owned by anyone else
-// reports not-found, so the read cannot be used to learn whether an id exists.
+// GenerationGetService reads one of an owner's generations.
 type GenerationGetServiceServer interface {
+	// Returns one of an owner's generations, checking it with the provider first when nobody checked
+	// it recently. Poll it until the generation settles. Returns NOT_FOUND if the owner has no such
+	// generation, including when another owner holds it, so the read cannot reveal whether an id
+	// exists. Returns INVALID_ARGUMENT if an id is not a UUID.
 	GenerationGet(context.Context, *GenerationGetRequest) (*GenerationGetResponse, error)
 	mustEmbedUnimplementedGenerationGetServiceServer()
 }

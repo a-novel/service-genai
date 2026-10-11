@@ -38,8 +38,8 @@ message Generation {
   // Attempts are an execution policy of this service; each answered one is listed in attempts.
   reserved 5, 6;
   reserved "attempt", "max_attempts";
-  // The provider's own identifier for the operation is deliberately absent: it is this service's
-  // recovery mechanism, not a caller's concern, and exposing it would invite a caller to act on it.
+  // The provider's own identifier for the operation stays server-side: it is this service's
+  // recovery mechanism.
   reserved 13;
   reserved "provider_call_id";
 }
@@ -55,7 +55,7 @@ message GenerationAttempt {
 
 // GenerationStatus is where a generation sits in its lifecycle.
 enum GenerationStatus {
-  // GENERATION_STATUS_UNSPECIFIED means the status was not set. Never a value the service stores.
+  // GENERATION_STATUS_UNSPECIFIED means the status was not set. The service never stores it.
   GENERATION_STATUS_UNSPECIFIED = 0;
   // GENERATION_STATUS_PENDING means no provider call has been accepted for the current attempt yet.
   GENERATION_STATUS_PENDING = 1;
@@ -71,7 +71,7 @@ enum GenerationStatus {
   // GENERATION_STATUS_CANCELLED means the generation was stopped on the owner's request. A resend of
   // the same request runs again from scratch.
   GENERATION_STATUS_CANCELLED = 6;
-  // Produced while a worker held generations; none does any more.
+  // Reserved so a retired value's number and name are never reused.
   reserved 5;
   reserved "GENERATION_STATUS_ABANDONED";
 }

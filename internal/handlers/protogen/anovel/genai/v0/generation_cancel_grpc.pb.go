@@ -27,13 +27,14 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
 // GenerationCancelService stops a generation so an abandoned one stops costing.
-//
-// A generation that never started is cancelled at once. One whose provider call is known is stopped
-// and settled within the call, keeping the provider's answer to the stop: a cancelled call is not a
-// free one, and its response carries what it consumed. One whose start is in flight is marked, and
-// the next check stops it. One already settled is returned as it stands, so a retried cancel, or one
-// that lost a race with completion, still succeeds: read its status to know which happened.
 type GenerationCancelServiceClient interface {
+	// Stops one of an owner's generations and returns it. A generation that never started is
+	// cancelled at once. One whose provider call is known is stopped and settled within the call,
+	// keeping the provider's answer to the stop: a cancelled call still bills what it consumed, and its
+	// response says how much. One whose start is in flight is marked, and the next check stops it. One
+	// already settled is returned as it stands, so a retried cancel, or one that lost a race with
+	// completion, still succeeds: read its status to know which happened. Returns NOT_FOUND if the
+	// owner has no such generation, and INVALID_ARGUMENT if an id is not a UUID.
 	GenerationCancel(ctx context.Context, in *GenerationCancelRequest, opts ...grpc.CallOption) (*GenerationCancelResponse, error)
 }
 
@@ -60,13 +61,14 @@ func (c *generationCancelServiceClient) GenerationCancel(ctx context.Context, in
 // for forward compatibility.
 //
 // GenerationCancelService stops a generation so an abandoned one stops costing.
-//
-// A generation that never started is cancelled at once. One whose provider call is known is stopped
-// and settled within the call, keeping the provider's answer to the stop: a cancelled call is not a
-// free one, and its response carries what it consumed. One whose start is in flight is marked, and
-// the next check stops it. One already settled is returned as it stands, so a retried cancel, or one
-// that lost a race with completion, still succeeds: read its status to know which happened.
 type GenerationCancelServiceServer interface {
+	// Stops one of an owner's generations and returns it. A generation that never started is
+	// cancelled at once. One whose provider call is known is stopped and settled within the call,
+	// keeping the provider's answer to the stop: a cancelled call still bills what it consumed, and its
+	// response says how much. One whose start is in flight is marked, and the next check stops it. One
+	// already settled is returned as it stands, so a retried cancel, or one that lost a race with
+	// completion, still succeeds: read its status to know which happened. Returns NOT_FOUND if the
+	// owner has no such generation, and INVALID_ARGUMENT if an id is not a UUID.
 	GenerationCancel(context.Context, *GenerationCancelRequest) (*GenerationCancelResponse, error)
 	mustEmbedUnimplementedGenerationCancelServiceServer()
 }

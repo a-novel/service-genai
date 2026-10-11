@@ -29,8 +29,8 @@ const (
 // StatusService reports dependency readiness and the queue's own backlog.
 // Process-only liveness is provided separately by UnaryEcho.
 type StatusServiceClient interface {
-	// Status succeeds only when PostgreSQL and queue inspection succeed.
-	// Otherwise it returns Unavailable with no response payload or private error details.
+	// Returns the dependency reports and the backlog when PostgreSQL and queue inspection both
+	// succeed. Returns UNAVAILABLE otherwise, with no response payload or private error details.
 	Status(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (*StatusResponse, error)
 }
 
@@ -59,8 +59,8 @@ func (c *statusServiceClient) Status(ctx context.Context, in *StatusRequest, opt
 // StatusService reports dependency readiness and the queue's own backlog.
 // Process-only liveness is provided separately by UnaryEcho.
 type StatusServiceServer interface {
-	// Status succeeds only when PostgreSQL and queue inspection succeed.
-	// Otherwise it returns Unavailable with no response payload or private error details.
+	// Returns the dependency reports and the backlog when PostgreSQL and queue inspection both
+	// succeed. Returns UNAVAILABLE otherwise, with no response payload or private error details.
 	Status(context.Context, *StatusRequest) (*StatusResponse, error)
 	mustEmbedUnimplementedStatusServiceServer()
 }

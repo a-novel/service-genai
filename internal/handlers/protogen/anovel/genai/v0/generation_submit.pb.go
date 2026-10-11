@@ -24,8 +24,8 @@ const (
 // GenerationSubmitRequest carries a new generation. The server mints the id and the timestamps.
 type GenerationSubmitRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// OwnerID is the user this acts for, formatted as a UUID. Supplied by the calling service, which
-	// verified it against its own credential: this service does not authenticate.
+	// OwnerID is the user this acts for, formatted as a UUID. The calling service verifies it against
+	// its own credential, and this service trusts it as sent.
 	OwnerId string `protobuf:"bytes,1,opt,name=owner_id,json=ownerId,proto3" json:"owner_id,omitempty"`
 	// Purpose labels why the call is made, such as "studio.generation". Required, and declared in the
 	// service's caps file, which sets how much each user may consume for it.
@@ -38,12 +38,13 @@ type GenerationSubmitRequest struct {
 	// the Async mode needs, such as OpenAI's background and stream, over the payload's own values.
 	Payload []byte `protobuf:"bytes,12,opt,name=payload,proto3" json:"payload,omitempty"`
 	// UserTier is the usage tier the caller assigns its user, such as "premium". It selects the caps
-	// the submit answers to; an empty or unrecognized tier answers to the default caps. Not part of
-	// the request's identity: it changes what the user may spend, not what the call does.
+	// the submit answers to; an empty or unrecognized tier answers to the default caps. It is left out
+	// of the request's identity, so resending a request under another tier returns the same
+	// generation.
 	UserTier string `protobuf:"bytes,13,opt,name=user_tier,json=userTier,proto3" json:"user_tier,omitempty"`
 	// Variant asks for another generation of a request that already succeeded, such as a regenerate.
-	// Zero by default. A caller recovering from a crash counts variants from zero again, and each one
-	// already run returns its stored result.
+	// It defaults to zero. A caller recovering from a crash counts variants from zero again, and each
+	// one already run returns its stored result.
 	Variant       uint32 `protobuf:"varint,10,opt,name=variant,proto3" json:"variant,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

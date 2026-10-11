@@ -4,9 +4,12 @@ package anovel.genai.v0;
 
 import "anovel/genai/v0/generation.proto";
 
-// GenerationGetService reads one of an owner's generations. A generation owned by anyone else
-// reports not-found, so the read cannot be used to learn whether an id exists.
+// GenerationGetService reads one of an owner's generations.
 service GenerationGetService {
+  // Returns one of an owner's generations, checking it with the provider first when nobody checked
+  // it recently. Poll it until the generation settles. Returns NOT_FOUND if the owner has no such
+  // generation, including when another owner holds it, so the read cannot reveal whether an id
+  // exists. Returns INVALID_ARGUMENT if an id is not a UUID.
   rpc GenerationGet(GenerationGetRequest) returns (GenerationGetResponse);
 }
 
@@ -18,7 +21,8 @@ message GenerationGetRequest {
   string owner_id = 2;
 }
 
-// GenerationGetResponse returns the generation.
+// GenerationGetResponse carries the requested generation.
 message GenerationGetResponse {
+  // The requested generation, with every attempt that reached an answer.
   Generation generation = 1;
 }

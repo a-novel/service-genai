@@ -18,7 +18,7 @@ Every AI provider call on the platform runs here: the caller builds the request,
 
 ## What it does
 
-A provider call can take minutes, costs real money, and must never be paid for twice. This service owns how such a call executes; the caller owns what is executed. It never reads the request it runs or the answers it returns.
+A provider call can take minutes, costs real money, and must never be paid for twice. This service owns how such a call executes; the caller owns what is executed. It never reads the content of the request it runs or of the answers it returns.
 
 It is an execution service, not a proxy. The caller holds no connection while the provider works: it submits the call, then polls for the result, so the call outlives the caller's request, a restart of either side, and a deploy.
 

@@ -76,10 +76,11 @@ func (x *GenerationGetRequest) GetOwnerId() string {
 	return ""
 }
 
-// GenerationGetResponse returns the generation.
+// GenerationGetResponse carries the requested generation.
 type GenerationGetResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Generation    *Generation            `protobuf:"bytes,1,opt,name=generation,proto3" json:"generation,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The requested generation, with every attempt that reached an answer.
+	Generation    *Generation `protobuf:"bytes,1,opt,name=generation,proto3" json:"generation,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
