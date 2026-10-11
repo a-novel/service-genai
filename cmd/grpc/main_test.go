@@ -21,7 +21,7 @@ func TestRunProcess(t *testing.T) {
 		expectedError string
 	}{
 		{
-			name: "LoopPanic",
+			name: "Error/LoopPanic",
 			failure: func(ctx context.Context) error {
 				return observeLoop(ctx, "generation-sweep", func() {
 					panic(privatePanicPayload)
@@ -30,7 +30,7 @@ func TestRunProcess(t *testing.T) {
 			expectedError: "generation-sweep: background loop panicked",
 		},
 		{
-			name: "UnexpectedLoopReturn",
+			name: "Error/UnexpectedLoopReturn",
 			failure: func(ctx context.Context) error {
 				return observeLoop(ctx, "generation-sweep", func() {})
 			},
@@ -91,7 +91,7 @@ func TestRunProcess(t *testing.T) {
 		})
 	}
 
-	t.Run("NormalCancellation", func(t *testing.T) {
+	t.Run("Success/NormalCancellation", func(t *testing.T) {
 		t.Parallel()
 
 		ctx, cancel := context.WithCancel(t.Context())
@@ -138,11 +138,11 @@ func TestOutsideDowntime(t *testing.T) {
 		expectRun bool
 	}{
 		{
-			name:      "NoDowntime",
+			name:      "Success/NoDowntime",
 			expectRun: true,
 		},
 		{
-			name:  "Started",
+			name:  "Success/DowntimeStarted",
 			start: &started,
 		},
 	}
