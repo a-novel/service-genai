@@ -184,6 +184,7 @@ jobs:
           # The server refuses to start without a provider key. The smoke run never calls the provider.
           run_args: -e POSTGRES_DSN="${POSTGRES_DSN}" -e OPENAI_API_KEY=smoke-test
 
+  # Everything shipped — clear this repo's awaiting-release board items.
   archive:
     needs:
       - release
