@@ -158,9 +158,17 @@ func (service *GenerationCheck) Exec(
 func (service *GenerationCheck) providerUnavailable(
 	ctx context.Context, generation *dao.Generation, cause error,
 ) (*dao.Generation, error) {
+	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(providerUnavailable)")
+	defer span.End()
+
 	service.logFailure(ctx, generation, cause.Error())
 
-	return service.settleFailure(ctx, generation, failureProviderUnavailable, nil)
+	settled, err := service.settleFailure(ctx, generation, failureProviderUnavailable, nil)
+	if err != nil {
+		return nil, otel.ReportError(span, err)
+	}
+
+	return settled, nil
 }
 
 // start sends the provider call for the next attempt.
