@@ -23,7 +23,8 @@ WITH
         provider,
         request_key,
         max_attempts,
-        traceparent
+        traceparent,
+        streamed
       )
     SELECT
       ?0::uuid,
@@ -32,7 +33,8 @@ WITH
       ?3::text,
       ?4::bytea,
       ?5::smallint,
-      ?6::text
+      ?6::text,
+      ?7::boolean
     FROM
       owner_lock
     ON CONFLICT (request_key)

@@ -80,6 +80,9 @@ type GenerationSubmitRequest struct {
 	Payload json.RawMessage `validate:"required"`
 	// Variant asks for another generation of a request that already succeeded.
 	Variant uint32
+	// Stream creates the provider call in streaming mode, so [GenerationStream] can read its events
+	// while it runs. The provider must offer the Streaming mode.
+	Stream bool
 }
 
 // GenerationSubmitResult reports the stored generation and how it got there.
@@ -172,6 +175,7 @@ func (service *GenerationSubmit) Exec(
 			RequestKey:  key,
 			MaxAttempts: service.config.MaxAttempts,
 			Traceparent: lo.EmptyableToPtr(carrier.Get("traceparent")),
+			Streamed:    request.Stream,
 		})
 		if err != nil {
 			return fmt.Errorf("submit generation: %w", err)
@@ -262,6 +266,10 @@ func (service *GenerationSubmit) validateRequest(request *GenerationSubmitReques
 	}
 
 	_, err = service.registry.Async(request.Provider)
+	if err == nil && request.Stream {
+		_, err = service.registry.Streaming(request.Provider)
+	}
+
 	if errors.Is(err, connectors.ErrProviderUnknown) {
 		return fmt.Errorf("%w: %w: %q", ErrInvalidRequest, err, request.Provider)
 	}
@@ -348,9 +356,12 @@ const unknownOutcomeHold = 15 * time.Minute
 // a key of one version never matches a key of another.
 const requestKeyTag = "a-novel/genai/request-key/v3"
 
-// asyncMode names the Async mode in the request key, so the same payload submitted in another mode
-// is another request.
-const asyncMode = "async"
+// asyncMode and streamedMode name the execution mode in the request key, so the same payload
+// submitted in another mode is another request.
+const (
+	asyncMode    = "async"
+	streamedMode = "async-streamed"
+)
 
 // requestKey identifies a request among an owner's generations. The same content always yields the
 // same key, which is what lets a caller recover by resending: it holds no key of its own.
@@ -374,7 +385,7 @@ func requestKey(request *GenerationSubmitRequest) ([]byte, error) {
 		request.OwnerID[:],
 		[]byte(request.Purpose),
 		[]byte(request.Provider),
-		[]byte(asyncMode),
+		[]byte(lo.Ternary(request.Stream, streamedMode, asyncMode)),
 		payload,
 		binary.BigEndian.AppendUint32(nil, request.Variant),
 	} {

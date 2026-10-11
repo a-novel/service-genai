@@ -54,6 +54,7 @@ func testConnectors(t *testing.T) connectors.Registry {
 
 	return connectors.Registry{
 		testProvider: connectorsmocks.NewMockAsync(t),
+		testStreamer: asyncStreaming{connectorsmocks.NewMockAsync(t), connectorsmocks.NewMockStreaming(t)},
 		"another":    connectorsmocks.NewMockAsync(t),
 		"sync-only":  struct{}{},
 	}
@@ -332,6 +333,27 @@ func TestGenerationSubmit(t *testing.T) {
 			expectErr: connectors.ErrModeUnsupported,
 		},
 		{
+			// Streaming needs a provider that offers the Streaming mode, not only the Async one.
+			name: "Error/StreamModeUnsupported",
+
+			request: submitRequest(func(request *core.GenerationSubmitRequest) { request.Stream = true }),
+
+			expectErr: connectors.ErrModeUnsupported,
+		},
+		{
+			name: "Success/Streamed",
+
+			request: submitRequest(func(request *core.GenerationSubmitRequest) {
+				request.Provider = testStreamer
+				request.Stream = true
+			}),
+			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration(), Created: true}},
+			live:    alone,
+			usage:   underCaps,
+
+			expectCreated: true,
+		},
+		{
 			name: "Error/PayloadNotJSON",
 
 			request: submitRequest(func(request *core.GenerationSubmitRequest) {
@@ -471,6 +493,7 @@ func TestGenerationSubmit(t *testing.T) {
 						// The digest is derived rather than left empty.
 						return request.Purpose == testCase.request.Purpose &&
 							request.Provider == testCase.request.Provider &&
+							request.Streamed == testCase.request.Stream &&
 							request.MaxAttempts == maxAttempts &&
 							len(request.RequestKey) == 32 &&
 							request.ID != uuid.Nil &&
@@ -564,6 +587,21 @@ func TestGenerationSubmit(t *testing.T) {
 	}
 
 	baseKey := submittedKey(t, submitRequest(nil))
+
+	// Polling and streaming the same payload are two requests.
+	t.Run("RequestKey/Stream", func(t *testing.T) {
+		t.Parallel()
+
+		polled := submittedKey(t, submitRequest(func(request *core.GenerationSubmitRequest) {
+			request.Provider = testStreamer
+		}))
+		streamedKey := submittedKey(t, submitRequest(func(request *core.GenerationSubmitRequest) {
+			request.Provider = testStreamer
+			request.Stream = true
+		}))
+
+		require.NotEqual(t, polled, streamedKey)
+	})
 
 	for _, keyCase := range keyCases {
 		t.Run("RequestKey/"+keyCase.name, func(t *testing.T) {

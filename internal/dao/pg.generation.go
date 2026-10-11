@@ -63,6 +63,8 @@ type Generation struct {
 	// OutcomeUnknownAt is when the generation failed with its start's outcome unknown: the provider
 	// may still run a call nothing tracks.
 	OutcomeUnknownAt *time.Time `bun:"outcome_unknown_at,nullzero"`
+	// Streamed is whether the caller submitted the generation for streaming.
+	Streamed bool `bun:"streamed"`
 
 	CreatedAt time.Time  `bun:"created_at"`
 	UpdatedAt time.Time  `bun:"updated_at"`

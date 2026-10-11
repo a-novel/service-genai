@@ -32,6 +32,8 @@ type GenerationSubmitRequest struct {
 	MaxAttempts int16
 	// Traceparent is the W3C trace context of the submitting request, if it runs in a trace.
 	Traceparent *string
+	// Streamed creates the generation's provider call in streaming mode.
+	Streamed bool
 }
 
 // GenerationSubmitResult reports the stored generation and how it got there.
@@ -73,6 +75,7 @@ func (dao *PgGenerationSubmit) Exec(
 		request.RequestKey,
 		request.MaxAttempts,
 		request.Traceparent,
+		request.Streamed,
 	).Scan(ctx, entity)
 	if err != nil {
 		return nil, otel.ReportError(span, fmt.Errorf("execute query: %w", err))
