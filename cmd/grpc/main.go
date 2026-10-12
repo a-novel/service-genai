@@ -4,8 +4,6 @@ package main
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"io"
 	"log"
 	"os"
@@ -33,11 +31,6 @@ import (
 	"github.com/a-novel/service-genai/internal/handlers"
 	genaiv0 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v0"
 	"github.com/a-novel/service-genai/internal/lib/connectors"
-)
-
-var (
-	errLoopExitedUnexpectedly = errors.New("background loop exited unexpectedly")
-	errLoopPanicked           = errors.New("background loop panicked")
 )
 
 func main() {
@@ -96,6 +89,8 @@ func main() {
 		BaseURL: cfg.OpenAI.BaseURL, APIKey: cfg.OpenAI.APIKey, WebhookSecret: cfg.OpenAI.WebhookSecret,
 	}))
 
+	transactor := postgres.NewTransactor(nil)
+
 	serviceCheck := core.NewGenerationCheck(
 		daoBeginStart,
 		daoReleaseStart,
@@ -106,7 +101,7 @@ func main() {
 		daoUsageInsert,
 		daoGet,
 		registry,
-		postgres.NewTransactor(nil),
+		transactor,
 		cfg.Logger,
 		cfg.Generations,
 	)
@@ -118,7 +113,7 @@ func main() {
 		daoPayloadInsert,
 		serviceCheck,
 		registry,
-		postgres.NewTransactor(nil),
+		transactor,
 		cfg.Generations,
 		cfg.Caps,
 	)
@@ -154,10 +149,10 @@ func main() {
 	healthcheck := grpcf.RegisterEchoServers(server)
 	healthcheck.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
 
-	beginShutdown := sync.OnceFunc(func() {
+	go func() {
+		<-ctx.Done()
 		healthcheck.SetServingStatus("", healthpb.HealthCheckResponse_NOT_SERVING)
-		stop()
-	})
+	}()
 
 	genaiv0.RegisterStatusServiceServer(server, handlerStatus)
 	genaiv0.RegisterGenerationSubmitServiceServer(server, handlerSubmit)
@@ -171,65 +166,30 @@ func main() {
 	// RUN
 	// =================================================================================================================
 
+	log.Println("Starting gRPC server on :" + strconv.Itoa(cfg.Grpc.Port))
+
 	// The sweep runs in this process and takes the boot context: a request context dies at the
 	// server's own timeout. It only catches generations nobody polled, so one loop per replica is
 	// enough.
-	log.Println("Starting gRPC server on :" + strconv.Itoa(cfg.Grpc.Port))
+	var sweep sync.WaitGroup
 
-	serveErr := runProcess(
-		ctx,
-		beginShutdown,
-		func(ctx context.Context) error {
-			return grpcf.ListenAndServe(ctx, cfg.Grpc, server)
-		},
-		func(ctx context.Context) error {
-			return observeLoop(ctx, "generation-sweep", func() {
-				worker.Poll(
-					ctx, cfg.Logger, "generation-sweep", cfg.Sweep.Interval, 0,
-					outsideDowntime(cfg.App.DowntimeStart, sweepOnce(serviceSweep)),
-				)
-			})
-		},
-	)
-	if serveErr != nil {
-		panic(serveErr)
+	sweep.Go(func() {
+		worker.Poll(
+			ctx, cfg.Logger, "generation-sweep", cfg.Sweep.Interval, 0,
+			outsideDowntime(cfg.App.DowntimeStart, sweepOnce(serviceSweep)),
+		)
+	})
+
+	err := grpcf.ListenAndServe(ctx, cfg.Grpc, server)
+
+	// The sweep stops with the server, even one that failed to start, and finishes its last checks
+	// before the database closes.
+	stop()
+	sweep.Wait()
+
+	if err != nil {
+		panic(err)
 	}
-}
-
-// runProcess keeps the server and its background loops under one owner. Process cancellation or
-// the first component to stop makes the service unavailable and cancels its siblings; all
-// components are joined before the caller closes the database and flushes telemetry.
-func runProcess(
-	ctx context.Context,
-	beginShutdown func(),
-	components ...func(context.Context) error,
-) error {
-	results := make(chan error, len(components))
-
-	for _, component := range components {
-		go func() {
-			results <- component(ctx)
-		}()
-	}
-
-	var err error
-
-	completed := 0
-
-	select {
-	case err = <-results:
-		completed = 1
-	case <-ctx.Done():
-	}
-
-	beginShutdown()
-
-	for completed < len(components) {
-		err = errors.Join(err, <-results)
-		completed++
-	}
-
-	return err
 }
 
 func closeDatabase(database io.Closer) {
@@ -263,24 +223,4 @@ func sweepOnce(sweep *core.GenerationSweep) func(context.Context) (bool, error) 
 
 		return result.Checked > 0, nil
 	}
-}
-
-// observeLoop turns a loop boundary into a normal cancellation or a safe, named process failure. A
-// panic becomes a process error without its payload, which may contain private provider data.
-func observeLoop(ctx context.Context, name string, loop func()) (err error) {
-	ctx, span := otel.Tracer().Start(ctx, "cmd.observeLoop")
-	defer span.End()
-	defer func() {
-		if recover() != nil {
-			err = otel.ReportError(span, fmt.Errorf("%s: %w", name, errLoopPanicked))
-		}
-	}()
-
-	loop()
-
-	if ctx.Err() != nil {
-		return nil
-	}
-
-	return otel.ReportError(span, fmt.Errorf("%s: %w", name, errLoopExitedUnexpectedly))
 }

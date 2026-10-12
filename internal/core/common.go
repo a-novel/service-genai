@@ -22,3 +22,17 @@ var ErrGenerationNotStreamed = errors.New("generation not submitted for streamin
 // ErrStreamUnavailable is returned when the provider no longer streams a generation, or has not
 // begun it yet: its result is read by polling.
 var ErrStreamUnavailable = connectors.ErrStreamUnavailable
+
+// ErrProviderUnknown is returned for a provider no connector serves.
+var ErrProviderUnknown = connectors.ErrProviderUnknown
+
+// ErrModeUnsupported is returned when the provider's connector does not offer the mode a request
+// needs.
+var ErrModeUnsupported = connectors.ErrModeUnsupported
+
+// ErrProviderRetryable is returned when the provider failed transiently, so the same request may
+// succeed again: a stream it dropped resumes after the last event received.
+var ErrProviderRetryable = connectors.ErrRetryable
+
+// ErrNotificationInvalid is returned for a notification that fails its provider's verification.
+var ErrNotificationInvalid = connectors.ErrNotificationInvalid

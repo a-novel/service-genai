@@ -12,7 +12,6 @@ import (
 
 	"github.com/a-novel/service-genai/internal/core"
 	genaiv0 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v0"
-	"github.com/a-novel/service-genai/internal/lib/connectors"
 )
 
 // GrpcGenerationSubmitService is the service dependency of [GrpcGenerationSubmit].
@@ -63,7 +62,7 @@ func (handler *GrpcGenerationSubmit) GenerationSubmit(
 		return nil, status.Error(codes.ResourceExhausted, err.Error())
 	}
 
-	if errors.Is(err, connectors.ErrModeUnsupported) {
+	if errors.Is(err, core.ErrModeUnsupported) {
 		return nil, status.Error(codes.Unimplemented, "the provider does not support the requested mode")
 	}
 

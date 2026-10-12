@@ -3,6 +3,7 @@ package handlers_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"iter"
 	"testing"
 
@@ -17,7 +18,6 @@ import (
 	"github.com/a-novel/service-genai/internal/handlers"
 	handlersmocks "github.com/a-novel/service-genai/internal/handlers/mocks"
 	genaiv0 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v0"
-	"github.com/a-novel/service-genai/internal/lib/connectors"
 )
 
 // eventStream is the transport double a stream handler sends to.
@@ -88,7 +88,7 @@ func TestGrpcGenerationStream(t *testing.T) {
 
 			request: &genaiv0.GenerationStreamRequest{Id: testGenerationID, OwnerId: testOwnerID},
 			serviceMock: &serviceMock{resp: &core.GenerationStreamResult{
-				Events: events(connectors.ErrRetryable, &core.GenerationStreamEvent{Sequence: 3, Data: delta}),
+				Events: events(core.ErrProviderRetryable, &core.GenerationStreamEvent{Sequence: 3, Data: delta}),
 			}},
 
 			expect:       []*genaiv0.GenerationStreamResponse{{SequenceNumber: 3, Event: delta}},
@@ -128,6 +128,29 @@ func TestGrpcGenerationStream(t *testing.T) {
 			request: &genaiv0.GenerationStreamRequest{Id: "not-a-uuid", OwnerId: testOwnerID},
 
 			expectStatus: codes.InvalidArgument,
+		},
+		{
+			name: "Error/InvalidOwnerID",
+
+			request: &genaiv0.GenerationStreamRequest{Id: testGenerationID, OwnerId: "not-a-uuid"},
+
+			expectStatus: codes.InvalidArgument,
+		},
+		{
+			name: "Error/InvalidRequest",
+
+			request:     &genaiv0.GenerationStreamRequest{Id: testGenerationID, OwnerId: testOwnerID},
+			serviceMock: &serviceMock{err: core.ErrInvalidRequest},
+
+			expectStatus: codes.InvalidArgument,
+		},
+		{
+			name: "Error/ModeUnsupported",
+
+			request:     &genaiv0.GenerationStreamRequest{Id: testGenerationID, OwnerId: testOwnerID},
+			serviceMock: &serviceMock{err: fmt.Errorf("provider %q: %w", "openai", core.ErrModeUnsupported)},
+
+			expectStatus: codes.Unimplemented,
 		},
 		{
 			name: "Error/Internal",

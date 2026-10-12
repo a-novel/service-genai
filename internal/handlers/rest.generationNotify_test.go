@@ -14,7 +14,6 @@ import (
 	"github.com/a-novel/service-genai/internal/core"
 	"github.com/a-novel/service-genai/internal/handlers"
 	handlersmocks "github.com/a-novel/service-genai/internal/handlers/mocks"
-	"github.com/a-novel/service-genai/internal/lib/connectors"
 )
 
 func TestRestGenerationNotify(t *testing.T) {
@@ -37,7 +36,7 @@ func TestRestGenerationNotify(t *testing.T) {
 		{
 			name: "Error/Invalid",
 
-			serviceErr: connectors.ErrNotificationInvalid,
+			serviceErr: core.ErrNotificationInvalid,
 
 			expectStatus: http.StatusBadRequest,
 		},
@@ -51,14 +50,14 @@ func TestRestGenerationNotify(t *testing.T) {
 		{
 			name: "Error/UnknownProvider",
 
-			serviceErr: connectors.ErrProviderUnknown,
+			serviceErr: core.ErrProviderUnknown,
 
 			expectStatus: http.StatusNotFound,
 		},
 		{
 			name: "Error/ModeUnsupported",
 
-			serviceErr: connectors.ErrModeUnsupported,
+			serviceErr: core.ErrModeUnsupported,
 
 			expectStatus: http.StatusNotFound,
 		},
