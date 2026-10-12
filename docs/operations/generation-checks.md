@@ -27,7 +27,7 @@ A read the provider refuses for credentials is retried too, since the key is thi
 
 ## Deploying and recovering
 
-Nothing needs draining. A stopping process launches no new sweep check, and a start already sent runs detached from shutdown, so it cannot be cut between the provider accepting the call and its id reaching the database, and every write it makes after that carries its own deadline. A replica that dies mid-check leaves a row the next poll or sweep picks up.
+Nothing needs draining. A stopping process launches no new sweep check, and a start already sent runs detached from shutdown, so it cannot be cut between the provider accepting the call and its id reaching the database, and every write it makes after that carries its own deadline. A replica that dies mid-check leaves a row the next poll or sweep picks up. A stream open on a stopping replica ends with `UNAVAILABLE`, and its caller resumes it after the last event received, on another replica.
 
 Two losses remain, both rare. A hard kill (SIGKILL, out of memory, host loss) in the second between the provider accepting a call and its id being written settles that generation `failed` with an unknown outcome, and its answer goes unrecorded. A database too unavailable to record the id or to read the row back does the same. A write of the id that got no answer is tried once more, since the database may still commit it; then a call the generation is seen not to carry is stopped, but one it cannot be read for is left to run.
 
