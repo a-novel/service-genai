@@ -521,32 +521,25 @@ func (service *GenerationCheck) ask(
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(ask)")
 	defer span.End()
 
-	if generation.CancelRequestedAt != nil || age >= runCeiling {
-		call, err := connector.Cancel(ctx, *generation.ProviderCallID)
+	if generation.CancelRequestedAt == nil && age < runCeiling {
+		call, err := connector.Get(ctx, *generation.ProviderCallID)
 		if err != nil {
-			return nil, true, otel.ReportError(span, err)
+			return nil, false, otel.ReportError(span, err)
 		}
 
-		return call, true, nil
+		// The provider can leave a streamed call queued for good when its creation stream was left
+		// early. One still queued past its ceiling is stopped like an overdue call.
+		if !generation.Streamed || call.State != connectors.CallQueued || age < streamQueuedCeiling {
+			return call, false, nil
+		}
 	}
 
-	call, err := connector.Get(ctx, *generation.ProviderCallID)
+	call, err := connector.Cancel(ctx, *generation.ProviderCallID)
 	if err != nil {
-		return nil, false, otel.ReportError(span, err)
+		return nil, true, otel.ReportError(span, err)
 	}
 
-	// The provider can leave a streamed call queued for good when its creation stream was left early.
-	// One still queued past its ceiling is stopped like an overdue call.
-	if generation.Streamed && call.State == connectors.CallQueued && age >= streamQueuedCeiling {
-		call, err = connector.Cancel(ctx, *generation.ProviderCallID)
-		if err != nil {
-			return nil, true, otel.ReportError(span, err)
-		}
-
-		return call, true, nil
-	}
-
-	return call, false, nil
+	return call, true, nil
 }
 
 // requeue records the failed attempt's answer and usage, and authorizes a fresh call, together.
