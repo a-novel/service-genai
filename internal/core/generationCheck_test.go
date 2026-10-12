@@ -450,6 +450,35 @@ func TestGenerationCheck(t *testing.T) {
 			expectStatus: dao.GenerationStatusRunning,
 		},
 		{
+			// The window counts from the stop at 5 minutes, not from the run ceiling: a stuck streamed
+			// call the stop never reaches is given up on around 15 minutes.
+			name: "Success/StreamedStuckQueuedGivenUp",
+
+			generation: streamed(startedAgo(runningGeneration(1), 20*time.Minute)),
+			observe:    providerCall(connectors.CallQueued),
+			stopped:    providerCall(connectors.CallQueued),
+
+			expectSettle: &settle{
+				attempt: 1, callID: &callID, status: dao.GenerationStatusFailed, reason: &notStoppedMessage,
+				outcomeUnknown: true,
+			},
+			expectStatus: dao.GenerationStatusFailed,
+		},
+		{
+			// An owner's cancel that keeps failing is given up on 10 minutes after the request, far from
+			// the run ceiling.
+			name: "Success/CancelGivenUp",
+
+			generation: cancelledAgo(startedAgo(runningGeneration(1), 30*time.Minute), 20*time.Minute),
+			observeErr: connectors.ErrRetryable,
+
+			expectSettle: &settle{
+				attempt: 1, callID: &callID, status: dao.GenerationStatusFailed, reason: &notStoppedMessage,
+				outcomeUnknown: true,
+			},
+			expectStatus: dao.GenerationStatusFailed,
+		},
+		{
 			// The ceiling bounds a call its owner cancelled too: a stop that keeps failing ends there.
 			name: "Success/CancelledPastCeilingUnreachable",
 

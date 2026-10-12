@@ -442,15 +442,16 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 	// How long the call has run, by the database clock. A recorded call always has its start.
 	age := generation.CheckedAt.Sub(*generation.StartRequestedAt)
 
-	call, stop, err := service.ask(ctx, connector, generation, age)
+	call, stopSince, err := service.ask(ctx, connector, generation, age)
+	stop := stopSince != nil
 
 	// A transient failure, or a stop the provider has not applied yet, is retried by the next check. A
-	// call well past the run ceiling is given up on: it may still run, so the generation keeps its slot
-	// a while.
+	// stop still failing a while after it was first wanted is given up on: the call may still run, so
+	// the generation keeps its slot a while.
 	unsettled := errors.Is(err, connectors.ErrRetryable) || err == nil && stop && !call.State.Terminal()
 
 	switch {
-	case unsettled && age < runCeiling+stopRetryWindow:
+	case unsettled && (!stop || generation.CheckedAt.Sub(*stopSince) < stopRetryWindow):
 		return generation, nil
 	case err != nil || unsettled:
 		// The operation is unreadable, typically gone past the provider's retention window, or it was
@@ -512,34 +513,44 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 	return settled, nil
 }
 
-// ask reads the call, or stops it, and reports whether it stopped it. The call is stopped on its
-// owner's request, or past the run ceiling whether they asked or not: one the provider never finishes,
-// or a key it no longer accepts, must not hold the owner's slot forever.
+// ask reads the call, or stops it, and reports since when the stop was wanted, nil when it only read.
+// The call is stopped on its owner's request, or past the run ceiling whether they asked or not: one
+// the provider never finishes, or a key it no longer accepts, must not hold the owner's slot forever.
 func (service *GenerationCheck) ask(
 	ctx context.Context, connector connectors.Async, generation *dao.Generation, age time.Duration,
-) (*connectors.Call, bool, error) {
+) (*connectors.Call, *time.Time, error) {
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(ask)")
 	defer span.End()
 
-	if generation.CancelRequestedAt == nil && age < runCeiling {
+	// Both times come from the database clock, as the check's own stamp does.
+	start := *generation.StartRequestedAt
+	since := generation.CancelRequestedAt
+
+	if ceiling := start.Add(runCeiling); age >= runCeiling && (since == nil || ceiling.Before(*since)) {
+		since = &ceiling
+	}
+
+	if since == nil {
 		call, err := connector.Get(ctx, *generation.ProviderCallID)
 		if err != nil {
-			return nil, false, otel.ReportError(span, err)
+			return nil, nil, otel.ReportError(span, err)
 		}
 
 		// The provider can leave a streamed call queued for good when its creation stream was left
 		// early. One still queued past its ceiling is stopped like an overdue call.
 		if !generation.Streamed || call.State != connectors.CallQueued || age < streamQueuedCeiling {
-			return call, false, nil
+			return call, nil, nil
 		}
+
+		since = lo.ToPtr(start.Add(streamQueuedCeiling))
 	}
 
 	call, err := connector.Cancel(ctx, *generation.ProviderCallID)
 	if err != nil {
-		return nil, true, otel.ReportError(span, err)
+		return nil, since, otel.ReportError(span, err)
 	}
 
-	return call, true, nil
+	return call, since, nil
 }
 
 // requeue records the failed attempt's answer and usage, and authorizes a fresh call, together.
@@ -823,8 +834,8 @@ const (
 	// measured from its first start. Past it the generation fails, so a request the provider never
 	// accepts cannot hold a concurrency slot forever.
 	startRetryCeiling = 10 * time.Minute
-	// stopRetryWindow is how long past the run ceiling a stop that fails, or that the provider has not
-	// applied, is asked again before the call is given up on.
+	// stopRetryWindow is how long a stop that fails, or that the provider has not applied, is asked
+	// again from when it was first wanted, before the call is given up on.
 	stopRetryWindow = 10 * time.Minute
 	// runCeiling bounds how long a call may run once started. Long reasoning runs take tens of
 	// minutes; past this, the call is stopped and the generation fails.
