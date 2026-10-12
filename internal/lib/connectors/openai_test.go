@@ -1053,13 +1053,24 @@ func TestOpenAI(t *testing.T) {
 			streaming, err := registry.Streaming("openai")
 			require.NoError(t, err)
 
+			var named *connectors.Call
+
 			started, err := connector.Start(t.Context(), &connectors.AsyncStartRequest{
 				Payload: payload("gpt-5.6-luna", "low"), Stream: true,
+				Accepted: func(call *connectors.Call) error {
+					named = call
+
+					return nil
+				},
 			})
 			require.NoError(t, err)
 			require.NotEmpty(t, started.ID)
 			// Left only once the provider began it: a call left queued can stay queued for good.
 			require.NotEqual(t, connectors.CallQueued, started.State)
+			// Named while still queued, so a check records it before the hold ends.
+			require.NotNil(t, named)
+			require.Equal(t, started.ID, named.ID)
+			require.Equal(t, connectors.CallQueued, named.State)
 
 			var last *connectors.StreamEvent
 
