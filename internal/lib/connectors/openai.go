@@ -474,9 +474,10 @@ func classifyOpenAIStartError(err error, sent bool) error {
 	case status == http.StatusTooManyRequests && apiErr.Code == "insufficient_quota":
 		// Retrying cannot help until an operator adds credit, so the caller gets an answer instead.
 		return &RejectionError{Response: errorBody(apiErr), Err: err}
-	case status == http.StatusTooManyRequests, status == http.StatusUnauthorized:
-		// Refused credentials are this service's configuration, not the caller's request, and their
-		// error body can echo part of the key: nothing ran, so the start is retried.
+	case status == http.StatusTooManyRequests, status == http.StatusUnauthorized, status == http.StatusConflict:
+		// Nothing ran, so the start is retried. Refused credentials are this service's configuration,
+		// not the caller's request, and their error body can echo part of the key; a conflict is a lock
+		// the provider releases.
 		return fmt.Errorf("%w: %w", ErrRetryable, err)
 	case status == http.StatusRequestTimeout, status >= http.StatusInternalServerError:
 		return fmt.Errorf("%w: %w", ErrStartAmbiguous, err)

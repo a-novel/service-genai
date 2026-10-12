@@ -262,6 +262,14 @@ func TestOpenAI(t *testing.T) {
 			expectErr: connectors.ErrRetryable,
 		},
 		{
+			// A lock the provider releases: nothing ran, so another start costs nothing.
+			name: "Error/Conflict",
+
+			script: &scriptedProvider{status: http.StatusConflict, body: `{"error":{"message":"locked"}}`},
+
+			expectErr: connectors.ErrRetryable,
+		},
+		{
 			name: "Error/ProviderFaultIsAmbiguous",
 
 			script: &scriptedProvider{status: http.StatusBadGateway, body: `{"error":{"message":"bad gateway"}}`},
