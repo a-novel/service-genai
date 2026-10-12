@@ -34,7 +34,7 @@ Five things shape the contract:
 
 **Usage is capped per purpose and user tier.** The [caps file](./internal/config/caps.config.yaml), built into the image so every change is reviewed, declares each purpose a caller may submit, the token limits each user tier gets over rolling windows, and how many generations a user may run at once, per purpose and across all of them; its comments explain every key. Once a user has reached a limit, a submit that would start a new generation answers `RESOURCE_EXHAUSTED`, naming it. An admitted call always finishes, even past its cap, and a resend of a running generation always attaches to it.
 
-The surface is **gRPC only**. Callers are other services on the internal network, so there is no browser client and no REST API to keep in step.
+Callers are other services, which reach the generation API over **gRPC** on the internal network. The optional `rest` server is public but serves no generation: it only receives the providers' notifications that their calls ended.
 
 ## Deploying
 
@@ -54,7 +54,7 @@ Pin every image to the same release tag — see the [latest release](https://git
 
 Callers poll for results, and each poll checks its generation with the provider. The sweep inside the `grpc` process checks the generations nobody polled, so a result is captured before the provider discards it. Give each replica CPU outside of requests (on Cloud Run, CPU always allocated with at least one instance) and outbound access to the provider's API.
 
-The `rest` image checks a generation the moment its provider reports the call ended, instead of on the next poll or sweep. It serves `POST /webhooks/{provider}` and `/ping`, reuses the database and the migrations, and needs the same variables as `grpc` plus `OPENAI_WEBHOOK_SECRET`. To enable it for OpenAI, expose it publicly, then create a webhook endpoint in the OpenAI project's settings pointing at `https://<host>/webhooks/openai`, subscribed to `response.completed`, `response.failed`, `response.cancelled` and `response.incomplete`, and store its signing secret. Polls and the sweep keep working for a notification that never comes; once notifications flow, raise `CHECK_INTERVAL` so polls stop reaching the provider.
+The `rest` image checks a generation the moment its provider reports the call ended, instead of on the next poll or sweep. It serves `POST /webhooks/{provider}`, `/ping` and `/healthcheck`, reuses the database and the migrations, and needs the same variables as `grpc` plus `OPENAI_WEBHOOK_SECRET`. To enable it for OpenAI, expose it publicly, then create a webhook endpoint in the OpenAI project's settings pointing at `https://<host>/webhooks/openai`, subscribed to `response.completed`, `response.failed`, `response.cancelled` and `response.incomplete`, and store its signing secret. Polls and the sweep keep working for a notification that never comes; once notifications flow, raise `CHECK_INTERVAL` so polls stop reaching the provider.
 
 ```yaml
 services:
@@ -141,13 +141,13 @@ OpenAI connector (images `grpc`, `rest`, `standalone-grpc`). The endpoint must m
 
 Checks (images `grpc`, `rest`, `standalone-grpc`) and sweep (`grpc`, `standalone-grpc`). [Generation checks](./docs/operations/generation-checks.md) explains how they move a generation forward.
 
-| Name               | Description                                                                                                            | Default |
-| ------------------ | ---------------------------------------------------------------------------------------------------------------------- | ------- |
-| `CHECK_INTERVAL`   | How long a check stays fresh. However often callers poll, a generation reaches the provider at most once per interval. | `2s`    |
-| `SWEEP_INTERVAL`   | How often the sweep runs, and how stale a generation must be for it. At most `5m`.                                     | `1m`    |
-| `SWEEP_BATCH_SIZE` | Generations one sweep pass checks.                                                                                     | `50`    |
-| `MAX_ATTEMPTS`     | Provider calls a generation gets when a call fails retryably. Each one is paid. A streamed generation gets one.        | `2`     |
-| `RETENTION`        | How long a settled generation, its attempts and its request key survive before the purge deletes them. At least `15m`. | `6h`    |
+| Name               | Description                                                                                                                   | Default |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------- | ------- |
+| `CHECK_INTERVAL`   | How long a check stays fresh. However often callers poll, a generation reaches the provider at most once per interval.        | `2s`    |
+| `SWEEP_INTERVAL`   | How often the sweep runs, and how stale a generation must be for it. At most `5m`.                                            | `1m`    |
+| `SWEEP_BATCH_SIZE` | Generations one sweep pass checks, from 1 to 100.                                                                             | `50`    |
+| `MAX_ATTEMPTS`     | Provider calls a generation gets when a call fails retryably, from 1 to 10. Each one is paid. A streamed generation gets one. | `2`     |
+| `RETENTION`        | How long a settled generation, its attempts and its request key survive before the purge deletes them. At least `15m`.        | `6h`    |
 
 gRPC server:
 
@@ -183,9 +183,9 @@ Database connection pool (server images). The limits are **per process**: keep `
 
 Planned downtime (server images):
 
-| Name             | Description                                                                                                                                                                                                                                                                                                                 | Default |
-| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| `DOWNTIME_START` | When a planned downtime starts, in RFC 3339. From then until it is removed, even past the announced end, the servers answer `503` / `UNAVAILABLE` except for ping, gRPC health and echo, start without the database, and the sweep idles. The provider delivers the notifications it could not send once the downtime ends. |         |
+| Name             | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Default |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| `DOWNTIME_START` | When a planned downtime starts, in RFC 3339. From then until it is removed, even past the announced end, the servers answer `503` / `UNAVAILABLE` except for ping, gRPC health and echo, start without the database, and the sweep idles. The provider delivers the notifications it could not send once the downtime ends. Calls already sent keep running at the provider, and OpenAI keeps a finished background response it does not store for about 10 minutes: a call that finishes longer than that before the downtime ends settles failed, its result lost. Keep a downtime shorter while generations run. |         |
 
 Logs and tracing — OpenTelemetry supports a stdout and a Google Cloud exporter (all server images):
 
