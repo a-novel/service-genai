@@ -442,25 +442,7 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 	// How long the call has run, by the database clock. A recorded call always has its start.
 	age := generation.CheckedAt.Sub(*generation.StartRequestedAt)
 
-	// The call is stopped on its owner's request, or past the run ceiling whether they asked or not:
-	// one the provider never finishes, or a key it no longer accepts, must not hold the slot forever.
-	stop := generation.CancelRequestedAt != nil || age >= runCeiling
-
-	var call *connectors.Call
-
-	if stop {
-		call, err = connector.Cancel(ctx, *generation.ProviderCallID)
-	} else {
-		call, err = connector.Get(ctx, *generation.ProviderCallID)
-	}
-
-	// The provider can leave a streamed call queued for good when its creation stream was left early.
-	// One still queued past its ceiling is stopped like an overdue call.
-	if err == nil && generation.Streamed && !stop && call.State == connectors.CallQueued &&
-		age >= streamQueuedCeiling {
-		stop = true
-		call, err = connector.Cancel(ctx, *generation.ProviderCallID)
-	}
+	call, stop, err := service.ask(ctx, connector, generation, age)
 
 	// A transient failure, or a stop the provider has not applied yet, is retried by the next check. A
 	// call well past the run ceiling is given up on: it may still run, so the generation keeps its slot
@@ -528,6 +510,43 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 	}
 
 	return settled, nil
+}
+
+// ask reads the call, or stops it, and reports whether it stopped it. The call is stopped on its
+// owner's request, or past the run ceiling whether they asked or not: one the provider never finishes,
+// or a key it no longer accepts, must not hold the owner's slot forever.
+func (service *GenerationCheck) ask(
+	ctx context.Context, connector connectors.Async, generation *dao.Generation, age time.Duration,
+) (*connectors.Call, bool, error) {
+	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(ask)")
+	defer span.End()
+
+	if generation.CancelRequestedAt != nil || age >= runCeiling {
+		call, err := connector.Cancel(ctx, *generation.ProviderCallID)
+		if err != nil {
+			return nil, true, otel.ReportError(span, err)
+		}
+
+		return call, true, nil
+	}
+
+	call, err := connector.Get(ctx, *generation.ProviderCallID)
+	if err != nil {
+		return nil, false, otel.ReportError(span, err)
+	}
+
+	// The provider can leave a streamed call queued for good when its creation stream was left early.
+	// One still queued past its ceiling is stopped like an overdue call.
+	if generation.Streamed && call.State == connectors.CallQueued && age >= streamQueuedCeiling {
+		call, err = connector.Cancel(ctx, *generation.ProviderCallID)
+		if err != nil {
+			return nil, true, otel.ReportError(span, err)
+		}
+
+		return call, true, nil
+	}
+
+	return call, false, nil
 }
 
 // requeue records the failed attempt's answer and usage, and authorizes a fresh call, together.
