@@ -476,12 +476,17 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 	}
 
 	// Another check stopped the call, maybe on its owner's request after this one read the generation:
-	// the outcome is labelled from the generation as it stands.
+	// the outcome is labelled from the request as it stands. Only the request is taken from the fresh
+	// read, so the settle stays fenced on the call this check observed.
 	if call.State == connectors.CallCancelled && generation.CancelRequestedAt == nil && !overdue {
-		generation, err = service.daoGet.Exec(ctx, &dao.GenerationGetRequest{ID: generation.ID, OwnerID: generation.OwnerID})
-		if err != nil {
-			return nil, otel.ReportError(span, fmt.Errorf("re-read generation: %w", err))
+		current, getErr := service.daoGet.Exec(ctx, &dao.GenerationGetRequest{ID: generation.ID, OwnerID: generation.OwnerID})
+		if getErr != nil {
+			return nil, otel.ReportError(span, fmt.Errorf("re-read generation: %w", getErr))
 		}
+
+		labelled := *generation
+		labelled.CancelRequestedAt = current.CancelRequestedAt
+		generation = &labelled
 	}
 
 	// A streamed generation is one call: its stream's cursor counts that call's events, and a fresh call

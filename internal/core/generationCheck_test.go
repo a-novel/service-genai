@@ -305,7 +305,8 @@ func TestGenerationCheck(t *testing.T) {
 			generation:   runningGeneration(1),
 			observe:      providerCall(connectors.CallCancelled),
 			expectReread: true,
-			rereadAs:     withCancel(runningGeneration(1)),
+			// Moved on since: the settle stays fenced on the attempt this check observed.
+			rereadAs: withCancel(runningGeneration(2)),
 
 			expectSettle: &settle{
 				attempt: 1, callID: &callID, status: dao.GenerationStatusCancelled, reason: &cancelledReason,
