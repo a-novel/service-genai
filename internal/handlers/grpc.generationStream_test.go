@@ -3,6 +3,7 @@ package handlers_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"iter"
 	"testing"
 
@@ -127,6 +128,29 @@ func TestGrpcGenerationStream(t *testing.T) {
 			request: &genaiv0.GenerationStreamRequest{Id: "not-a-uuid", OwnerId: testOwnerID},
 
 			expectStatus: codes.InvalidArgument,
+		},
+		{
+			name: "Error/InvalidOwnerID",
+
+			request: &genaiv0.GenerationStreamRequest{Id: testGenerationID, OwnerId: "not-a-uuid"},
+
+			expectStatus: codes.InvalidArgument,
+		},
+		{
+			name: "Error/InvalidRequest",
+
+			request:     &genaiv0.GenerationStreamRequest{Id: testGenerationID, OwnerId: testOwnerID},
+			serviceMock: &serviceMock{err: core.ErrInvalidRequest},
+
+			expectStatus: codes.InvalidArgument,
+		},
+		{
+			name: "Error/ModeUnsupported",
+
+			request:     &genaiv0.GenerationStreamRequest{Id: testGenerationID, OwnerId: testOwnerID},
+			serviceMock: &serviceMock{err: fmt.Errorf("provider %q: %w", "openai", core.ErrModeUnsupported)},
+
+			expectStatus: codes.Unimplemented,
 		},
 		{
 			name: "Error/Internal",
