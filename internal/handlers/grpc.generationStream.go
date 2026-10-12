@@ -14,7 +14,6 @@ import (
 
 	"github.com/a-novel/service-genai/internal/core"
 	genaiv0 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v0"
-	"github.com/a-novel/service-genai/internal/lib/connectors"
 )
 
 // GrpcGenerationStreamService is the service dependency of [GrpcGenerationStream].
@@ -84,9 +83,9 @@ func streamStatus(span trace.Span, err error) error {
 		return status.Error(codes.FailedPrecondition, "generation not submitted for streaming")
 	case errors.Is(err, core.ErrStreamUnavailable):
 		return status.Error(codes.FailedPrecondition, "the provider does not stream this generation now: poll it")
-	case errors.Is(err, connectors.ErrModeUnsupported):
+	case errors.Is(err, core.ErrModeUnsupported):
 		return status.Error(codes.Unimplemented, "the provider does not support the Streaming mode")
-	case errors.Is(err, connectors.ErrRetryable):
+	case errors.Is(err, core.ErrProviderRetryable):
 		// The provider dropped the stream, a server fault: a new one resumes after the last event received.
 		_ = otel.ReportError(span, err)
 

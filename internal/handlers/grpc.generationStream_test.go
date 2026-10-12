@@ -17,7 +17,6 @@ import (
 	"github.com/a-novel/service-genai/internal/handlers"
 	handlersmocks "github.com/a-novel/service-genai/internal/handlers/mocks"
 	genaiv0 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v0"
-	"github.com/a-novel/service-genai/internal/lib/connectors"
 )
 
 // eventStream is the transport double a stream handler sends to.
@@ -88,7 +87,7 @@ func TestGrpcGenerationStream(t *testing.T) {
 
 			request: &genaiv0.GenerationStreamRequest{Id: testGenerationID, OwnerId: testOwnerID},
 			serviceMock: &serviceMock{resp: &core.GenerationStreamResult{
-				Events: events(connectors.ErrRetryable, &core.GenerationStreamEvent{Sequence: 3, Data: delta}),
+				Events: events(core.ErrProviderRetryable, &core.GenerationStreamEvent{Sequence: 3, Data: delta}),
 			}},
 
 			expect:       []*genaiv0.GenerationStreamResponse{{SequenceNumber: 3, Event: delta}},

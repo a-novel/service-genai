@@ -15,7 +15,6 @@ import (
 	"github.com/a-novel/service-genai/internal/handlers"
 	handlersmocks "github.com/a-novel/service-genai/internal/handlers/mocks"
 	genaiv0 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v0"
-	"github.com/a-novel/service-genai/internal/lib/connectors"
 )
 
 func TestGrpcGenerationSubmit(t *testing.T) {
@@ -128,7 +127,7 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 			request: &genaiv0.GenerationSubmitRequest{
 				OwnerId: testOwnerID, Purpose: "studio.generation", Provider: "sync-only", Payload: payload,
 			},
-			serviceMock: &serviceMock{err: fmt.Errorf("provider: %w", connectors.ErrModeUnsupported)},
+			serviceMock: &serviceMock{err: fmt.Errorf("provider: %w", core.ErrModeUnsupported)},
 
 			expectStatus:  codes.Unimplemented,
 			expectMessage: "requested mode",

@@ -12,7 +12,6 @@ import (
 	"github.com/a-novel-kit/golib/otel"
 
 	"github.com/a-novel/service-genai/internal/core"
-	"github.com/a-novel/service-genai/internal/lib/connectors"
 )
 
 // RestGenerationNotifyService is the service dependency of [RestGenerationNotify].
@@ -52,10 +51,10 @@ func (handler *RestGenerationNotify) ServeHTTP(w http.ResponseWriter, r *http.Re
 	})
 	if err != nil {
 		httpf.HandleError(ctx, handler.logger, w, span, httpf.ErrMap{
-			connectors.ErrNotificationInvalid: http.StatusBadRequest,
-			core.ErrInvalidRequest:            http.StatusBadRequest,
-			connectors.ErrProviderUnknown:     http.StatusNotFound,
-			connectors.ErrModeUnsupported:     http.StatusNotFound,
+			core.ErrNotificationInvalid: http.StatusBadRequest,
+			core.ErrInvalidRequest:      http.StatusBadRequest,
+			core.ErrProviderUnknown:     http.StatusNotFound,
+			core.ErrModeUnsupported:     http.StatusNotFound,
 		}, err)
 
 		return
