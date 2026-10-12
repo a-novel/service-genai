@@ -293,12 +293,12 @@ func TestOpenAI(t *testing.T) {
 			expectBody:      `{"error":{"message":"bad schema","param":"text.format.schema"}}`,
 		},
 		{
+			// The service's own key, not the caller's request: retried, and its body never passed on.
 			name: "Error/Unauthorized",
 
 			script: &scriptedProvider{status: http.StatusUnauthorized, body: `{"error":{"message":"bad key"}}`},
 
-			expectRejection: true,
-			expectBody:      `{"error":{"message":"bad key"}}`,
+			expectErr: connectors.ErrRetryable,
 		},
 		{
 			// A proxy in front of the provider may answer with anything; nothing is passed on.
