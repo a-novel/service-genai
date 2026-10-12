@@ -262,6 +262,14 @@ func TestOpenAI(t *testing.T) {
 			expectErr: connectors.ErrRetryable,
 		},
 		{
+			// A lock the provider releases: nothing ran, so another start costs nothing.
+			name: "Error/Conflict",
+
+			script: &scriptedProvider{status: http.StatusConflict, body: `{"error":{"message":"locked"}}`},
+
+			expectErr: connectors.ErrRetryable,
+		},
+		{
 			name: "Error/ProviderFaultIsAmbiguous",
 
 			script: &scriptedProvider{status: http.StatusBadGateway, body: `{"error":{"message":"bad gateway"}}`},
@@ -810,6 +818,18 @@ func TestOpenAI(t *testing.T) {
 
 				expectQuery: "stream=true",
 				expectErr:   connectors.ErrRetryable,
+			},
+			{
+				// Every stream resumed before an event too large to read would end on it: poll instead.
+				name: "Error/EventTooLarge",
+
+				script: &scriptedProvider{status: http.StatusOK, events: true, body: sse(
+					deltaEvent(3), `{"type":"response.output_text.delta","delta":"`+strings.Repeat("a", 33<<20)+`"}`,
+				)},
+
+				expectQuery:     "stream=true",
+				expectSequences: []int64{3},
+				expectErr:       connectors.ErrStreamUnavailable,
 			},
 		}
 

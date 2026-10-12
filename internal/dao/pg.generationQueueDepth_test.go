@@ -20,8 +20,8 @@ func TestPgGenerationQueueDepth(t *testing.T) {
 		name string
 
 		pending int
-		// started takes work out of the backlog before the read.
-		started bool
+		// state is how far each seeded generation goes before the read.
+		state string
 
 		expectPending int
 		expectWaiting bool
@@ -38,12 +38,22 @@ func TestPgGenerationQueueDepth(t *testing.T) {
 			expectWaiting: true,
 		},
 		{
-			// Started work is in flight, not backlog. Counting it would hide a stalled queue behind
-			// a busy one.
-			name: "Success/StartedWorkIsNotBacklog",
+			// A start in flight, or retrying after a refusal, still waits for the provider: counted, it
+			// shows a provider that keeps refusing as a queue that stalls.
+			name: "Success/StartInFlight",
 
 			pending: 2,
-			started: true,
+			state:   "starting",
+
+			expectPending: 2,
+			expectWaiting: true,
+		},
+		{
+			// A call the provider accepted is in flight, not backlog.
+			name: "Success/RunningIsNotBacklog",
+
+			pending: 2,
+			state:   "running",
 		},
 	}
 
@@ -59,8 +69,11 @@ func TestPgGenerationQueueDepth(t *testing.T) {
 				for range testCase.pending {
 					generation := seedGeneration(ctx, t, 1)
 
-					if testCase.started {
+					switch testCase.state {
+					case "starting":
 						startGeneration(ctx, t, generation.ID)
+					case "running":
+						runGeneration(ctx, t, generation.ID)
 					}
 				}
 

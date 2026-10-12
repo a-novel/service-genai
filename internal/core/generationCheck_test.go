@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -41,6 +42,8 @@ func TestGenerationCheck(t *testing.T) {
 	unavailableMessage := "no connector serves the generation's provider"
 	overdueMessage := "the provider did not finish the call in time, so it was stopped"
 	notStoppedMessage := "the provider did not finish the call in time, and it could not be stopped"
+	// runCeilingForTest mirrors the run ceiling, past which every call is stopped.
+	const runCeilingForTest = 2 * time.Hour
 
 	rejectionBody := json.RawMessage(`{"error":{"message":"bad model"}}`)
 
@@ -63,6 +66,8 @@ func TestGenerationCheck(t *testing.T) {
 		start         *connectors.Call
 		startErr      error
 		recordErr     error
+		// recordRetried lands the second write of a call id the first could not.
+		recordRetried bool
 		observe       *connectors.Call
 		observeErr    error
 		settleErr     error
@@ -305,7 +310,8 @@ func TestGenerationCheck(t *testing.T) {
 			generation:   runningGeneration(1),
 			observe:      providerCall(connectors.CallCancelled),
 			expectReread: true,
-			rereadAs:     withCancel(runningGeneration(1)),
+			// Moved on since: the settle stays fenced on the attempt this check observed.
+			rereadAs: withCancel(runningGeneration(2)),
 
 			expectSettle: &settle{
 				attempt: 1, callID: &callID, status: dao.GenerationStatusCancelled, reason: &cancelledReason,
@@ -402,6 +408,69 @@ func TestGenerationCheck(t *testing.T) {
 			generation: startedAgo(runningGeneration(1), 3*time.Hour),
 			observeErr: connectors.ErrRetryable,
 			expectStop: true,
+
+			expectSettle: &settle{
+				attempt: 1, callID: &callID, status: dao.GenerationStatusFailed, reason: &notStoppedMessage,
+				outcomeUnknown: true,
+			},
+			expectStatus: dao.GenerationStatusFailed,
+		},
+		{
+			// Just past the ceiling, a stop that fails is asked again before the call is given up on.
+			name: "Success/OverdueStopRetried",
+
+			generation: startedAgo(runningGeneration(1), runCeilingForTest+time.Minute),
+			observeErr: connectors.ErrRetryable,
+			expectStop: true,
+
+			expectStatus: dao.GenerationStatusRunning,
+		},
+		{
+			// A stop the provider never applies ends the generation too, which keeps its slot a while.
+			name: "Success/OverdueStopNotApplied",
+
+			generation: startedAgo(runningGeneration(1), 3*time.Hour),
+			observe:    providerCall(connectors.CallRunning),
+			expectStop: true,
+
+			expectSettle: &settle{
+				attempt: 1, callID: &callID, status: dao.GenerationStatusFailed, reason: &notStoppedMessage,
+				outcomeUnknown: true,
+			},
+			expectStatus: dao.GenerationStatusFailed,
+		},
+		{
+			// A stuck streamed call the stop has not reached yet is asked again by the next check.
+			name: "Success/StreamedStuckQueuedStopNotApplied",
+
+			generation: streamed(startedAgo(runningGeneration(1), 10*time.Minute)),
+			observe:    providerCall(connectors.CallQueued),
+			stopped:    providerCall(connectors.CallQueued),
+
+			expectStatus: dao.GenerationStatusRunning,
+		},
+		{
+			// The window counts from the stop at 5 minutes, not from the run ceiling: a stuck streamed
+			// call the stop never reaches is given up on around 15 minutes.
+			name: "Success/StreamedStuckQueuedGivenUp",
+
+			generation: streamed(startedAgo(runningGeneration(1), 20*time.Minute)),
+			observe:    providerCall(connectors.CallQueued),
+			stopped:    providerCall(connectors.CallQueued),
+
+			expectSettle: &settle{
+				attempt: 1, callID: &callID, status: dao.GenerationStatusFailed, reason: &notStoppedMessage,
+				outcomeUnknown: true,
+			},
+			expectStatus: dao.GenerationStatusFailed,
+		},
+		{
+			// An owner's cancel that keeps failing is given up on 10 minutes after the request, far from
+			// the run ceiling.
+			name: "Success/CancelGivenUp",
+
+			generation: cancelledAgo(startedAgo(runningGeneration(1), 30*time.Minute), 20*time.Minute),
+			observeErr: connectors.ErrRetryable,
 
 			expectSettle: &settle{
 				attempt: 1, callID: &callID, status: dao.GenerationStatusFailed, reason: &notStoppedMessage,
@@ -535,6 +604,19 @@ func TestGenerationCheck(t *testing.T) {
 			expectRecord: true,
 			expectReread: true,
 			expectErr:    errFoo,
+		},
+		{
+			// The first write got no answer; the second lands, and the call keeps running.
+			name: "Success/RecordRetried",
+
+			generation:    pendingGeneration(),
+			start:         providerCall(connectors.CallRunning),
+			recordErr:     errFoo,
+			recordRetried: true,
+
+			expectStart:  true,
+			expectRecord: true,
+			expectStatus: dao.GenerationStatusRunning,
 		},
 		{
 			// The write failed and never landed: nothing tracks the accepted call, so it is stopped.
@@ -692,11 +774,17 @@ func TestGenerationCheck(t *testing.T) {
 			}
 
 			if testCase.expectRecord {
-				record.EXPECT().
-					Exec(mock.Anything, &dao.GenerationRecordProviderCallRequest{
-						ID: generation.ID, Attempt: intent.Attempt, ProviderCallID: testCallID,
-					}).
-					Return(runningGeneration(1), testCase.recordErr)
+				recordRequest := &dao.GenerationRecordProviderCallRequest{
+					ID: generation.ID, Attempt: intent.Attempt, ProviderCallID: testCallID,
+				}
+
+				record.EXPECT().Exec(mock.Anything, recordRequest).Return(runningGeneration(1), testCase.recordErr).Once()
+
+				// A write that failed without an answer is tried once more.
+				if testCase.recordErr != nil && !errors.Is(testCase.recordErr, dao.ErrGenerationChanged) {
+					record.EXPECT().Exec(mock.Anything, recordRequest).
+						Return(runningGeneration(1), lo.Ternary(testCase.recordRetried, nil, testCase.recordErr)).Once()
+				}
 			}
 
 			if testCase.expectStopOrphan {

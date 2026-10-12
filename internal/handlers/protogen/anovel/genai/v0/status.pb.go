@@ -124,15 +124,16 @@ func (x *DependencyHealth) GetStatus() DependencyStatus {
 	return DependencyStatus_DEPENDENCY_STATUS_UNSPECIFIED
 }
 
-// QueueDepth reports the queue's own backlog: how many generations are due to start and still
-// waiting, and how long the oldest of them has waited. The age tells a queue absorbing a burst from
+// QueueDepth reports the queue's own backlog: how many generations still wait for the provider to
+// accept their call, and how long the one waiting longest has waited. The age tells a queue absorbing a burst from
 // a stalled one, which the count alone cannot.
 type QueueDepth struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// pending is the number of generations due to start whose provider call has not been sent.
+	// pending is the number of generations waiting for the provider to accept their call: due to
+	// start, retrying a refused start, or with a start in flight.
 	Pending int64 `protobuf:"varint,1,opt,name=pending,proto3" json:"pending,omitempty"`
-	// oldest_pending_age_seconds is how long the oldest of them has waited.
-	// Zero when nothing is pending.
+	// oldest_pending_age_seconds is how long the one waiting longest has waited, from its submission or
+	// requeue, or from its attempt's first start when it retries one. Zero when nothing is pending.
 	OldestPendingAgeSeconds float64 `protobuf:"fixed64,2,opt,name=oldest_pending_age_seconds,json=oldestPendingAgeSeconds,proto3" json:"oldest_pending_age_seconds,omitempty"`
 	unknownFields           protoimpl.UnknownFields
 	sizeCache               protoimpl.SizeCache

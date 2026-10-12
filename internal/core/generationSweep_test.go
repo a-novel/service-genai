@@ -33,6 +33,8 @@ func TestGenerationSweep(t *testing.T) {
 
 		swept    []*dao.Generation
 		sweepErr error
+		// stopping runs the pass in a process already stopping.
+		stopping bool
 
 		checkMocks []checkMock
 
@@ -83,6 +85,15 @@ func TestGenerationSweep(t *testing.T) {
 			expect: &core.GenerationSweepResult{Checked: 2},
 		},
 		{
+			// A stopping process launches no check, so no start leaves on its way out.
+			name: "Success/Stopping",
+
+			swept:    []*dao.Generation{first, second},
+			stopping: true,
+
+			expect: &core.GenerationSweepResult{Checked: 2},
+		},
+		{
 			name: "Error/Sweep",
 
 			sweepErr: errFoo,
@@ -117,8 +128,14 @@ func TestGenerationSweep(t *testing.T) {
 				}
 			}
 
-			result, err := core.NewGenerationSweep(sweepDao, check, sweep).
-				Exec(t.Context(), &core.GenerationSweepRequest{})
+			ctx, stop := context.WithCancel(t.Context())
+			defer stop()
+
+			if testCase.stopping {
+				stop()
+			}
+
+			result, err := core.NewGenerationSweep(sweepDao, check, sweep).Exec(ctx, &core.GenerationSweepRequest{})
 			require.ErrorIs(t, err, testCase.expectErr)
 			require.Equal(t, testCase.expect, result)
 

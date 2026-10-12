@@ -1,5 +1,6 @@
 -- Returns a failed attempt to the queue for a fresh call after the delay. Its provider call is
--- finished, so clearing it loses nothing.
+-- finished, so clearing it loses nothing. A generation its owner asked to cancel stays out of the
+-- queue, even when the request lands after the caller read it.
 UPDATE generations
 SET
   status = 'pending',
@@ -13,5 +14,6 @@ WHERE
   AND attempt = ?1
   AND provider_call_id = ?2
   AND status = 'running'
+  AND cancel_requested_at IS NULL
 RETURNING
   *;

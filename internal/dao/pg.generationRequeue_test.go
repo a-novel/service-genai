@@ -56,6 +56,16 @@ func TestPgGenerationRequeue(t *testing.T) {
 			expectErr: dao.ErrGenerationChanged,
 		},
 		{
+			// The owner asked to stop: a fresh attempt would run what they cancelled.
+			name: "Error/CancelRequested",
+
+			state:   "cancelling",
+			attempt: 1,
+			callID:  testCallID,
+
+			expectErr: dao.ErrGenerationChanged,
+		},
+		{
 			name: "Error/NotRunning",
 
 			state:   "starting",
@@ -82,6 +92,9 @@ func TestPgGenerationRequeue(t *testing.T) {
 					generation = startGeneration(ctx, t, generation.ID)
 				case "running":
 					generation = runGeneration(ctx, t, generation.ID)
+				case "cancelling":
+					generation = runGeneration(ctx, t, generation.ID)
+					execute(ctx, t, "UPDATE generations SET cancel_requested_at = clock_timestamp() WHERE id = ?0", generation.ID)
 				}
 
 				requeued, err := daoRequeue.Exec(ctx, &dao.GenerationRequeueRequest{

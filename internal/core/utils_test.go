@@ -89,6 +89,14 @@ func withCancel(generation *dao.Generation) *dao.Generation {
 	return generation
 }
 
+// cancelledAgo dates the owner's cancel request the given age before testNow.
+func cancelledAgo(generation *dao.Generation, age time.Duration) *dao.Generation {
+	requested := testNow.Add(-age)
+	generation.CancelRequestedAt = &requested
+
+	return generation
+}
+
 // retryingSince dates the current attempt's first start the given age before testNow.
 func retryingSince(generation *dao.Generation, age time.Duration) *dao.Generation {
 	first := testNow.Add(-age)
