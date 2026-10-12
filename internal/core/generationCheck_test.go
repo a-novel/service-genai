@@ -299,6 +299,22 @@ func TestGenerationCheck(t *testing.T) {
 			expectStatus:  dao.GenerationStatusCancelled,
 		},
 		{
+			// Another check stopped the call on its owner's request after this one read the generation.
+			name: "Success/CancelledMeanwhile",
+
+			generation:   runningGeneration(1),
+			observe:      providerCall(connectors.CallCancelled),
+			expectReread: true,
+			rereadAs:     withCancel(runningGeneration(1)),
+
+			expectSettle: &settle{
+				attempt: 1, callID: &callID, status: dao.GenerationStatusCancelled, reason: &cancelledReason,
+			},
+			expectAttempt: testResponse,
+			expectUsage:   true,
+			expectStatus:  dao.GenerationStatusCancelled,
+		},
+		{
 			name: "Success/ProviderFailed",
 
 			generation: runningGeneration(1),
