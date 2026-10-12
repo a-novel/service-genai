@@ -115,6 +115,10 @@ type AsyncStartRequest struct {
 	// Stream creates the operation in streaming mode, so [Streaming] can read its events while it
 	// runs.
 	Stream bool
+	// Accepted, when set, receives the operation the moment the provider names it, when that comes
+	// before Start returns, as for a streamed start held until the provider begins it. Its error ends
+	// the start, and Start returns it.
+	Accepted func(call *Call) error
 }
 
 // An Async runs calls in the Async mode: the provider accepts a call and runs it on its side,
@@ -122,7 +126,8 @@ type AsyncStartRequest struct {
 // any provider with an asynchronous API offer the mode.
 type Async interface {
 	// Start begins an operation and returns as soon as the provider accepts it, without waiting for
-	// the model. The returned ID must be recorded before anything else happens. An
+	// the model. The operation's ID must be recorded before anything else happens, through
+	// [AsyncStartRequest.Accepted] when the provider names it before Start returns. An
 	// [ErrStartAmbiguous] outcome cannot safely be retried as a new operation.
 	Start(ctx context.Context, request *AsyncStartRequest) (*Call, error)
 	// Get reads an operation by id. It is both the poll and the re-attach.

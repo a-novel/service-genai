@@ -240,8 +240,29 @@ func (service *GenerationCheck) start(ctx context.Context, generation *dao.Gener
 		return released, nil
 	}
 
-	call, err := connector.Start(startCtx, &connectors.AsyncStartRequest{Payload: intent.Payload, Stream: intent.Streamed})
-	if err != nil {
+	// A streamed start names its call before the provider begins it. Recorded then, the call stays
+	// tracked by a process stopped during the rest of the hold.
+	var (
+		recorded  *dao.Generation
+		recordErr error
+	)
+
+	record := func(call *connectors.Call) error {
+		recorded, recordErr = service.recordCall(ctx, connector, intent, call.ID)
+
+		return recordErr
+	}
+
+	call, err := connector.Start(startCtx, &connectors.AsyncStartRequest{
+		Payload: intent.Payload, Stream: intent.Streamed, Accepted: record,
+	})
+
+	switch {
+	case recordErr != nil:
+		return nil, otel.ReportError(span, fmt.Errorf("record provider call: %w", recordErr))
+	case recorded != nil:
+		return recorded, nil
+	case err != nil:
 		failed, failErr := service.failStart(ctx, intent, err)
 		if failErr != nil {
 			return nil, otel.ReportError(span, failErr)
@@ -250,20 +271,35 @@ func (service *GenerationCheck) start(ctx context.Context, generation *dao.Gener
 		return failed, nil
 	}
 
-	recordCtx, cancelRecord := context.WithTimeout(ctx, persistenceTimeout)
-	defer cancelRecord()
+	err = record(call)
+	if err != nil {
+		return nil, otel.ReportError(span, fmt.Errorf("record provider call: %w", err))
+	}
+
+	return recorded, nil
+}
+
+// recordCall attaches an accepted call to its attempt. The generation may have settled while the
+// start was in flight, or the write may have failed without landing: a call the generation does not
+// carry belongs to nothing, so it is stopped.
+func (service *GenerationCheck) recordCall(
+	ctx context.Context, connector connectors.Async, intent *dao.Generation, callID string,
+) (*dao.Generation, error) {
+	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(recordCall)")
+	defer span.End()
+
+	recordCtx, cancel := context.WithTimeout(ctx, persistenceTimeout)
+	defer cancel()
 
 	recorded, err := service.daoRecord.Exec(recordCtx, &dao.GenerationRecordProviderCallRequest{
-		ID: intent.ID, Attempt: intent.Attempt, ProviderCallID: call.ID,
+		ID: intent.ID, Attempt: intent.Attempt, ProviderCallID: callID,
 	})
 	if err != nil {
-		// The generation settled while the start was in flight, or the write failed and may not have
-		// landed. An accepted call the generation does not carry belongs to nothing.
-		if errors.Is(err, dao.ErrGenerationChanged) || !service.carriesCall(ctx, intent, call.ID) {
-			service.stopOrphan(ctx, connector, intent, call.ID)
+		if errors.Is(err, dao.ErrGenerationChanged) || !service.carriesCall(ctx, intent, callID) {
+			service.stopOrphan(ctx, connector, intent, callID)
 		}
 
-		return nil, otel.ReportError(span, fmt.Errorf("record provider call: %w", err))
+		return nil, otel.ReportError(span, err)
 	}
 
 	return recorded, nil

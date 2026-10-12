@@ -112,9 +112,9 @@ func (provider *OpenAI) Start(ctx context.Context, request *AsyncStartRequest) (
 	})
 
 	if request.Stream {
-		call, err := provider.holdStream(ctx, body)
+		call, err := provider.holdStream(ctx, body, request.Accepted, sent.Load)
 		if err != nil {
-			return nil, otel.ReportError(span, classifyOpenAIStartError(err, sent.Load()))
+			return nil, otel.ReportError(span, err)
 		}
 
 		return call, nil
@@ -286,9 +286,12 @@ func (provider *OpenAI) Notification(ctx context.Context, request *NotificationR
 }
 
 // holdStream creates the operation in streaming mode and reads its stream until the provider begins
-// it: leaving while it is still queued can leave it queued for good. A deadline cut short after
+// it: leaving while it is still queued can leave it queued for good. The operation goes to accepted
+// as soon as the provider names it, so it is recorded before the hold ends. A deadline cut short after
 // the operation's id came returns the call still queued, for checks to follow.
-func (provider *OpenAI) holdStream(ctx context.Context, body json.RawMessage) (*Call, error) {
+func (provider *OpenAI) holdStream(
+	ctx context.Context, body json.RawMessage, accepted func(*Call) error, sent func() bool,
+) (*Call, error) {
 	ctx, span := otel.Tracer().Start(ctx, "connectors.OpenAI(holdStream)")
 	defer span.End()
 
@@ -296,7 +299,7 @@ func (provider *OpenAI) holdStream(ctx context.Context, body json.RawMessage) (*
 
 	err := provider.client.Post(ctx, responsesPath, body, &raw, option.WithMaxRetries(0))
 	if err != nil {
-		return nil, otel.ReportError(span, err)
+		return nil, otel.ReportError(span, classifyOpenAIStartError(err, sent()))
 	}
 
 	decoder := ssestream.NewDecoder(raw)
@@ -311,7 +314,17 @@ func (provider *OpenAI) holdStream(ctx context.Context, body json.RawMessage) (*
 			continue
 		}
 
+		named := call == nil
+
 		call = providerCallOf(&event.Response)
+
+		if named && accepted != nil {
+			err = accepted(call)
+			if err != nil {
+				return nil, otel.ReportError(span, err)
+			}
+		}
+
 		if call.State != CallQueued {
 			break
 		}

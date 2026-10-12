@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -666,15 +667,21 @@ func TestOpenAI(t *testing.T) {
 	t.Run("StreamedStart", func(t *testing.T) {
 		t.Parallel()
 
+		errRecord := errors.New("record failed")
+
 		testCases := []struct {
 			name string
 
-			events []string
+			events      []string
+			acceptedErr error
 
 			expectState connectors.CallState
-			expectErr   error
+			// expectAccepted is how the call stood each time it went to the hook: once, when named.
+			expectAccepted []connectors.CallState
+			expectErr      error
 		}{
 			{
+				// The call is named queued, and recorded then, before the hold ends.
 				name: "Success/HeldUntilInProgress",
 
 				events: []string{
@@ -684,7 +691,8 @@ func TestOpenAI(t *testing.T) {
 					deltaEvent(3),
 				},
 
-				expectState: connectors.CallRunning,
+				expectState:    connectors.CallRunning,
+				expectAccepted: []connectors.CallState{connectors.CallQueued},
 			},
 			{
 				// The provider never began it within the hold: the call is recorded queued, for the
@@ -693,7 +701,21 @@ func TestOpenAI(t *testing.T) {
 
 				events: []string{lifecycleEvent("created", 0, "queued"), lifecycleEvent("queued", 1, "queued")},
 
-				expectState: connectors.CallQueued,
+				expectState:    connectors.CallQueued,
+				expectAccepted: []connectors.CallState{connectors.CallQueued},
+			},
+			{
+				// A call that could not be recorded ends the start with the reason.
+				name: "Error/AcceptedFailed",
+
+				events: []string{
+					lifecycleEvent("created", 0, "queued"),
+					lifecycleEvent("in_progress", 1, "in_progress"),
+				},
+				acceptedErr: errRecord,
+
+				expectAccepted: []connectors.CallState{connectors.CallQueued},
+				expectErr:      errRecord,
 			},
 			{
 				// The request left, so the provider may hold a call nothing names.
@@ -710,10 +732,18 @@ func TestOpenAI(t *testing.T) {
 				script := &scriptedProvider{status: http.StatusOK, events: true, body: sse(testCase.events...)}
 				provider := newTestProvider(t, script)
 
+				var accepted []connectors.CallState
+
 				call, err := provider.Start(t.Context(), &connectors.AsyncStartRequest{
 					Payload: json.RawMessage(testPayload), Stream: true,
+					Accepted: func(call *connectors.Call) error {
+						accepted = append(accepted, call.State)
+
+						return testCase.acceptedErr
+					},
 				})
 				require.ErrorIs(t, err, testCase.expectErr)
+				require.Equal(t, testCase.expectAccepted, accepted)
 
 				var sent map[string]json.RawMessage
 

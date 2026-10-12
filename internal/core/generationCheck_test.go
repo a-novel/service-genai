@@ -1,6 +1,7 @@
 package core_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -524,6 +525,21 @@ func TestGenerationCheck(t *testing.T) {
 			expectErr:        errFoo,
 		},
 		{
+			// Recorded while the hold goes on: a write that never landed stops the call there too.
+			name: "Error/StreamedRecordLost",
+
+			generation: streamed(pendingGeneration()),
+			start:      providerCall(connectors.CallQueued),
+			recordErr:  errFoo,
+
+			expectStart:      true,
+			expectRecord:     true,
+			expectReread:     true,
+			rereadAs:         startingGeneration(time.Second),
+			expectStopOrphan: true,
+			expectErr:        errFoo,
+		},
+		{
 			name: "Error/Settle",
 
 			generation: runningGeneration(1),
@@ -622,8 +638,20 @@ func TestGenerationCheck(t *testing.T) {
 			if testCase.expectStart {
 				// The payload as the caller built it: the connector writes its own envelope.
 				connector.EXPECT().
-					Start(mock.Anything, &connectors.AsyncStartRequest{Payload: testPayload, Stream: generation.Streamed}).
-					Return(testCase.start, testCase.startErr)
+					Start(mock.Anything, mock.MatchedBy(func(request *connectors.AsyncStartRequest) bool {
+						return bytes.Equal(request.Payload, testPayload) && request.Stream == generation.Streamed
+					})).
+					RunAndReturn(func(_ context.Context, request *connectors.AsyncStartRequest) (*connectors.Call, error) {
+						// A streamed start names its call while it holds, before it returns.
+						if testCase.start != nil && generation.Streamed {
+							err := request.Accepted(testCase.start)
+							if err != nil {
+								return nil, err
+							}
+						}
+
+						return testCase.start, testCase.startErr
+					})
 			}
 
 			if testCase.expectRelease {
