@@ -749,13 +749,14 @@ func (service *GenerationCheck) stopOrphan(
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(stopOrphan)")
 	defer span.End()
 
-	cancelCtx, cancel := context.WithTimeout(ctx, persistenceTimeout)
-	defer cancel()
-
-	call, err := connector.Cancel(cancelCtx, callID)
+	// The connector bounds its own cancel, so the write keeps a deadline of its own.
+	call, err := connector.Cancel(ctx, callID)
 	if err == nil {
+		usageCtx, cancel := context.WithTimeout(ctx, persistenceTimeout)
+		defer cancel()
+
 		// The orphan ran on the provider's side: what it consumed still counts against the caps.
-		err = service.recordUsage(cancelCtx, generation, call)
+		err = service.recordUsage(usageCtx, generation, call)
 	}
 
 	if err != nil {
