@@ -429,13 +429,13 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 	// How long the call has run, by the database clock. A recorded call always has its start.
 	age := generation.CheckedAt.Sub(*generation.StartRequestedAt)
 
-	// Past the run ceiling the call is stopped, whether its owner asked or not: one the provider never
-	// finishes, or a key it no longer accepts, must not hold the owner's slot forever.
-	overdue := age >= runCeiling
+	// The call is stopped on its owner's request, or past the run ceiling whether they asked or not:
+	// one the provider never finishes, or a key it no longer accepts, must not hold the slot forever.
+	stop := generation.CancelRequestedAt != nil || age >= runCeiling
 
 	var call *connectors.Call
 
-	if generation.CancelRequestedAt != nil || overdue {
+	if stop {
 		call, err = connector.Cancel(ctx, *generation.ProviderCallID)
 	} else {
 		call, err = connector.Get(ctx, *generation.ProviderCallID)
@@ -443,25 +443,33 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 
 	// The provider can leave a streamed call queued for good when its creation stream was left early.
 	// One still queued past its ceiling is stopped like an overdue call.
-	if err == nil && generation.Streamed && !overdue && generation.CancelRequestedAt == nil &&
-		call.State == connectors.CallQueued && age >= streamQueuedCeiling {
-		overdue = true
+	if err == nil && generation.Streamed && !stop && call.State == connectors.CallQueued &&
+		age >= streamQueuedCeiling {
+		stop = true
 		call, err = connector.Cancel(ctx, *generation.ProviderCallID)
 	}
 
-	if errors.Is(err, connectors.ErrRetryable) && !overdue {
-		// A transient failure is retried by the next check; the provider span holds the cause.
+	// A transient failure, or a stop the provider has not applied yet, is retried by the next check. A
+	// call well past the run ceiling is given up on: it may still run, so the generation keeps its slot
+	// a while.
+	unsettled := errors.Is(err, connectors.ErrRetryable) || err == nil && stop && !call.State.Terminal()
+
+	switch {
+	case unsettled && age < runCeiling+stopRetryWindow:
 		return generation, nil
-	}
+	case err != nil || unsettled:
+		// The operation is unreadable, typically gone past the provider's retention window, or it was
+		// given up on. Starting another call would pay twice, so the generation fails.
+		reason := fmt.Sprintf("the stop left the call %s", lo.FromPtr(call).State)
+		if err != nil {
+			reason = err.Error()
+		}
 
-	if err != nil {
-		// The operation is unreadable, typically gone past the provider's retention window, or a call
-		// past its ceiling could not be stopped and may still run. Starting another would pay twice.
-		service.logFailure(ctx, generation, err.Error())
+		service.logFailure(ctx, generation, reason)
 
-		failure := lo.Ternary(errors.Is(err, connectors.ErrRetryable), failureNotStopped, failureResultLost)
-
-		settled, settleErr := service.settleFailure(ctx, generation, failure, nil)
+		settled, settleErr := service.settleFailure(
+			ctx, generation, lo.Ternary(unsettled, failureNotStopped, failureResultLost), nil,
+		)
 		if settleErr != nil {
 			return nil, otel.ReportError(span, settleErr)
 		}
@@ -478,7 +486,7 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 	// Another check stopped the call, maybe on its owner's request after this one read the generation:
 	// the outcome is labelled from the request as it stands. Only the request is taken from the fresh
 	// read, so the settle stays fenced on the call this check observed.
-	if call.State == connectors.CallCancelled && generation.CancelRequestedAt == nil && !overdue {
+	if call.State == connectors.CallCancelled && generation.CancelRequestedAt == nil && !stop {
 		current, getErr := service.daoGet.Exec(ctx, &dao.GenerationGetRequest{ID: generation.ID, OwnerID: generation.OwnerID})
 		if getErr != nil {
 			return nil, otel.ReportError(span, fmt.Errorf("re-read generation: %w", getErr))
@@ -787,6 +795,9 @@ const (
 	// measured from its first start. Past it the generation fails, so a request the provider never
 	// accepts cannot hold a concurrency slot forever.
 	startRetryCeiling = 10 * time.Minute
+	// stopRetryWindow is how long past the run ceiling a stop that fails, or that the provider has not
+	// applied, is asked again before the call is given up on.
+	stopRetryWindow = 10 * time.Minute
 	// runCeiling bounds how long a call may run once started. Long reasoning runs take tens of
 	// minutes; past this, the call is stopped and the generation fails.
 	runCeiling = 2 * time.Hour

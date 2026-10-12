@@ -41,6 +41,8 @@ func TestGenerationCheck(t *testing.T) {
 	unavailableMessage := "no connector serves the generation's provider"
 	overdueMessage := "the provider did not finish the call in time, so it was stopped"
 	notStoppedMessage := "the provider did not finish the call in time, and it could not be stopped"
+	// runCeilingForTest mirrors the run ceiling, past which every call is stopped.
+	const runCeilingForTest = 2 * time.Hour
 
 	rejectionBody := json.RawMessage(`{"error":{"message":"bad model"}}`)
 
@@ -409,6 +411,40 @@ func TestGenerationCheck(t *testing.T) {
 				outcomeUnknown: true,
 			},
 			expectStatus: dao.GenerationStatusFailed,
+		},
+		{
+			// Just past the ceiling, a stop that fails is asked again before the call is given up on.
+			name: "Success/OverdueStopRetried",
+
+			generation: startedAgo(runningGeneration(1), runCeilingForTest+time.Minute),
+			observeErr: connectors.ErrRetryable,
+			expectStop: true,
+
+			expectStatus: dao.GenerationStatusRunning,
+		},
+		{
+			// A stop the provider never applies ends the generation too, which keeps its slot a while.
+			name: "Success/OverdueStopNotApplied",
+
+			generation: startedAgo(runningGeneration(1), 3*time.Hour),
+			observe:    providerCall(connectors.CallRunning),
+			expectStop: true,
+
+			expectSettle: &settle{
+				attempt: 1, callID: &callID, status: dao.GenerationStatusFailed, reason: &notStoppedMessage,
+				outcomeUnknown: true,
+			},
+			expectStatus: dao.GenerationStatusFailed,
+		},
+		{
+			// A stuck streamed call the stop has not reached yet is asked again by the next check.
+			name: "Success/StreamedStuckQueuedStopNotApplied",
+
+			generation: streamed(startedAgo(runningGeneration(1), 10*time.Minute)),
+			observe:    providerCall(connectors.CallQueued),
+			stopped:    providerCall(connectors.CallQueued),
+
+			expectStatus: dao.GenerationStatusRunning,
 		},
 		{
 			// The ceiling bounds a call its owner cancelled too: a stop that keeps failing ends there.
