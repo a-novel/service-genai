@@ -288,14 +288,27 @@ func (service *GenerationCheck) recordCall(
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(recordCall)")
 	defer span.End()
 
-	recordCtx, cancel := context.WithTimeout(ctx, persistenceTimeout)
-	defer cancel()
+	write := func() (*dao.Generation, error) {
+		recordCtx, cancel := context.WithTimeout(ctx, persistenceTimeout)
+		defer cancel()
 
-	recorded, err := service.daoRecord.Exec(recordCtx, &dao.GenerationRecordProviderCallRequest{
-		ID: intent.ID, Attempt: intent.Attempt, ProviderCallID: callID,
-	})
+		return service.daoRecord.Exec(recordCtx, &dao.GenerationRecordProviderCallRequest{
+			ID: intent.ID, Attempt: intent.Attempt, ProviderCallID: callID,
+		})
+	}
+
+	recorded, err := write()
+	movedOn := errors.Is(err, dao.ErrGenerationChanged)
+
+	// A write that failed without an answer may still commit: the database finishes a statement its
+	// client gave up on. A second write waits behind it on the row, then lands itself if the first never
+	// did, so the read below sees what happened.
+	if err != nil && !movedOn {
+		recorded, err = write()
+	}
+
 	if err != nil {
-		if errors.Is(err, dao.ErrGenerationChanged) || !service.carriesCall(ctx, intent, callID) {
+		if movedOn || !service.carriesCall(ctx, intent, callID) {
 			service.stopOrphan(ctx, connector, intent, callID)
 		}
 

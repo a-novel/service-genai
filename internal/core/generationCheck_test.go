@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -65,6 +66,8 @@ func TestGenerationCheck(t *testing.T) {
 		start         *connectors.Call
 		startErr      error
 		recordErr     error
+		// recordRetried lands the second write of a call id the first could not.
+		recordRetried bool
 		observe       *connectors.Call
 		observeErr    error
 		settleErr     error
@@ -574,6 +577,19 @@ func TestGenerationCheck(t *testing.T) {
 			expectErr:    errFoo,
 		},
 		{
+			// The first write got no answer; the second lands, and the call keeps running.
+			name: "Success/RecordRetried",
+
+			generation:    pendingGeneration(),
+			start:         providerCall(connectors.CallRunning),
+			recordErr:     errFoo,
+			recordRetried: true,
+
+			expectStart:  true,
+			expectRecord: true,
+			expectStatus: dao.GenerationStatusRunning,
+		},
+		{
 			// The write failed and never landed: nothing tracks the accepted call, so it is stopped.
 			name: "Error/RecordLost",
 
@@ -729,11 +745,17 @@ func TestGenerationCheck(t *testing.T) {
 			}
 
 			if testCase.expectRecord {
-				record.EXPECT().
-					Exec(mock.Anything, &dao.GenerationRecordProviderCallRequest{
-						ID: generation.ID, Attempt: intent.Attempt, ProviderCallID: testCallID,
-					}).
-					Return(runningGeneration(1), testCase.recordErr)
+				recordRequest := &dao.GenerationRecordProviderCallRequest{
+					ID: generation.ID, Attempt: intent.Attempt, ProviderCallID: testCallID,
+				}
+
+				record.EXPECT().Exec(mock.Anything, recordRequest).Return(runningGeneration(1), testCase.recordErr).Once()
+
+				// A write that failed without an answer is tried once more.
+				if testCase.recordErr != nil && !errors.Is(testCase.recordErr, dao.ErrGenerationChanged) {
+					record.EXPECT().Exec(mock.Anything, recordRequest).
+						Return(runningGeneration(1), lo.Ternary(testCase.recordRetried, nil, testCase.recordErr)).Once()
+				}
 			}
 
 			if testCase.expectStopOrphan {
