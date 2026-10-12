@@ -17,10 +17,16 @@ import (
 func TestGenerationSweep(t *testing.T) {
 	t.Parallel()
 
-	sweep := config.Sweep{Interval: time.Minute, BatchSize: 10}
+	sweep := config.Sweep{Interval: time.Minute, BatchSize: 2}
 
 	first := runningGeneration(1)
 	second := pendingGeneration()
+	third := runningGeneration(2)
+
+	type batchMock struct {
+		swept []*dao.Generation
+		err   error
+	}
 
 	type checkMock struct {
 		generation *dao.Generation
@@ -31,10 +37,9 @@ func TestGenerationSweep(t *testing.T) {
 	testCases := []struct {
 		name string
 
-		swept    []*dao.Generation
-		sweepErr error
-		// stopping runs the pass in a process already stopping.
-		stopping bool
+		batches []batchMock
+		// deadline bounds the call; zero leaves it unbounded.
+		deadline time.Duration
 
 		checkMocks []checkMock
 
@@ -44,59 +49,70 @@ func TestGenerationSweep(t *testing.T) {
 		{
 			name: "Success",
 
-			swept: []*dao.Generation{first, second},
+			batches: []batchMock{{swept: []*dao.Generation{first}}},
 			checkMocks: []checkMock{
 				{generation: first},
-				{generation: second},
 			},
 
-			expect: &core.GenerationSweepResult{Checked: 2},
+			expect: &core.GenerationSweepResult{Checked: 1},
 		},
 		{
 			name: "Success/Empty",
 
-			swept: []*dao.Generation{},
+			batches: []batchMock{{swept: []*dao.Generation{}}},
 
 			expect: &core.GenerationSweepResult{},
 		},
 		{
-			// One generation's failure stays with it: the rest of the batch progresses, and the pass
-			// reports work found, so a backlog keeps draining.
-			name: "Success/CheckFails",
+			// A full batch may leave more behind it, so another follows until one comes back short.
+			name: "Success/Backlog",
 
-			swept: []*dao.Generation{first, second},
+			batches: []batchMock{
+				{swept: []*dao.Generation{first, second}},
+				{swept: []*dao.Generation{third}},
+			},
 			checkMocks: []checkMock{
-				{generation: first, err: errFoo},
+				{generation: first},
 				{generation: second},
+				{generation: third},
 			},
 
-			expect: &core.GenerationSweepResult{Checked: 2},
+			expect: &core.GenerationSweepResult{Checked: 3},
+		},
+		{
+			// One generation's failure stays with it: the rest of the batch progresses.
+			name: "Success/CheckFails",
+
+			batches: []batchMock{{swept: []*dao.Generation{first}}},
+			checkMocks: []checkMock{
+				{generation: first, err: errFoo},
+			},
+
+			expect: &core.GenerationSweepResult{Checked: 1},
 		},
 		{
 			// A panic stays with its generation: the process keeps running and the batch progresses.
 			name: "Success/CheckPanics",
 
-			swept: []*dao.Generation{first, second},
+			batches: []batchMock{{swept: []*dao.Generation{first}}},
 			checkMocks: []checkMock{
 				{generation: first, panics: true},
-				{generation: second},
 			},
 
-			expect: &core.GenerationSweepResult{Checked: 2},
+			expect: &core.GenerationSweepResult{Checked: 1},
 		},
 		{
-			// A stopping process launches no check, so no start leaves on its way out.
-			name: "Success/Stopping",
+			// A caller that cannot wait out a check gets none, and learns its deadline is the cause.
+			name: "Error/DeadlineTooShort",
 
-			swept:    []*dao.Generation{first, second},
-			stopping: true,
+			deadline: time.Second,
 
-			expect: &core.GenerationSweepResult{Checked: 2},
+			expectErr: core.ErrSweepDeadlineTooShort,
 		},
 		{
 			name: "Error/Sweep",
 
-			sweepErr: errFoo,
+			batches: []batchMock{{err: errFoo}},
 
 			expectErr: errFoo,
 		},
@@ -109,12 +125,15 @@ func TestGenerationSweep(t *testing.T) {
 			sweepDao := coremocks.NewMockGenerationSweepDao(t)
 			check := coremocks.NewMockGenerationSweepServiceCheck(t)
 
-			sweepDao.EXPECT().
-				Exec(mock.Anything, &dao.GenerationSweepRequest{
-					Interval: sweep.Interval,
-					Limit:    sweep.BatchSize,
-				}).
-				Return(testCase.swept, testCase.sweepErr)
+			for _, batch := range testCase.batches {
+				sweepDao.EXPECT().
+					Exec(mock.Anything, &dao.GenerationSweepRequest{
+						Interval: sweep.Interval,
+						Limit:    sweep.BatchSize,
+					}).
+					Return(batch.swept, batch.err).
+					Once()
+			}
 
 			for _, checkMock := range testCase.checkMocks {
 				call := check.EXPECT().Exec(mock.Anything, &core.GenerationCheckRequest{Generation: checkMock.generation})
@@ -128,11 +147,13 @@ func TestGenerationSweep(t *testing.T) {
 				}
 			}
 
-			ctx, stop := context.WithCancel(t.Context())
-			defer stop()
+			ctx := t.Context()
 
-			if testCase.stopping {
-				stop()
+			if testCase.deadline > 0 {
+				var cancel context.CancelFunc
+
+				ctx, cancel = context.WithTimeout(ctx, testCase.deadline)
+				defer cancel()
 			}
 
 			result, err := core.NewGenerationSweep(sweepDao, check, sweep).Exec(ctx, &core.GenerationSweepRequest{})

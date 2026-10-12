@@ -34,11 +34,12 @@ type Main struct {
 	DowntimeStart *time.Time `json:"downtimeStart" yaml:"downtimeStart"`
 }
 
-// Sweep holds the settings of the loop that checks generations nobody polled.
+// Sweep holds the settings of the sweep that checks generations nobody polled.
 type Sweep struct {
-	// Interval is how often the sweep runs, and how stale a generation must be for it.
+	// Interval is how stale a generation must be for the sweep. The scheduler calls the sweep at least
+	// this often.
 	Interval time.Duration `json:"interval" yaml:"interval"`
-	// BatchSize caps the generations one pass checks.
+	// BatchSize caps the generations one batch of a sweep takes.
 	BatchSize int `json:"batchSize" yaml:"batchSize"`
 }
 
@@ -73,7 +74,7 @@ type App struct {
 	Rest httpf.ServerConfig `json:"rest" yaml:"rest"`
 	// Generations holds how generations are run and kept.
 	Generations Generations `json:"generations" yaml:"generations"`
-	// Sweep configures the loop that checks generations nobody polled.
+	// Sweep configures the sweep that checks generations nobody polled.
 	Sweep Sweep `json:"sweep" yaml:"sweep"`
 	// OpenAI configures the OpenAI connector.
 	OpenAI OpenAI `json:"openAi" yaml:"openAi"`
