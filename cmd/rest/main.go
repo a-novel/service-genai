@@ -96,6 +96,7 @@ func main() {
 	// =================================================================================================================
 
 	handlerPing := handlers.NewRestPing()
+	handlerHealth := handlers.NewRestHealth()
 	handlerNotify := handlers.NewRestGenerationNotify(serviceNotify, cfg.Logger)
 
 	// =================================================================================================================
@@ -105,6 +106,7 @@ func main() {
 	router := httpf.NewRouter(cfg.Rest, cfg.Otel, cfg.RestLogger, cfg.App.DowntimeStart)
 
 	router.Get("/ping", handlerPing.ServeHTTP)
+	router.Get("/healthcheck", handlerHealth.ServeHTTP)
 	router.Post("/webhooks/{provider}", handlerNotify.ServeHTTP)
 
 	// =================================================================================================================
