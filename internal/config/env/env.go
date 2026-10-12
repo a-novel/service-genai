@@ -28,6 +28,12 @@ const (
 	// SIGTERM and SIGKILL, so an in-flight check finishes before the process is killed.
 	TimeoutShutdownDefault = 8 * time.Second
 
+	// TimeoutRequestDefault bounds a REST request, which runs its checks before it answers. A sweep call
+	// checks for a minute, then waits out its last checks, which take a minute at most.
+	TimeoutRequestDefault = 2 * time.Minute
+	// TimeoutWriteDefault lets a request answer once it has run to its deadline.
+	TimeoutWriteDefault = TimeoutRequestDefault + 15*time.Second
+
 	// CheckIntervalDefault is how long a check stays fresh: however often callers poll a generation,
 	// it reaches the provider at most once per interval.
 	CheckIntervalDefault = 2 * time.Second
@@ -151,9 +157,9 @@ var (
 	// Retention is how long a settled generation's user content survives before the purge.
 	Retention = config.LoadEnv(retention, RetentionDefault, config.DurationParser)
 
-	// SweepInterval is how often the sweep runs, and how stale a generation must be for it.
+	// SweepInterval is how stale a generation must be for the sweep.
 	SweepInterval = config.LoadEnv(sweepInterval, SweepIntervalDefault, config.DurationParser)
-	// SweepBatchSize caps the generations one sweep pass checks.
+	// SweepBatchSize caps the generations one batch of a sweep takes.
 	SweepBatchSize = config.LoadEnv(sweepBatchSize, SweepBatchSizeDefault, config.IntParser)
 
 	// GcloudProjectId names the Google Cloud project the service runs in. Setting
@@ -167,12 +173,15 @@ var (
 	DowntimeStart = config.LoadEnv(downtimeStart, nil, downtime.ParseStart)
 )
 
-// restDefaults keeps golib's REST defaults but for three. The drain fits Cloud Run's kill window. The
-// rate limit lets a provider's burst of notifications through, since they all come from its few
-// addresses. The routes only read and receive notifications.
+// restDefaults keeps golib's REST defaults but for a few. The drain fits Cloud Run's kill window, and a
+// request has the time its checks need. The rate limit lets a provider's burst of notifications
+// through, since they all come from its few addresses. The routes only read, receive notifications
+// and sweep.
 func restDefaults() httpf.ServerConfig {
 	defaults := httpf.ServerConfigDefault
 	defaults.Timeouts.Shutdown = TimeoutShutdownDefault
+	defaults.Timeouts.Request = TimeoutRequestDefault
+	defaults.Timeouts.Write = TimeoutWriteDefault
 	defaults.RateLimit = config.Must(httpf.ParseRate("500/1s"))
 	defaults.Cors.AllowedMethods = []string{http.MethodHead, http.MethodGet, http.MethodPost}
 
