@@ -48,7 +48,9 @@ type GenerationSubmitRequest struct {
 	Variant uint32 `protobuf:"varint,10,opt,name=variant,proto3" json:"variant,omitempty"`
 	// Stream creates the provider call in streaming mode, so GenerationStream can forward its events
 	// while it runs. The submit then answers once the provider has begun the call, after its queue
-	// time. It is part of the request: the same payload with and without it are two generations.
+	// time. It is part of the request: the same payload with and without it are two generations. A
+	// streamed generation is one provider call: a retryable provider failure settles it, and the caller
+	// resends it to run it again.
 	Stream        bool `protobuf:"varint,14,opt,name=stream,proto3" json:"stream,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

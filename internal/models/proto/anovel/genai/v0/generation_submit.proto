@@ -42,7 +42,9 @@ message GenerationSubmitRequest {
   uint32 variant = 10;
   // Stream creates the provider call in streaming mode, so GenerationStream can forward its events
   // while it runs. The submit then answers once the provider has begun the call, after its queue
-  // time. It is part of the request: the same payload with and without it are two generations.
+  // time. It is part of the request: the same payload with and without it are two generations. A
+  // streamed generation is one provider call: a retryable provider failure settles it, and the caller
+  // resends it to run it again.
   bool stream = 14;
 
   // A request is identified by its own content and owner: the caller keeps no key to recover it.
