@@ -819,6 +819,18 @@ func TestOpenAI(t *testing.T) {
 				expectQuery: "stream=true",
 				expectErr:   connectors.ErrRetryable,
 			},
+			{
+				// Every stream resumed before an event too large to read would end on it: poll instead.
+				name: "Error/EventTooLarge",
+
+				script: &scriptedProvider{status: http.StatusOK, events: true, body: sse(
+					deltaEvent(3), `{"type":"response.output_text.delta","delta":"`+strings.Repeat("a", 33<<20)+`"}`,
+				)},
+
+				expectQuery:     "stream=true",
+				expectSequences: []int64{3},
+				expectErr:       connectors.ErrStreamUnavailable,
+			},
 		}
 
 		for _, testCase := range testCases {

@@ -1,6 +1,7 @@
 package connectors
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -172,10 +173,16 @@ func (provider *OpenAI) Stream(ctx context.Context, request *StreamRequest) iter
 			}
 		}
 
-		// A stream cut before its terminal event resumes after the last event the caller received.
+		// A stream cut before its terminal event resumes after the last event the caller received. An
+		// event too large to read would cut every stream resumed before it, so its result is polled.
 		err = decoder.Err()
 		if err != nil {
-			yield(nil, otel.ReportError(span, fmt.Errorf("%w: %w", ErrRetryable, err)))
+			cause := ErrRetryable
+			if errors.Is(err, bufio.ErrTooLong) {
+				cause = ErrStreamUnavailable
+			}
+
+			yield(nil, otel.ReportError(span, fmt.Errorf("%w: %w", cause, err)))
 		}
 	}
 }
