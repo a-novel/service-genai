@@ -19,9 +19,14 @@ const postgresDialTimeout = 3 * time.Minute
 // selects the discrete POSTGRES_* fields; without it, POSTGRES_DSN is used.
 var PostgresPresetDefault = newPostgresPreset()
 
+// PostgresPresetMigrations is the migrations job's connection. A migration waiting for a lock gives
+// up after three seconds, so the queries queued behind it on its table proceed, and the runner tries
+// it again later. Its statements are not bounded, since building an index can run long.
+var PostgresPresetMigrations = newPostgresPreset(pgdriver.WithConnParams(map[string]any{"lock_timeout": "3s"}))
+
 // PostgresPresetServer bounds the server's sessions on the database side too: a statement, a lock
 // wait or an abandoned transaction gives up there, rather than holding a connection the client has
-// already left. The migrations job keeps PostgresPresetDefault, since building an index can run long.
+// already left.
 var PostgresPresetServer = newPostgresPreset(pgdriver.WithConnParams(map[string]any{
 	"statement_timeout":                   "9s",
 	"lock_timeout":                        "5s",
