@@ -16,9 +16,9 @@ var generationQueueDepthQuery string
 
 // GenerationQueueDepth is the queue's backlog.
 type GenerationQueueDepth struct {
-	// Pending is the number of generations due to start whose provider call has not been sent.
+	// Pending is the number of generations waiting for the provider to accept their call.
 	Pending int64 `bun:"pending"`
-	// OldestPendingAgeSeconds is how long the oldest of them has waited. Zero when nothing pends.
+	// OldestPendingAgeSeconds is how long the one waiting longest has waited. Zero when nothing pends.
 	OldestPendingAgeSeconds float64 `bun:"oldest_pending_age_seconds"`
 }
 

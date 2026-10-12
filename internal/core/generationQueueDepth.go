@@ -20,9 +20,9 @@ type GenerationQueueDepthRequest struct{}
 
 // GenerationQueueDepthResult is the backlog, as the health report states it.
 type GenerationQueueDepthResult struct {
-	// Pending is how many generations are due to start and not started.
+	// Pending is how many generations wait for the provider to accept their call.
 	Pending int64
-	// OldestPendingAge is how long the oldest of them has waited.
+	// OldestPendingAge is how long the one waiting longest has waited.
 	OldestPendingAge time.Duration
 }
 
