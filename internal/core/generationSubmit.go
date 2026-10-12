@@ -11,6 +11,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/samber/lo"
@@ -286,19 +287,24 @@ func (service *GenerationSubmit) validateRequest(request *GenerationSubmitReques
 // purpose's, then the global one, each counting live generations before summing usage. Nothing is
 // reserved, so a call admitted under a cap runs to the end past it; the concurrency limits bound how
 // many can.
+//
+// A generation whose call may still run untracked counts toward its purpose's concurrency only, so
+// an uncertain call never holds back the user's other purposes.
 func (service *GenerationSubmit) admit(ctx context.Context, request *GenerationSubmitRequest) error {
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationSubmit(admit)")
 	defer span.End()
 
 	scopes := []struct {
-		name      string
-		purpose   *string
-		capOfTier config.Cap
+		name        string
+		purpose     *string
+		capOfTier   config.Cap
+		unknownHold time.Duration
 	}{
 		{
-			name:      fmt.Sprintf("purpose %q", request.Purpose),
-			purpose:   &request.Purpose,
-			capOfTier: service.caps.Purposes[request.Purpose].For(request.UserTier),
+			name:        fmt.Sprintf("purpose %q", request.Purpose),
+			purpose:     &request.Purpose,
+			capOfTier:   service.caps.Purposes[request.Purpose].For(request.UserTier),
+			unknownHold: config.UnknownOutcomeHold,
 		},
 		{name: "global", capOfTier: service.caps.Global.For(request.UserTier)},
 	}
@@ -310,7 +316,7 @@ func (service *GenerationSubmit) admit(ctx context.Context, request *GenerationS
 
 		if limit := scope.capOfTier.Concurrency; limit != nil && *limit >= 0 {
 			live, err := service.daoCountLive.Exec(ctx, &dao.GenerationCountLiveRequest{
-				OwnerID: request.OwnerID, Purpose: scope.purpose, UnknownOutcomeWindow: config.UnknownOutcomeHold,
+				OwnerID: request.OwnerID, Purpose: scope.purpose, UnknownOutcomeWindow: scope.unknownHold,
 			})
 			if err != nil {
 				return otel.ReportError(span, fmt.Errorf("count live generations: %w", err))

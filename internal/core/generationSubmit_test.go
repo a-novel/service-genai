@@ -468,9 +468,15 @@ func TestGenerationSubmit(t *testing.T) {
 			}
 
 			for _, live := range testCase.live {
+				// Only the purpose scope counts a generation whose call may still run untracked.
+				var unknownHold time.Duration
+				if live.purpose {
+					unknownHold = 15 * time.Minute
+				}
+
 				liveDao.EXPECT().
 					Exec(mock.Anything, &dao.GenerationCountLiveRequest{
-						OwnerID: testCase.request.OwnerID, Purpose: scope(live.purpose), UnknownOutcomeWindow: 15 * time.Minute,
+						OwnerID: testCase.request.OwnerID, Purpose: scope(live.purpose), UnknownOutcomeWindow: unknownHold,
 					}).
 					Return(&dao.GenerationLiveCount{Count: live.count}, live.err)
 
