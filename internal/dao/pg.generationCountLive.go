@@ -21,7 +21,7 @@ type GenerationCountLiveRequest struct {
 	// Purpose restricts the count to one purpose; nil counts every purpose.
 	Purpose *string
 	// UnknownOutcomeWindow is how long a generation that failed with its start's outcome unknown
-	// still counts.
+	// still counts. Zero counts none.
 	UnknownOutcomeWindow time.Duration
 }
 

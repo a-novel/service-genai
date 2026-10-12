@@ -25,6 +25,8 @@ func TestPgGenerationCountLive(t *testing.T) {
 		purpose *string
 		// unknownSince seeds a generation that failed with its start's outcome unknown, that long ago.
 		unknownSince time.Duration
+		// noWindow counts with a zero unknown-outcome window, as the global scope does.
+		noWindow bool
 
 		expect int64
 	}{
@@ -53,6 +55,15 @@ func TestPgGenerationCountLive(t *testing.T) {
 			unknownSince: time.Minute,
 
 			expect: 3,
+		},
+		{
+			name: "Success/UnknownOutcomeWithoutWindow",
+
+			owner:        testOwner,
+			unknownSince: time.Minute,
+			noWindow:     true,
+
+			expect: 2,
 		},
 		{
 			name: "Success/UnknownOutcomeReleased",
@@ -93,8 +104,13 @@ func TestPgGenerationCountLive(t *testing.T) {
 					)
 				}
 
+				window := 15 * time.Minute
+				if testCase.noWindow {
+					window = 0
+				}
+
 				live, err := daoCountLive.Exec(ctx, &dao.GenerationCountLiveRequest{
-					OwnerID: testCase.owner, Purpose: testCase.purpose, UnknownOutcomeWindow: 15 * time.Minute,
+					OwnerID: testCase.owner, Purpose: testCase.purpose, UnknownOutcomeWindow: window,
 				})
 				require.NoError(t, err)
 				require.Equal(t, testCase.expect, live.Count)

@@ -21,8 +21,8 @@ var ErrInvalidConfig = errors.New("invalid configuration")
 const SweepIntervalCeiling = 5 * time.Minute
 
 // UnknownOutcomeHold is how long a generation that failed with its call's outcome unknown keeps its
-// concurrency slot: the provider may still run a call that nothing tracks or meters, so resending
-// cannot multiply untracked spend. The retention outlasts it, or the purge would end the hold early.
+// purpose's concurrency slot: the provider may still run a call that nothing tracks or meters, so
+// resending cannot multiply untracked spend. The retention outlasts it, or the purge would end the hold early.
 const UnknownOutcomeHold = 15 * time.Minute
 
 // Main holds the top-level application settings.
