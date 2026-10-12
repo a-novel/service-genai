@@ -350,7 +350,7 @@ func reached(limit *int64, used int64) bool {
 
 // requestKeyTag versions what the request key covers. Changing the construction changes the tag, so
 // a key of one version never matches a key of another.
-const requestKeyTag = "a-novel/genai/request-key/v3"
+const requestKeyTag = "a-novel/genai/request-key/v4"
 
 // asyncMode and streamedMode name the execution mode in the request key, so the same payload
 // submitted in another mode is another request.
@@ -363,13 +363,10 @@ const (
 // same key, which is what lets a caller recover by resending: it holds no key of its own.
 //
 // Each field is length-prefixed, so no two different requests can concatenate to the same bytes, and
-// the payload is canonicalized, so formatting or key order cannot split one request into two. The
+// the payload is canonicalized as it is sent, so formatting cannot split one request into two. The
 // key never leaves the generation row: it fingerprints user content, and is purged with it.
 func requestKey(request *GenerationSubmitRequest) ([]byte, error) {
-	// Sorted members and no insignificant whitespace. Numbers keep their literal form.
-	payload := slices.Clone(request.Payload)
-
-	err := payload.Format(jsontext.ReorderRawObjects(true))
+	payload, err := canonicalPayload(request.Payload)
 	if err != nil {
 		return nil, fmt.Errorf("canonicalize payload: %w", err)
 	}
@@ -390,4 +387,33 @@ func requestKey(request *GenerationSubmitRequest) ([]byte, error) {
 	}
 
 	return digest.Sum(nil), nil
+}
+
+// canonicalPayload writes a payload as the provider reads it: its top-level members sorted, as the
+// connector sends them, and nested members in the caller's order, which a provider can read meaning
+// into, such as a schema's property order. Insignificant whitespace goes and strings are written one
+// way; numbers keep their literal form.
+func canonicalPayload(payload json.RawMessage) ([]byte, error) {
+	var members map[string]jsontext.Value
+
+	err := json.Unmarshal(payload, &members)
+	if err != nil {
+		return nil, fmt.Errorf("decode payload: %w", err)
+	}
+
+	for name, value := range members {
+		err = value.Format()
+		if err != nil {
+			return nil, fmt.Errorf("format %q: %w", name, err)
+		}
+
+		members[name] = value
+	}
+
+	canonical, err := json.Marshal(members)
+	if err != nil {
+		return nil, fmt.Errorf("encode payload: %w", err)
+	}
+
+	return canonical, nil
 }

@@ -565,12 +565,12 @@ func TestGenerationSubmit(t *testing.T) {
 	}{
 		{name: "Same", expectSame: true},
 		{
-			// A resend rebuilt from the caller's state may reorder keys or reformat; it is still the
-			// same request.
+			// A resend rebuilt from the caller's state may reorder the top-level members, reformat, or
+			// escape a character another way; it is still the same request.
 			name: "ReformattedJSON",
 
 			adjust: func(request *core.GenerationSubmitRequest) {
-				request.Payload = json.RawMessage(`{ "input" : "Continue the scene.", "model" : "a-model" }`)
+				request.Payload = json.RawMessage(`{ "input" : "Continue the sc\u0065ne.", "model" : "a-model" }`)
 			},
 
 			expectSame: true,
@@ -585,6 +585,23 @@ func TestGenerationSubmit(t *testing.T) {
 	}
 
 	baseKey := submittedKey(t, submitRequest(nil))
+
+	// A provider can read meaning into nested order, such as a schema's property order, which sets the
+	// order of the output's fields: reordered, it is another request.
+	t.Run("RequestKey/NestedOrder", func(t *testing.T) {
+		t.Parallel()
+
+		withSchema := func(properties string) *core.GenerationSubmitRequest {
+			return submitRequest(func(request *core.GenerationSubmitRequest) {
+				request.Payload = json.RawMessage(`{"model": "a-model", "text": {"properties": ` + properties + `}}`)
+			})
+		}
+
+		require.NotEqual(t,
+			submittedKey(t, withSchema(`{"reasoning": {}, "answer": {}}`)),
+			submittedKey(t, withSchema(`{"answer": {}, "reasoning": {}}`)),
+		)
+	})
 
 	// Polling and streaming the same payload are two requests.
 	t.Run("RequestKey/Stream", func(t *testing.T) {
