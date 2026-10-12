@@ -39,6 +39,7 @@ func TestGenerationCheck(t *testing.T) {
 	callFailedMessage := "the provider failed the call"
 	unavailableMessage := "no connector serves the generation's provider"
 	overdueMessage := "the provider did not finish the call in time, so it was stopped"
+	notStoppedMessage := "the provider did not finish the call in time, and it could not be stopped"
 
 	rejectionBody := json.RawMessage(`{"error":{"message":"bad model"}}`)
 
@@ -367,6 +368,7 @@ func TestGenerationCheck(t *testing.T) {
 		},
 		{
 			// A provider that cannot be reached, a revoked key included, must not hold the slot forever.
+			// The call may still run, so the generation keeps its slot a while, as for an unknown start.
 			name: "Success/OverdueUnreachable",
 
 			generation: startedAgo(runningGeneration(1), 3*time.Hour),
@@ -374,9 +376,32 @@ func TestGenerationCheck(t *testing.T) {
 			expectStop: true,
 
 			expectSettle: &settle{
-				attempt: 1, callID: &callID, status: dao.GenerationStatusFailed, reason: &overdueMessage,
+				attempt: 1, callID: &callID, status: dao.GenerationStatusFailed, reason: &notStoppedMessage,
+				outcomeUnknown: true,
 			},
 			expectStatus: dao.GenerationStatusFailed,
+		},
+		{
+			// The ceiling bounds a call its owner cancelled too: a stop that keeps failing ends there.
+			name: "Success/CancelledPastCeilingUnreachable",
+
+			generation: withCancel(startedAgo(runningGeneration(1), 3*time.Hour)),
+			observeErr: connectors.ErrRetryable,
+
+			expectSettle: &settle{
+				attempt: 1, callID: &callID, status: dao.GenerationStatusFailed, reason: &notStoppedMessage,
+				outcomeUnknown: true,
+			},
+			expectStatus: dao.GenerationStatusFailed,
+		},
+		{
+			// Within the ceiling, a stop that fails is asked again by the next check.
+			name: "Success/CancelRetried",
+
+			generation: withCancel(runningGeneration(1)),
+			observeErr: connectors.ErrRetryable,
+
+			expectStatus: dao.GenerationStatusRunning,
 		},
 		{
 			// A streamed creation stream left early can leave the call queued for good: past its

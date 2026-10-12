@@ -390,9 +390,9 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 	// How long the call has run, by the database clock. A recorded call always has its start.
 	age := generation.CheckedAt.Sub(*generation.StartRequestedAt)
 
-	// Past the run ceiling the call is stopped: one the provider never finishes, or a key it no longer
-	// accepts, must not hold the owner's slot forever.
-	overdue := generation.CancelRequestedAt == nil && age >= runCeiling
+	// Past the run ceiling the call is stopped, whether its owner asked or not: one the provider never
+	// finishes, or a key it no longer accepts, must not hold the owner's slot forever.
+	overdue := age >= runCeiling
 
 	var call *connectors.Call
 
@@ -416,11 +416,11 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 	}
 
 	if err != nil {
-		// The operation is unreadable, typically gone past the provider's retention window, or an
-		// overdue call could not be stopped. Starting another call would pay twice, so it fails.
+		// The operation is unreadable, typically gone past the provider's retention window, or a call
+		// past its ceiling could not be stopped and may still run. Starting another would pay twice.
 		service.logFailure(ctx, generation, err.Error())
 
-		failure := lo.Ternary(overdue, failureOverdue, failureResultLost)
+		failure := lo.Ternary(errors.Is(err, connectors.ErrRetryable), failureNotStopped, failureResultLost)
 
 		settled, settleErr := service.settleFailure(ctx, generation, failure, nil)
 		if settleErr != nil {
@@ -562,8 +562,7 @@ func (service *GenerationCheck) commit(
 			Status:           status,
 			Error:            message,
 			Retention:        service.generations.Retention,
-			// The provider may still run the call, so admission keeps counting the generation.
-			OutcomeUnknown: lo.FromPtr(message) == failureOutcomeUnknown,
+			OutcomeUnknown:   outcomeUnknown[lo.FromPtr(message)],
 		})
 		if err != nil {
 			return fmt.Errorf("settle generation: %w", err)
@@ -749,4 +748,9 @@ const (
 	failureRejected            = "the provider rejected the request"
 	failureProviderUnavailable = "no connector serves the generation's provider"
 	failureOverdue             = "the provider did not finish the call in time, so it was stopped"
+	failureNotStopped          = "the provider did not finish the call in time, and it could not be stopped"
 )
+
+// outcomeUnknown holds the failures after which the provider may still run a call nothing tracks or
+// meters, so admission keeps counting the generation for a while.
+var outcomeUnknown = map[string]bool{failureOutcomeUnknown: true, failureNotStopped: true}
