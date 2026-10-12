@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -292,12 +293,12 @@ func TestOpenAI(t *testing.T) {
 			expectBody:      `{"error":{"message":"bad schema","param":"text.format.schema"}}`,
 		},
 		{
+			// The service's own key, not the caller's request: retried, and its body never passed on.
 			name: "Error/Unauthorized",
 
 			script: &scriptedProvider{status: http.StatusUnauthorized, body: `{"error":{"message":"bad key"}}`},
 
-			expectRejection: true,
-			expectBody:      `{"error":{"message":"bad key"}}`,
+			expectErr: connectors.ErrRetryable,
 		},
 		{
 			// A proxy in front of the provider may answer with anything; nothing is passed on.
@@ -666,15 +667,21 @@ func TestOpenAI(t *testing.T) {
 	t.Run("StreamedStart", func(t *testing.T) {
 		t.Parallel()
 
+		errRecord := errors.New("record failed")
+
 		testCases := []struct {
 			name string
 
-			events []string
+			events      []string
+			acceptedErr error
 
 			expectState connectors.CallState
-			expectErr   error
+			// expectAccepted is how the call stood each time it went to the hook: once, when named.
+			expectAccepted []connectors.CallState
+			expectErr      error
 		}{
 			{
+				// The call is named queued, and recorded then, before the hold ends.
 				name: "Success/HeldUntilInProgress",
 
 				events: []string{
@@ -684,7 +691,8 @@ func TestOpenAI(t *testing.T) {
 					deltaEvent(3),
 				},
 
-				expectState: connectors.CallRunning,
+				expectState:    connectors.CallRunning,
+				expectAccepted: []connectors.CallState{connectors.CallQueued},
 			},
 			{
 				// The provider never began it within the hold: the call is recorded queued, for the
@@ -693,7 +701,21 @@ func TestOpenAI(t *testing.T) {
 
 				events: []string{lifecycleEvent("created", 0, "queued"), lifecycleEvent("queued", 1, "queued")},
 
-				expectState: connectors.CallQueued,
+				expectState:    connectors.CallQueued,
+				expectAccepted: []connectors.CallState{connectors.CallQueued},
+			},
+			{
+				// A call that could not be recorded ends the start with the reason.
+				name: "Error/AcceptedFailed",
+
+				events: []string{
+					lifecycleEvent("created", 0, "queued"),
+					lifecycleEvent("in_progress", 1, "in_progress"),
+				},
+				acceptedErr: errRecord,
+
+				expectAccepted: []connectors.CallState{connectors.CallQueued},
+				expectErr:      errRecord,
 			},
 			{
 				// The request left, so the provider may hold a call nothing names.
@@ -710,10 +732,18 @@ func TestOpenAI(t *testing.T) {
 				script := &scriptedProvider{status: http.StatusOK, events: true, body: sse(testCase.events...)}
 				provider := newTestProvider(t, script)
 
+				var accepted []connectors.CallState
+
 				call, err := provider.Start(t.Context(), &connectors.AsyncStartRequest{
 					Payload: json.RawMessage(testPayload), Stream: true,
+					Accepted: func(call *connectors.Call) error {
+						accepted = append(accepted, call.State)
+
+						return testCase.acceptedErr
+					},
 				})
 				require.ErrorIs(t, err, testCase.expectErr)
+				require.Equal(t, testCase.expectAccepted, accepted)
 
 				var sent map[string]json.RawMessage
 
@@ -1023,13 +1053,24 @@ func TestOpenAI(t *testing.T) {
 			streaming, err := registry.Streaming("openai")
 			require.NoError(t, err)
 
+			var named *connectors.Call
+
 			started, err := connector.Start(t.Context(), &connectors.AsyncStartRequest{
 				Payload: payload("gpt-5.6-luna", "low"), Stream: true,
+				Accepted: func(call *connectors.Call) error {
+					named = call
+
+					return nil
+				},
 			})
 			require.NoError(t, err)
 			require.NotEmpty(t, started.ID)
 			// Left only once the provider began it: a call left queued can stay queued for good.
 			require.NotEqual(t, connectors.CallQueued, started.State)
+			// Named while still queued, so a check records it before the hold ends.
+			require.NotNil(t, named)
+			require.Equal(t, started.ID, named.ID)
+			require.Equal(t, connectors.CallQueued, named.State)
 
 			var last *connectors.StreamEvent
 

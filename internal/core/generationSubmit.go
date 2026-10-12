@@ -11,7 +11,6 @@ import (
 	"maps"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/samber/lo"
@@ -311,7 +310,7 @@ func (service *GenerationSubmit) admit(ctx context.Context, request *GenerationS
 
 		if limit := scope.capOfTier.Concurrency; limit != nil && *limit >= 0 {
 			live, err := service.daoCountLive.Exec(ctx, &dao.GenerationCountLiveRequest{
-				OwnerID: request.OwnerID, Purpose: scope.purpose, UnknownOutcomeWindow: unknownOutcomeHold,
+				OwnerID: request.OwnerID, Purpose: scope.purpose, UnknownOutcomeWindow: config.UnknownOutcomeHold,
 			})
 			if err != nil {
 				return otel.ReportError(span, fmt.Errorf("count live generations: %w", err))
@@ -348,11 +347,6 @@ func (service *GenerationSubmit) admit(ctx context.Context, request *GenerationS
 func reached(limit *int64, used int64) bool {
 	return limit != nil && used >= *limit
 }
-
-// unknownOutcomeHold is how long a generation that failed with its start's outcome unknown keeps its
-// concurrency slot: the provider may still run a call that nothing tracks or meters, so resending
-// cannot multiply untracked spend.
-const unknownOutcomeHold = 15 * time.Minute
 
 // requestKeyTag versions what the request key covers. Changing the construction changes the tag, so
 // a key of one version never matches a key of another.

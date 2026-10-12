@@ -146,8 +146,8 @@ Checks (images `grpc`, `rest`, `standalone-grpc`) and sweep (`grpc`, `standalone
 | `CHECK_INTERVAL`   | How long a check stays fresh. However often callers poll, a generation reaches the provider at most once per interval. | `2s`    |
 | `SWEEP_INTERVAL`   | How often the sweep runs, and how stale a generation must be for it. At most `5m`.                                     | `1m`    |
 | `SWEEP_BATCH_SIZE` | Generations one sweep pass checks.                                                                                     | `50`    |
-| `MAX_ATTEMPTS`     | Provider calls a generation gets when a call fails retryably. Each one is paid.                                        | `2`     |
-| `RETENTION`        | How long a settled generation, its attempts and its request key survive before the purge deletes them.                 | `6h`    |
+| `MAX_ATTEMPTS`     | Provider calls a generation gets when a call fails retryably. Each one is paid. A streamed generation gets one.        | `2`     |
+| `RETENTION`        | How long a settled generation, its attempts and its request key survive before the purge deletes them. At least `15m`. | `6h`    |
 
 gRPC server:
 

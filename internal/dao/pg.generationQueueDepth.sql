@@ -5,7 +5,7 @@ SELECT
     extract(
       epoch
       FROM
-        clock_timestamp() - min(run_at)
+        CURRENT_TIMESTAMP - min(run_at)
     ),
     0
   ) AS oldest_pending_age_seconds
@@ -14,4 +14,4 @@ FROM
 WHERE
   status = 'pending'
   AND start_requested_at IS NULL
-  AND run_at <= clock_timestamp();
+  AND run_at <= CURRENT_TIMESTAMP;

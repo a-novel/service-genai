@@ -24,10 +24,27 @@ func TestPgGenerationBeginStart(t *testing.T) {
 		// prepare moves the seeded generation into the state under test.
 		prepare func(ctx context.Context, t *testing.T, id uuid.UUID)
 
-		expectErr error
+		// expectRetried keeps the attempt's first start from an earlier, released one.
+		expectRetried bool
+		expectErr     error
 	}{
 		{
 			name: "Success",
+		},
+		{
+			// The attempt's start retries are bounded from its first start, which a release keeps.
+			name: "Success/AfterRelease",
+
+			prepare: func(ctx context.Context, t *testing.T, id uuid.UUID) {
+				t.Helper()
+
+				startGeneration(ctx, t, id)
+
+				_, err := dao.NewPgGenerationReleaseStart().Exec(ctx, &dao.GenerationReleaseStartRequest{ID: id, Attempt: 1})
+				require.NoError(t, err)
+			},
+
+			expectRetried: true,
 		},
 		{
 			name: "Error/NotDue",
@@ -97,6 +114,8 @@ func TestPgGenerationBeginStart(t *testing.T) {
 				require.Equal(t, dao.GenerationStatusPending, started.Status)
 				require.Equal(t, int16(1), started.Attempt)
 				require.NotNil(t, started.StartRequestedAt)
+				require.NotNil(t, started.FirstStartRequestedAt)
+				require.Equal(t, testCase.expectRetried, started.FirstStartRequestedAt.Before(*started.StartRequestedAt))
 				require.Nil(t, started.ProviderCallID)
 				require.JSONEq(t, `{"model": "a-model"}`, string(started.Payload))
 			})

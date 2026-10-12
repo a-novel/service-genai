@@ -5,6 +5,7 @@ SET
   status = 'pending',
   provider_call_id = NULL,
   start_requested_at = NULL,
+  first_start_requested_at = NULL,
   run_at = clock_timestamp() + make_interval(secs => ?3),
   updated_at = clock_timestamp()
 WHERE

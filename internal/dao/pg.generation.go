@@ -53,9 +53,12 @@ type Generation struct {
 	// RunAt is the earliest time the next start may be sent.
 	RunAt time.Time `bun:"run_at"`
 	// StartRequestedAt records that paid work may exist even before its provider ID is durable.
-	StartRequestedAt  *time.Time `bun:"start_requested_at,nullzero"`
-	ProviderCallID    *string    `bun:"provider_call_id,nullzero"`
-	CancelRequestedAt *time.Time `bun:"cancel_requested_at,nullzero"`
+	StartRequestedAt *time.Time `bun:"start_requested_at,nullzero"`
+	// FirstStartRequestedAt is when the current attempt's first start was requested; a released start
+	// keeps it, so its retries are bounded from it.
+	FirstStartRequestedAt *time.Time `bun:"first_start_requested_at,nullzero"`
+	ProviderCallID        *string    `bun:"provider_call_id,nullzero"`
+	CancelRequestedAt     *time.Time `bun:"cancel_requested_at,nullzero"`
 	// CheckedAt is when a check last looked at the generation, by the database clock.
 	CheckedAt time.Time `bun:"checked_at"`
 	// Traceparent is the W3C trace context of the request that submitted the generation.

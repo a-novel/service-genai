@@ -20,7 +20,7 @@ The OpenAI connector writes `background: true` and `stream` over the payload's o
 
 ## Streaming mode
 
-A provider offers the Streaming mode by reading an operation's events after a cursor. OpenAI streams only a background call created with `stream: true`, and only for 5 minutes after its creation; past that, the result is read by polling. Leaving a streamed creation before the provider reports `response.in_progress` can leave the call queued for good, an open OpenAI bug: the connector holds the creation stream until then, at most 30 seconds, and a check stops a streamed call still queued 5 minutes after its start. The connector issues the stream's GET itself, because openai-go's `GetStreaming` sends a body the API refuses ([openai-go#660](https://github.com/openai/openai-go/issues/660)).
+A provider offers the Streaming mode by reading an operation's events after a cursor. OpenAI streams only a background call created with `stream: true`, and only for 5 minutes after its creation; past that, the result is read by polling. Leaving a streamed creation before the provider reports `response.in_progress` can leave the call queued for good, an open OpenAI bug: the connector holds the creation stream until then, at most 30 seconds, reporting the call's id as soon as the provider names it so it is recorded before the hold ends, and a check stops a streamed call still queued 5 minutes after its start. A streamed generation is one call: a retryable failure settles it rather than starting a fresh call, whose events would number from zero. The connector issues the stream's GET itself, because openai-go's `GetStreaming` sends a body the API refuses ([openai-go#660](https://github.com/openai/openai-go/issues/660)).
 
 ## Notifications mode
 

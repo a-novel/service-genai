@@ -240,8 +240,29 @@ func (service *GenerationCheck) start(ctx context.Context, generation *dao.Gener
 		return released, nil
 	}
 
-	call, err := connector.Start(startCtx, &connectors.AsyncStartRequest{Payload: intent.Payload, Stream: intent.Streamed})
-	if err != nil {
+	// A streamed start names its call before the provider begins it. Recorded then, the call stays
+	// tracked by a process stopped during the rest of the hold.
+	var (
+		recorded  *dao.Generation
+		recordErr error
+	)
+
+	record := func(call *connectors.Call) error {
+		recorded, recordErr = service.recordCall(ctx, connector, intent, call.ID)
+
+		return recordErr
+	}
+
+	call, err := connector.Start(startCtx, &connectors.AsyncStartRequest{
+		Payload: intent.Payload, Stream: intent.Streamed, Accepted: record,
+	})
+
+	switch {
+	case recordErr != nil:
+		return nil, otel.ReportError(span, fmt.Errorf("record provider call: %w", recordErr))
+	case recorded != nil:
+		return recorded, nil
+	case err != nil:
 		failed, failErr := service.failStart(ctx, intent, err)
 		if failErr != nil {
 			return nil, otel.ReportError(span, failErr)
@@ -250,20 +271,35 @@ func (service *GenerationCheck) start(ctx context.Context, generation *dao.Gener
 		return failed, nil
 	}
 
-	recordCtx, cancelRecord := context.WithTimeout(ctx, persistenceTimeout)
-	defer cancelRecord()
+	err = record(call)
+	if err != nil {
+		return nil, otel.ReportError(span, fmt.Errorf("record provider call: %w", err))
+	}
+
+	return recorded, nil
+}
+
+// recordCall attaches an accepted call to its attempt. The generation may have settled while the
+// start was in flight, or the write may have failed without landing: a call the generation does not
+// carry belongs to nothing, so it is stopped.
+func (service *GenerationCheck) recordCall(
+	ctx context.Context, connector connectors.Async, intent *dao.Generation, callID string,
+) (*dao.Generation, error) {
+	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(recordCall)")
+	defer span.End()
+
+	recordCtx, cancel := context.WithTimeout(ctx, persistenceTimeout)
+	defer cancel()
 
 	recorded, err := service.daoRecord.Exec(recordCtx, &dao.GenerationRecordProviderCallRequest{
-		ID: intent.ID, Attempt: intent.Attempt, ProviderCallID: call.ID,
+		ID: intent.ID, Attempt: intent.Attempt, ProviderCallID: callID,
 	})
 	if err != nil {
-		// The generation settled while the start was in flight, or the write failed and may not have
-		// landed. An accepted call the generation does not carry belongs to nothing.
-		if errors.Is(err, dao.ErrGenerationChanged) || !service.carriesCall(ctx, intent, call.ID) {
-			service.stopOrphan(ctx, connector, intent, call.ID)
+		if errors.Is(err, dao.ErrGenerationChanged) || !service.carriesCall(ctx, intent, callID) {
+			service.stopOrphan(ctx, connector, intent, callID)
 		}
 
-		return nil, otel.ReportError(span, fmt.Errorf("record provider call: %w", err))
+		return nil, otel.ReportError(span, err)
 	}
 
 	return recorded, nil
@@ -316,7 +352,10 @@ func (service *GenerationCheck) failStart(
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(failStart)")
 	defer span.End()
 
-	if errors.Is(cause, connectors.ErrRetryable) && intent.StartRequestedAt.Sub(intent.CreatedAt) < startRetryCeiling {
+	// BeginStart sets the attempt's first start along with its intent.
+	retrying := intent.StartRequestedAt.Sub(*intent.FirstStartRequestedAt)
+
+	if errors.Is(cause, connectors.ErrRetryable) && retrying < startRetryCeiling {
 		released, err := service.releaseStart(ctx, intent, retryDelay)
 		if err != nil {
 			return nil, otel.ReportError(span, fmt.Errorf("release start: %w", err))
@@ -390,9 +429,9 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 	// How long the call has run, by the database clock. A recorded call always has its start.
 	age := generation.CheckedAt.Sub(*generation.StartRequestedAt)
 
-	// Past the run ceiling the call is stopped: one the provider never finishes, or a key it no longer
-	// accepts, must not hold the owner's slot forever.
-	overdue := generation.CancelRequestedAt == nil && age >= runCeiling
+	// Past the run ceiling the call is stopped, whether its owner asked or not: one the provider never
+	// finishes, or a key it no longer accepts, must not hold the owner's slot forever.
+	overdue := age >= runCeiling
 
 	var call *connectors.Call
 
@@ -416,11 +455,11 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 	}
 
 	if err != nil {
-		// The operation is unreadable, typically gone past the provider's retention window, or an
-		// overdue call could not be stopped. Starting another call would pay twice, so it fails.
+		// The operation is unreadable, typically gone past the provider's retention window, or a call
+		// past its ceiling could not be stopped and may still run. Starting another would pay twice.
 		service.logFailure(ctx, generation, err.Error())
 
-		failure := lo.Ternary(overdue, failureOverdue, failureResultLost)
+		failure := lo.Ternary(errors.Is(err, connectors.ErrRetryable), failureNotStopped, failureResultLost)
 
 		settled, settleErr := service.settleFailure(ctx, generation, failure, nil)
 		if settleErr != nil {
@@ -436,8 +475,19 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 		return generation, nil
 	}
 
-	if call.State == connectors.CallFailed && call.Retryable && generation.Attempt < generation.MaxAttempts &&
-		generation.CancelRequestedAt == nil {
+	// Another check stopped the call, maybe on its owner's request after this one read the generation:
+	// the outcome is labelled from the generation as it stands.
+	if call.State == connectors.CallCancelled && generation.CancelRequestedAt == nil && !overdue {
+		generation, err = service.daoGet.Exec(ctx, &dao.GenerationGetRequest{ID: generation.ID, OwnerID: generation.OwnerID})
+		if err != nil {
+			return nil, otel.ReportError(span, fmt.Errorf("re-read generation: %w", err))
+		}
+	}
+
+	// A streamed generation is one call: its stream's cursor counts that call's events, and a fresh call
+	// would number its own from zero. Its caller resends it to run it again.
+	if call.State == connectors.CallFailed && call.Retryable && !generation.Streamed &&
+		generation.Attempt < generation.MaxAttempts && generation.CancelRequestedAt == nil {
 		requeued, requeueErr := service.requeue(ctx, generation, call)
 		if requeueErr != nil {
 			return nil, otel.ReportError(span, requeueErr)
@@ -562,8 +612,7 @@ func (service *GenerationCheck) commit(
 			Status:           status,
 			Error:            message,
 			Retention:        service.generations.Retention,
-			// The provider may still run the call, so admission keeps counting the generation.
-			OutcomeUnknown: lo.FromPtr(message) == failureOutcomeUnknown,
+			OutcomeUnknown:   outcomeUnknown[lo.FromPtr(message)],
 		})
 		if err != nil {
 			return fmt.Errorf("settle generation: %w", err)
@@ -729,8 +778,8 @@ const (
 	checkTimeout = 45 * time.Second
 	// retryDelay postpones a fresh call after a rate limit or a retryable provider failure.
 	retryDelay = 15 * time.Second
-	// startRetryCeiling bounds how long a generation keeps retrying a start the provider turns away,
-	// measured from its submission. Past it the generation fails, so a request the provider never
+	// startRetryCeiling bounds how long an attempt keeps retrying a start the provider turns away,
+	// measured from its first start. Past it the generation fails, so a request the provider never
 	// accepts cannot hold a concurrency slot forever.
 	startRetryCeiling = 10 * time.Minute
 	// runCeiling bounds how long a call may run once started. Long reasoning runs take tens of
@@ -749,4 +798,9 @@ const (
 	failureRejected            = "the provider rejected the request"
 	failureProviderUnavailable = "no connector serves the generation's provider"
 	failureOverdue             = "the provider did not finish the call in time, so it was stopped"
+	failureNotStopped          = "the provider did not finish the call in time, and it could not be stopped"
 )
+
+// outcomeUnknown holds the failures after which the provider may still run a call nothing tracks or
+// meters, so admission keeps counting the generation for a while.
+var outcomeUnknown = map[string]bool{failureOutcomeUnknown: true, failureNotStopped: true}
