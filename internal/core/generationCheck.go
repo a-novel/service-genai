@@ -436,8 +436,10 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 		return generation, nil
 	}
 
-	if call.State == connectors.CallFailed && call.Retryable && generation.Attempt < generation.MaxAttempts &&
-		generation.CancelRequestedAt == nil {
+	// A streamed generation is one call: its stream's cursor counts that call's events, and a fresh call
+	// would number its own from zero. Its caller resends it to run it again.
+	if call.State == connectors.CallFailed && call.Retryable && !generation.Streamed &&
+		generation.Attempt < generation.MaxAttempts && generation.CancelRequestedAt == nil {
 		requeued, requeueErr := service.requeue(ctx, generation, call)
 		if requeueErr != nil {
 			return nil, otel.ReportError(span, requeueErr)

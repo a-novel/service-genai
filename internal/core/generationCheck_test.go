@@ -437,6 +437,20 @@ func TestGenerationCheck(t *testing.T) {
 			expectStatus: dao.GenerationStatusRunning,
 		},
 		{
+			// A streamed generation is one call: a fresh one would restart the stream's numbering.
+			name: "Success/StreamedRetryableFailure",
+
+			generation: streamed(runningGeneration(1)),
+			observe:    failedCall(true),
+
+			expectSettle: &settle{
+				attempt: 1, callID: &callID, status: dao.GenerationStatusFailed, reason: &callFailedMessage,
+			},
+			expectAttempt: testResponse,
+			expectUsage:   true,
+			expectStatus:  dao.GenerationStatusFailed,
+		},
+		{
 			name: "Success/RetriesExhausted",
 
 			generation: runningGeneration(2),
