@@ -45,7 +45,7 @@ As of October 2026:
 The conformance check builds the connectors exactly as the server does, from the same variables, and runs the OpenAI connector's Async mode against every requirement it can observe. Run it before changing the connector or the account it reaches. It calls the provider and costs a few cents, so it runs only when `PROVIDER_CONFORMANCE` is `true`:
 
 ```bash
-PROVIDER_CONFORMANCE=true OPENAI_API_KEY="<key>" go test ./cmd/grpc -run TestNewConnectors -v -timeout 30m
+PROVIDER_CONFORMANCE=true OPENAI_API_KEY="<key>" go test ./internal/lib/connectors -run TestOpenAI/Conformance -v -timeout 30m
 ```
 
 The check plays a caller: it sends its own payload, with `store: false` and a strict output schema. It starts a call and expects an id before the model runs, polls it to completion, and reads it again five minutes later. It cancels a running call and a finished one, whose result must come back intact, and expects a request for an unknown model to be rejected with the provider's error body. The whole run takes about six minutes.

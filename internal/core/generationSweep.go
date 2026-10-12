@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/a-novel-kit/golib/otel"
 
+	"github.com/a-novel/service-genai/internal/config"
 	"github.com/a-novel/service-genai/internal/dao"
 )
 
@@ -22,14 +22,6 @@ type GenerationSweepDao interface {
 // GenerationSweepServiceCheck checks one generation.
 type GenerationSweepServiceCheck interface {
 	Exec(ctx context.Context, request *GenerationCheckRequest) (*dao.Generation, error)
-}
-
-// GenerationSweepConfig is what a [GenerationSweep] needs to run.
-type GenerationSweepConfig struct {
-	// Interval is how long a check stays fresh, and how often the sweep runs.
-	Interval time.Duration
-	// BatchSize caps the generations checked in one pass.
-	BatchSize int
 }
 
 // GenerationSweepRequest holds the parameters for a [GenerationSweep.Exec] call.
@@ -48,16 +40,16 @@ type GenerationSweepResult struct {
 // went away still settles while the provider holds its result, and one whose start never ran still
 // starts.
 type GenerationSweep struct {
-	config       GenerationSweepConfig
 	dao          GenerationSweepDao
 	serviceCheck GenerationSweepServiceCheck
+	sweep        config.Sweep
 }
 
 // NewGenerationSweep returns a new GenerationSweep service.
 func NewGenerationSweep(
-	config GenerationSweepConfig, dao GenerationSweepDao, serviceCheck GenerationSweepServiceCheck,
+	dao GenerationSweepDao, serviceCheck GenerationSweepServiceCheck, sweep config.Sweep,
 ) *GenerationSweep {
-	return &GenerationSweep{config: config, dao: dao, serviceCheck: serviceCheck}
+	return &GenerationSweep{dao: dao, serviceCheck: serviceCheck, sweep: sweep}
 }
 
 // Exec checks one batch.
@@ -68,7 +60,7 @@ func (service *GenerationSweep) Exec(
 	defer span.End()
 
 	generations, err := service.dao.Exec(ctx, &dao.GenerationSweepRequest{
-		Interval: service.config.Interval, Limit: service.config.BatchSize,
+		Interval: service.sweep.Interval, Limit: service.sweep.BatchSize,
 	})
 	if err != nil {
 		return nil, otel.ReportError(span, fmt.Errorf("sweep generations: %w", err))

@@ -17,6 +17,7 @@ import (
 
 	"github.com/a-novel-kit/golib/transaction/transactiontest"
 
+	"github.com/a-novel/service-genai/internal/config"
 	"github.com/a-novel/service-genai/internal/core"
 	coremocks "github.com/a-novel/service-genai/internal/core/mocks"
 	"github.com/a-novel/service-genai/internal/dao"
@@ -684,14 +685,11 @@ func TestGenerationCheck(t *testing.T) {
 			logger.EXPECT().Err(mock.Anything, mock.Anything).Maybe()
 
 			check := core.NewGenerationCheck(
-				core.GenerationCheckConfig{Retention: retention},
-				logger,
+				beginStart, releaseStart, record, settleDao, requeue, attempt, usage, get,
 				connectors.Registry{testProvider: connector},
 				transactiontest.NewTransactor(),
-				core.GenerationCheckDaos{
-					BeginStart: beginStart, ReleaseStart: releaseStart, Record: record, Settle: settleDao,
-					Requeue: requeue, Attempt: attempt, Usage: usage, Get: get,
-				},
+				logger,
+				config.Generations{Retention: retention},
 			)
 
 			ctx := t.Context()
@@ -770,20 +768,18 @@ func TestGenerationCheckTelemetry(t *testing.T) {
 			})
 
 			check := core.NewGenerationCheck(
-				core.GenerationCheckConfig{Retention: time.Hour},
-				coremocks.NewMockGenerationCheckLogger(t),
+				coremocks.NewMockGenerationCheckDaoBeginStart(t),
+				coremocks.NewMockGenerationCheckDaoReleaseStart(t),
+				coremocks.NewMockGenerationCheckDaoRecordProviderCall(t),
+				coremocks.NewMockGenerationCheckDaoSettle(t),
+				coremocks.NewMockGenerationCheckDaoRequeue(t),
+				coremocks.NewMockGenerationCheckDaoAttemptInsert(t),
+				coremocks.NewMockGenerationCheckDaoUsageInsert(t),
+				coremocks.NewMockGenerationCheckDaoGet(t),
 				connectors.Registry{testProvider: connectorsmocks.NewMockAsync(t)},
 				transactiontest.NewTransactor(),
-				core.GenerationCheckDaos{
-					BeginStart:   coremocks.NewMockGenerationCheckDaoBeginStart(t),
-					ReleaseStart: coremocks.NewMockGenerationCheckDaoReleaseStart(t),
-					Record:       coremocks.NewMockGenerationCheckDaoRecordProviderCall(t),
-					Settle:       coremocks.NewMockGenerationCheckDaoSettle(t),
-					Requeue:      coremocks.NewMockGenerationCheckDaoRequeue(t),
-					Attempt:      coremocks.NewMockGenerationCheckDaoAttemptInsert(t),
-					Usage:        coremocks.NewMockGenerationCheckDaoUsageInsert(t),
-					Get:          coremocks.NewMockGenerationCheckDaoGet(t),
-				},
+				coremocks.NewMockGenerationCheckLogger(t),
+				config.Generations{Retention: time.Hour},
 			)
 
 			generation := settledGeneration(dao.GenerationStatusSucceeded)

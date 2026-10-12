@@ -1,7 +1,6 @@
 package handlers_test
 
 import (
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -21,8 +20,6 @@ import (
 func TestRestGenerationNotify(t *testing.T) {
 	t.Parallel()
 
-	errFoo := errors.New("foo")
-
 	const body = `{"type": "response.completed"}`
 
 	testCases := []struct {
@@ -41,6 +38,13 @@ func TestRestGenerationNotify(t *testing.T) {
 			name: "Error/Invalid",
 
 			serviceErr: connectors.ErrNotificationInvalid,
+
+			expectStatus: http.StatusBadRequest,
+		},
+		{
+			name: "Error/InvalidRequest",
+
+			serviceErr: core.ErrInvalidRequest,
 
 			expectStatus: http.StatusBadRequest,
 		},

@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
+	"github.com/a-novel/service-genai/internal/config"
 	"github.com/a-novel/service-genai/internal/core"
 	coremocks "github.com/a-novel/service-genai/internal/core/mocks"
 	"github.com/a-novel/service-genai/internal/dao"
@@ -16,7 +17,7 @@ import (
 func TestGenerationSweep(t *testing.T) {
 	t.Parallel()
 
-	config := core.GenerationSweepConfig{Interval: time.Minute, BatchSize: 10}
+	sweep := config.Sweep{Interval: time.Minute, BatchSize: 10}
 
 	first := runningGeneration(1)
 	second := pendingGeneration()
@@ -99,8 +100,8 @@ func TestGenerationSweep(t *testing.T) {
 
 			sweepDao.EXPECT().
 				Exec(mock.Anything, &dao.GenerationSweepRequest{
-					Interval: config.Interval,
-					Limit:    config.BatchSize,
+					Interval: sweep.Interval,
+					Limit:    sweep.BatchSize,
 				}).
 				Return(testCase.swept, testCase.sweepErr)
 
@@ -116,7 +117,7 @@ func TestGenerationSweep(t *testing.T) {
 				}
 			}
 
-			result, err := core.NewGenerationSweep(config, sweepDao, check).
+			result, err := core.NewGenerationSweep(sweepDao, check, sweep).
 				Exec(t.Context(), &core.GenerationSweepRequest{})
 			require.ErrorIs(t, err, testCase.expectErr)
 			require.Equal(t, testCase.expect, result)

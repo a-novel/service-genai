@@ -15,6 +15,7 @@ import (
 	"github.com/a-novel-kit/golib/otel"
 	"github.com/a-novel-kit/golib/transaction"
 
+	"github.com/a-novel/service-genai/internal/config"
 	"github.com/a-novel/service-genai/internal/dao"
 	"github.com/a-novel/service-genai/internal/lib/connectors"
 )
@@ -64,25 +65,6 @@ type GenerationCheckDaoGet interface {
 	Exec(ctx context.Context, request *dao.GenerationGetRequest) (*dao.Generation, error)
 }
 
-// GenerationCheckDaos are the data-access dependencies of a [GenerationCheck]. Grouping them
-// prevents positional swaps between interfaces that all take a request and return a generation.
-type GenerationCheckDaos struct {
-	BeginStart   GenerationCheckDaoBeginStart
-	ReleaseStart GenerationCheckDaoReleaseStart
-	Record       GenerationCheckDaoRecordProviderCall
-	Settle       GenerationCheckDaoSettle
-	Requeue      GenerationCheckDaoRequeue
-	Attempt      GenerationCheckDaoAttemptInsert
-	Usage        GenerationCheckDaoUsageInsert
-	Get          GenerationCheckDaoGet
-}
-
-// GenerationCheckConfig is what a [GenerationCheck] needs to run.
-type GenerationCheckConfig struct {
-	// Retention is how long a settled generation's user content survives before the purge.
-	Retention time.Duration
-}
-
 // GenerationCheckRequest carries the generation to check, as last read.
 type GenerationCheckRequest struct {
 	// Generation is the generation as the caller last read it.
@@ -95,23 +77,48 @@ type GenerationCheckRequest struct {
 // No process owns a generation. Every transition is a conditional write fenced by what the check
 // read, so concurrent checks are safe and a check interrupted at any point is redone by the next.
 type GenerationCheck struct {
-	config     GenerationCheckConfig
-	logger     GenerationCheckLogger
-	registry   connectors.Registry
-	transactor transaction.Transactor
-	daos       GenerationCheckDaos
+	daoBeginStart   GenerationCheckDaoBeginStart
+	daoReleaseStart GenerationCheckDaoReleaseStart
+	daoRecord       GenerationCheckDaoRecordProviderCall
+	daoSettle       GenerationCheckDaoSettle
+	daoRequeue      GenerationCheckDaoRequeue
+	daoAttempt      GenerationCheckDaoAttemptInsert
+	daoUsage        GenerationCheckDaoUsageInsert
+	daoGet          GenerationCheckDaoGet
+	registry        connectors.Registry
+	transactor      transaction.Transactor
+	logger          GenerationCheckLogger
+	generations     config.Generations
 }
 
 // NewGenerationCheck returns a new GenerationCheck service.
 func NewGenerationCheck(
-	config GenerationCheckConfig,
-	logger GenerationCheckLogger,
+	daoBeginStart GenerationCheckDaoBeginStart,
+	daoReleaseStart GenerationCheckDaoReleaseStart,
+	daoRecord GenerationCheckDaoRecordProviderCall,
+	daoSettle GenerationCheckDaoSettle,
+	daoRequeue GenerationCheckDaoRequeue,
+	daoAttempt GenerationCheckDaoAttemptInsert,
+	daoUsage GenerationCheckDaoUsageInsert,
+	daoGet GenerationCheckDaoGet,
 	registry connectors.Registry,
 	transactor transaction.Transactor,
-	daos GenerationCheckDaos,
+	logger GenerationCheckLogger,
+	generations config.Generations,
 ) *GenerationCheck {
 	return &GenerationCheck{
-		config: config, logger: logger, registry: registry, transactor: transactor, daos: daos,
+		daoBeginStart:   daoBeginStart,
+		daoReleaseStart: daoReleaseStart,
+		daoRecord:       daoRecord,
+		daoSettle:       daoSettle,
+		daoRequeue:      daoRequeue,
+		daoAttempt:      daoAttempt,
+		daoUsage:        daoUsage,
+		daoGet:          daoGet,
+		registry:        registry,
+		transactor:      transactor,
+		logger:          logger,
+		generations:     generations,
 	}
 }
 
@@ -163,7 +170,7 @@ func (service *GenerationCheck) Exec(
 
 	if errors.Is(err, dao.ErrGenerationChanged) {
 		// Another check committed first. Its result is the answer.
-		checked, err = service.daos.Get.Exec(ctx, &dao.GenerationGetRequest{
+		checked, err = service.daoGet.Exec(ctx, &dao.GenerationGetRequest{
 			ID: generation.ID, OwnerID: generation.OwnerID,
 		})
 	}
@@ -211,7 +218,7 @@ func (service *GenerationCheck) start(ctx context.Context, generation *dao.Gener
 	// Taken before the intent is recorded, so it can only overstate the intent's age.
 	began := time.Now()
 
-	intent, err := service.daos.BeginStart.Exec(ctx, &dao.GenerationBeginStartRequest{ID: generation.ID})
+	intent, err := service.daoBeginStart.Exec(ctx, &dao.GenerationBeginStartRequest{ID: generation.ID})
 	if err != nil {
 		return nil, otel.ReportError(span, fmt.Errorf("begin start: %w", err))
 	}
@@ -246,7 +253,7 @@ func (service *GenerationCheck) start(ctx context.Context, generation *dao.Gener
 	recordCtx, cancelRecord := context.WithTimeout(ctx, persistenceTimeout)
 	defer cancelRecord()
 
-	recorded, err := service.daos.Record.Exec(recordCtx, &dao.GenerationRecordProviderCallRequest{
+	recorded, err := service.daoRecord.Exec(recordCtx, &dao.GenerationRecordProviderCallRequest{
 		ID: intent.ID, Attempt: intent.Attempt, ProviderCallID: call.ID,
 	})
 	if err != nil {
@@ -273,7 +280,7 @@ func (service *GenerationCheck) releaseStart(
 	releaseCtx, cancel := context.WithTimeout(ctx, persistenceTimeout)
 	defer cancel()
 
-	released, err := service.daos.ReleaseStart.Exec(releaseCtx, &dao.GenerationReleaseStartRequest{
+	released, err := service.daoReleaseStart.Exec(releaseCtx, &dao.GenerationReleaseStartRequest{
 		ID: intent.ID, Attempt: intent.Attempt, Delay: delay,
 	})
 	if err != nil {
@@ -294,7 +301,7 @@ func (service *GenerationCheck) carriesCall(ctx context.Context, intent *dao.Gen
 	defer cancel()
 
 	// The read's own span carries its failure; here it is a handled outcome.
-	current, err := service.daos.Get.Exec(getCtx, &dao.GenerationGetRequest{ID: intent.ID, OwnerID: intent.OwnerID})
+	current, err := service.daoGet.Exec(getCtx, &dao.GenerationGetRequest{ID: intent.ID, OwnerID: intent.OwnerID})
 	if err != nil {
 		return true
 	}
@@ -380,10 +387,12 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 		return settled, nil
 	}
 
+	// How long the call has run, by the database clock. A recorded call always has its start.
+	age := generation.CheckedAt.Sub(*generation.StartRequestedAt)
+
 	// Past the run ceiling the call is stopped: one the provider never finishes, or a key it no longer
-	// accepts, must not hold the owner's slot forever. Both times come from the database clock.
-	overdue := generation.CancelRequestedAt == nil && generation.StartRequestedAt != nil &&
-		generation.CheckedAt.Sub(*generation.StartRequestedAt) >= runCeiling
+	// accepts, must not hold the owner's slot forever.
+	overdue := generation.CancelRequestedAt == nil && age >= runCeiling
 
 	var call *connectors.Call
 
@@ -396,7 +405,7 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 	// The provider can leave a streamed call queued for good when its creation stream was left early.
 	// One still queued past its ceiling is stopped like an overdue call.
 	if err == nil && generation.Streamed && !overdue && generation.CancelRequestedAt == nil &&
-		call.State == connectors.CallQueued && generation.CheckedAt.Sub(*generation.StartRequestedAt) >= streamQueuedCeiling {
+		call.State == connectors.CallQueued && age >= streamQueuedCeiling {
 		overdue = true
 		call, err = connector.Cancel(ctx, *generation.ProviderCallID)
 	}
@@ -459,7 +468,7 @@ func (service *GenerationCheck) requeue(
 	err := service.transactor.WithinTx(ctx, func(ctx context.Context) error {
 		var err error
 
-		requeued, err = service.daos.Requeue.Exec(ctx, &dao.GenerationRequeueRequest{
+		requeued, err = service.daoRequeue.Exec(ctx, &dao.GenerationRequeueRequest{
 			ID:             generation.ID,
 			Attempt:        generation.Attempt,
 			ProviderCallID: *generation.ProviderCallID,
@@ -507,8 +516,8 @@ func (service *GenerationCheck) settle(
 }
 
 // settleFailure records a terminal failure in this service's words, with the provider's answer when
-// it gave one. It runs detached, with its own deadline, so a departing caller cannot leave the
-// generation half-settled.
+// it gave one. It takes a deadline of its own, so a check that spent its budget on a slow start still
+// records the failure.
 func (service *GenerationCheck) settleFailure(
 	ctx context.Context, generation *dao.Generation, message string, response json.RawMessage,
 ) (*dao.Generation, error) {
@@ -545,14 +554,14 @@ func (service *GenerationCheck) commit(
 	err := service.transactor.WithinTx(ctx, func(ctx context.Context) error {
 		var err error
 
-		settled, err = service.daos.Settle.Exec(ctx, &dao.GenerationSettleRequest{
+		settled, err = service.daoSettle.Exec(ctx, &dao.GenerationSettleRequest{
 			ID:               generation.ID,
 			Attempt:          generation.Attempt,
 			StartRequestedAt: generation.StartRequestedAt,
 			ProviderCallID:   generation.ProviderCallID,
 			Status:           status,
 			Error:            message,
-			Retention:        service.config.Retention,
+			Retention:        service.generations.Retention,
 			// The provider may still run the call, so admission keeps counting the generation.
 			OutcomeUnknown: lo.FromPtr(message) == failureOutcomeUnknown,
 		})
@@ -586,7 +595,7 @@ func (service *GenerationCheck) recordUsage(
 		return nil
 	}
 
-	_, err := service.daos.Usage.Exec(ctx, &dao.GenerationUsageInsertRequest{
+	_, err := service.daoUsage.Exec(ctx, &dao.GenerationUsageInsertRequest{
 		GenerationID:      generation.ID,
 		Attempt:           generation.Attempt,
 		OwnerID:           generation.OwnerID,
@@ -625,7 +634,7 @@ func (service *GenerationCheck) recordAttempt(
 		return nil
 	}
 
-	_, err := service.daos.Attempt.Exec(ctx, &dao.GenerationAttemptInsertRequest{
+	_, err := service.daoAttempt.Exec(ctx, &dao.GenerationAttemptInsertRequest{
 		GenerationID: generation.ID,
 		Attempt:      generation.Attempt,
 		Response:     response,

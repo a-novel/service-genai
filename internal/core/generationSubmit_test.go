@@ -528,13 +528,11 @@ func TestGenerationSubmit(t *testing.T) {
 			}
 
 			service := core.NewGenerationSubmit(
-				core.GenerationSubmitConfig{MaxAttempts: maxAttempts, Caps: testCaps},
+				submitDao, attemptDao, usageDao, liveDao, payloadDao, check,
 				testConnectors(t),
 				transactiontest.NewTransactor(),
-				core.GenerationSubmitDaos{
-					Submit: submitDao, Attempts: attemptDao, Usage: usageDao, Live: liveDao, Payload: payloadDao,
-				},
-				check,
+				config.Generations{MaxAttempts: maxAttempts},
+				testCaps,
 			)
 
 			result, err := service.Exec(trace.ContextWithSpanContext(t.Context(), testCaller), testCase.request)
@@ -634,11 +632,16 @@ func submittedKey(t *testing.T, request *core.GenerationSubmitRequest) []byte {
 		})
 
 	service := core.NewGenerationSubmit(
-		core.GenerationSubmitConfig{MaxAttempts: 1, Caps: testCaps},
+		submitDao,
+		coremocks.NewMockGenerationSubmitDaoAttemptList(t),
+		coremocks.NewMockGenerationSubmitDaoUsageSum(t),
+		coremocks.NewMockGenerationSubmitDaoCountLive(t),
+		coremocks.NewMockGenerationSubmitDaoPayloadInsert(t),
+		coremocks.NewMockGenerationSubmitServiceCheck(t),
 		testConnectors(t),
 		transactiontest.NewTransactor(),
-		core.GenerationSubmitDaos{Submit: submitDao},
-		coremocks.NewMockGenerationSubmitServiceCheck(t),
+		config.Generations{MaxAttempts: 1},
+		testCaps,
 	)
 
 	_, err := service.Exec(t.Context(), request)

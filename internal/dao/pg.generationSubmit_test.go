@@ -93,19 +93,19 @@ func TestPgGenerationSubmit(t *testing.T) {
 		submissions []submission
 	}{
 		{
-			name: "Created",
+			name: "Success/Created",
 
 			submissions: []submission{{expectCreated: true}},
 		},
 		{
-			name: "Created/Streamed",
+			name: "Success/CreatedStreamed",
 
 			submissions: []submission{{streamed: true, expectCreated: true}},
 		},
 		{
 			// A resend mints a fresh identifier, exactly as a caller that never saw the first answer
 			// would. The stored generation wins, and the caller is told it did.
-			name: "Replayed",
+			name: "Success/Replayed",
 
 			submissions: []submission{
 				{expectCreated: true},
@@ -113,7 +113,7 @@ func TestPgGenerationSubmit(t *testing.T) {
 			},
 		},
 		{
-			name: "DifferentKey",
+			name: "Success/DifferentKey",
 
 			submissions: []submission{
 				{expectCreated: true},
@@ -121,7 +121,7 @@ func TestPgGenerationSubmit(t *testing.T) {
 			},
 		},
 		{
-			name: "ReplayedWhileRunning",
+			name: "Success/ReplayedWhileRunning",
 
 			submissions: []submission{
 				{expectCreated: true},
@@ -129,7 +129,7 @@ func TestPgGenerationSubmit(t *testing.T) {
 			},
 		},
 		{
-			name: "ReplayedAfterSuccess",
+			name: "Success/ReplayedAfterSuccess",
 
 			submissions: []submission{
 				{expectCreated: true},
@@ -138,7 +138,7 @@ func TestPgGenerationSubmit(t *testing.T) {
 		},
 		{
 			// A failure is reported, not cached: resending the request runs it again.
-			name: "RerunAfterFailure",
+			name: "Success/RerunAfterFailure",
 
 			submissions: []submission{
 				{expectCreated: true},
@@ -146,7 +146,7 @@ func TestPgGenerationSubmit(t *testing.T) {
 			},
 		},
 		{
-			name: "RerunAfterCancellation",
+			name: "Success/RerunAfterCancellation",
 
 			submissions: []submission{
 				{expectCreated: true},
@@ -210,7 +210,7 @@ func TestPgGenerationSubmit(t *testing.T) {
 	// Kept out of the table above because it asserts a property of a set of concurrent calls rather
 	// than a sequence of outcomes. It is the case that matters most: submit exists so a race cannot
 	// produce two priced calls, so the race is what it is tested against.
-	t.Run("Concurrent", func(t *testing.T) {
+	t.Run("Success/Concurrent", func(t *testing.T) {
 		t.Parallel()
 
 		const concurrency = 8

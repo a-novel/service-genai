@@ -76,20 +76,18 @@ func main() {
 	}))
 
 	serviceCheck := core.NewGenerationCheck(
-		core.GenerationCheckConfig{Retention: cfg.Generations.Retention},
-		cfg.Logger,
+		daoBeginStart,
+		daoReleaseStart,
+		daoRecordProviderCall,
+		daoSettle,
+		daoRequeue,
+		daoAttemptInsert,
+		daoUsageInsert,
+		daoGet,
 		registry,
 		postgres.NewTransactor(nil),
-		core.GenerationCheckDaos{
-			BeginStart:   daoBeginStart,
-			ReleaseStart: daoReleaseStart,
-			Record:       daoRecordProviderCall,
-			Settle:       daoSettle,
-			Requeue:      daoRequeue,
-			Attempt:      daoAttemptInsert,
-			Usage:        daoUsageInsert,
-			Get:          daoGet,
-		},
+		cfg.Logger,
+		cfg.Generations,
 	)
 	serviceNotify := core.NewGenerationNotify(daoGetByCall, serviceCheck, registry)
 

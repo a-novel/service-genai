@@ -89,7 +89,6 @@ func withCancel(generation *dao.Generation) *dao.Generation {
 	return generation
 }
 
-// withProvider moves the generation to another provider.
 // startedAgo backdates a generation's start by the given age before testNow.
 func startedAgo(generation *dao.Generation, age time.Duration) *dao.Generation {
 	started := testNow.Add(-age)
@@ -118,6 +117,7 @@ func submittedAgo(generation *dao.Generation, age time.Duration) *dao.Generation
 	return generation
 }
 
+// withProvider moves the generation to another provider.
 func withProvider(generation *dao.Generation, provider string) *dao.Generation {
 	generation.Provider = provider
 

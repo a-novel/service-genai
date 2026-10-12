@@ -56,7 +56,7 @@ func TestGenerationNotify(t *testing.T) {
 		},
 		{
 			// An event the service does not act on is acknowledged, so the provider stops sending it.
-			name: "Ignored",
+			name: "Success/Ignored",
 
 			request:          &core.GenerationNotifyRequest{Provider: testNotifier, Body: []byte("{}")},
 			notificationMock: &notificationMock{err: connectors.ErrNotificationIgnored},
@@ -65,7 +65,7 @@ func TestGenerationNotify(t *testing.T) {
 		},
 		{
 			// Purged since, or started by another user of the provider account.
-			name: "UnknownCall",
+			name: "Success/UnknownCall",
 
 			request:          &core.GenerationNotifyRequest{Provider: testNotifier, Body: []byte("{}")},
 			notificationMock: &notificationMock{resp: &connectors.Notification{CallID: testCallID}},
