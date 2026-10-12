@@ -43,9 +43,10 @@ func TestApp(t *testing.T) {
 			expectErr: config.ErrInvalidConfig,
 		},
 		{
-			name: "Error/NoRetention",
+			// The purge would end an unknown outcome's hold on its owner's slot early.
+			name: "Error/RetentionBelowHold",
 
-			adjust: func(app *config.App) { app.Generations.Retention = 0 },
+			adjust: func(app *config.App) { app.Generations.Retention = 10 * time.Minute },
 
 			expectErr: config.ErrInvalidConfig,
 		},

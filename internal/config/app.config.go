@@ -20,6 +20,11 @@ var ErrInvalidConfig = errors.New("invalid configuration")
 // well inside that window.
 const SweepIntervalCeiling = 5 * time.Minute
 
+// UnknownOutcomeHold is how long a generation that failed with its call's outcome unknown keeps its
+// concurrency slot: the provider may still run a call that nothing tracks or meters, so resending
+// cannot multiply untracked spend. The retention outlasts it, or the purge would end the hold early.
+const UnknownOutcomeHold = 15 * time.Minute
+
 // Main holds the top-level application settings.
 type Main struct {
 	// Name of the application, as it appears in logs and tracing.
@@ -93,8 +98,8 @@ func (app App) Validate() error {
 		return fmt.Errorf("%w: the check interval must be positive", ErrInvalidConfig)
 	case app.Generations.MaxAttempts < 1 || app.Generations.MaxAttempts > 10:
 		return fmt.Errorf("%w: max attempts must be between 1 and 10", ErrInvalidConfig)
-	case app.Generations.Retention <= 0:
-		return fmt.Errorf("%w: the retention must be positive", ErrInvalidConfig)
+	case app.Generations.Retention < UnknownOutcomeHold:
+		return fmt.Errorf("%w: the retention must be at least %s", ErrInvalidConfig, UnknownOutcomeHold)
 	case app.Sweep.Interval <= 0 || app.Sweep.Interval > SweepIntervalCeiling:
 		return fmt.Errorf("%w: the sweep interval must be positive and at most %s", ErrInvalidConfig, SweepIntervalCeiling)
 	case app.Sweep.BatchSize < 1 || app.Sweep.BatchSize > 100:
