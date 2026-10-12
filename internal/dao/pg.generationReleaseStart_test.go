@@ -92,6 +92,8 @@ func TestPgGenerationReleaseStart(t *testing.T) {
 				require.Equal(t, dao.GenerationStatusPending, released.Status)
 				require.Equal(t, int16(0), released.Attempt)
 				require.Nil(t, released.StartRequestedAt)
+				// The attempt's retries stay bounded from its first start.
+				require.Equal(t, generation.FirstStartRequestedAt, released.FirstStartRequestedAt)
 				require.GreaterOrEqual(t, released.RunAt.Sub(*generation.StartRequestedAt), delay)
 			})
 		})

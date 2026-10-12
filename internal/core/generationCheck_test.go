@@ -124,12 +124,23 @@ func TestGenerationCheck(t *testing.T) {
 			// A request the provider keeps turning away must not hold a concurrency slot forever.
 			name: "Success/StartRetriesExhausted",
 
-			generation: submittedAgo(pendingGeneration(), time.Hour),
+			generation: retryingSince(pendingGeneration(), time.Hour),
 			startErr:   connectors.ErrRetryable,
 
 			expectStart:  true,
 			expectSettle: &settle{attempt: 1, status: dao.GenerationStatusFailed, reason: &startFailedMessage},
 			expectStatus: dao.GenerationStatusFailed,
+		},
+		{
+			// The retries are the attempt's own: one requeued after a long call still gets them.
+			name: "Success/RequeuedStartRateLimited",
+
+			generation: submittedAgo(pendingGeneration(), time.Hour),
+			startErr:   connectors.ErrRetryable,
+
+			expectStart:   true,
+			expectRelease: true,
+			expectStatus:  dao.GenerationStatusPending,
 		},
 		{
 			// The connector creates a streamed generation's call in streaming mode.
@@ -609,6 +620,8 @@ func TestGenerationCheck(t *testing.T) {
 			intent := startingGeneration(0)
 			intent.CreatedAt = generation.CreatedAt
 			intent.Streamed = generation.Streamed
+			// The attempt's first start survives a released one, as the intent's write keeps it.
+			intent.FirstStartRequestedAt = lo.CoalesceOrEmpty(generation.FirstStartRequestedAt, intent.StartRequestedAt)
 
 			// usageOf is the Usage Record of a call answered for an attempt. The test provider reports
 			// no start, so the call is timed from when it was sent.

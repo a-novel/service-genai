@@ -89,6 +89,14 @@ func withCancel(generation *dao.Generation) *dao.Generation {
 	return generation
 }
 
+// retryingSince dates the current attempt's first start the given age before testNow.
+func retryingSince(generation *dao.Generation, age time.Duration) *dao.Generation {
+	first := testNow.Add(-age)
+	generation.FirstStartRequestedAt = &first
+
+	return generation
+}
+
 // startedAgo backdates a generation's start by the given age before testNow.
 func startedAgo(generation *dao.Generation, age time.Duration) *dao.Generation {
 	started := testNow.Add(-age)

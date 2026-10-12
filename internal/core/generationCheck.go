@@ -352,7 +352,10 @@ func (service *GenerationCheck) failStart(
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(failStart)")
 	defer span.End()
 
-	if errors.Is(cause, connectors.ErrRetryable) && intent.StartRequestedAt.Sub(intent.CreatedAt) < startRetryCeiling {
+	// BeginStart sets the attempt's first start along with its intent.
+	retrying := intent.StartRequestedAt.Sub(*intent.FirstStartRequestedAt)
+
+	if errors.Is(cause, connectors.ErrRetryable) && retrying < startRetryCeiling {
 		released, err := service.releaseStart(ctx, intent, retryDelay)
 		if err != nil {
 			return nil, otel.ReportError(span, fmt.Errorf("release start: %w", err))
@@ -766,8 +769,8 @@ const (
 	checkTimeout = 45 * time.Second
 	// retryDelay postpones a fresh call after a rate limit or a retryable provider failure.
 	retryDelay = 15 * time.Second
-	// startRetryCeiling bounds how long a generation keeps retrying a start the provider turns away,
-	// measured from its submission. Past it the generation fails, so a request the provider never
+	// startRetryCeiling bounds how long an attempt keeps retrying a start the provider turns away,
+	// measured from its first start. Past it the generation fails, so a request the provider never
 	// accepts cannot hold a concurrency slot forever.
 	startRetryCeiling = 10 * time.Minute
 	// runCeiling bounds how long a call may run once started. Long reasoning runs take tens of
