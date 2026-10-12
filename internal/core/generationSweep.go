@@ -74,11 +74,15 @@ func (service *GenerationSweep) Exec(
 	)
 
 	for _, generation := range generations {
+		select {
+		case slots <- struct{}{}:
+		case <-ctx.Done():
+		}
+
+		// A stopping process sends no new start: the generations left are checked by a later pass.
 		if ctx.Err() != nil {
 			break
 		}
-
-		slots <- struct{}{}
 
 		checks.Go(func() {
 			defer func() { <-slots }()
