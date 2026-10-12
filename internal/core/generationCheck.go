@@ -806,8 +806,9 @@ func settleOutcomeOf(generation *dao.Generation, call *connectors.Call) (dao.Gen
 
 const (
 	// startTimeout bounds a start call. Background mode answers once the provider queues the work,
-	// and the start plus its id write must finish inside Cloud Run's ten-second shutdown window.
-	startTimeout = 5 * time.Second
+	// usually within a second, but a start cut after its request left is ambiguous and may run unread,
+	// so a slow provider gets time to answer. A deploy that stops a start in flight loses it either way.
+	startTimeout = 20 * time.Second
 	// persistenceTimeout bounds a write that runs detached from a cancelled caller.
 	persistenceTimeout = 2 * time.Second
 	// streamStartTimeout bounds a streamed start, which waits for the provider to begin the call.
@@ -815,12 +816,13 @@ const (
 	// streamQueuedCeiling is how long a streamed call may stay queued before it is stopped.
 	streamQueuedCeiling = 5 * time.Minute
 	// startOutcomeUnknownAfter is how old a start intent without an id must be before no start can
-	// still be in flight for it. Well above streamStartTimeout plus persistenceTimeout.
+	// still be in flight for it. A start leaves within startTimeout of its intent, then lasts at most
+	// streamStartTimeout plus its writes, which stays under it.
 	startOutcomeUnknownAfter = time.Minute
-	// checkTimeout bounds a whole check, detached from its caller. A start that proceeds takes under
-	// startTimeout to begin, then at most streamStartTimeout plus persistenceTimeout; a read takes
-	// the connector's ten seconds plus its commit.
-	checkTimeout = 45 * time.Second
+	// checkTimeout bounds a whole check, detached from its caller: a start, as bounded above, or a
+	// read that takes the connector's ten seconds, twice for a stop that finds the call finished, plus
+	// its commit.
+	checkTimeout = time.Minute
 	// retryDelay postpones a fresh call after a rate limit or a retryable provider failure.
 	retryDelay = 15 * time.Second
 	// startRetryCeiling bounds how long an attempt keeps retrying a start the provider turns away,
