@@ -72,7 +72,8 @@ type Client interface {
 	// provider's own request, which the service forwards without reading. Resending the same request
 	// is a replay: it returns the pending, running or succeeded generation rather than paying again,
 	// and the response reports which happened. A request whose generation failed or was cancelled
-	// runs again.
+	// runs again. A streamed submit answers once the provider begins the call: give it a deadline of
+	// at least 35 seconds.
 	GenerationSubmit(
 		ctx context.Context, req *GenerationSubmitRequest, opts ...grpc.CallOption,
 	) (*GenerationSubmitResponse, error)

@@ -20,10 +20,18 @@ grpcurl -plaintext localhost:${SERVICE_GENAI_GRPC_PORT} grpc.health.v1.Health/Ch
 grpcurl -plaintext localhost:${SERVICE_GENAI_GRPC_PORT} anovel.genai.v0.StatusService/Status
 ```
 
-The notification server (`a-novel run start service-genai/rest`) listens on `${SERVICE_GENAI_REST_PORT}`. No provider reaches a local stack, so polls and the sweep settle its generations.
+The notification server (`a-novel run start service-genai/rest`) listens on `${SERVICE_GENAI_REST_PORT}`. No provider reaches a local stack and nothing schedules its sweep, so polls settle its generations.
 
 ```bash
 curl localhost:${SERVICE_GENAI_REST_PORT}/ping
+```
+
+To sweep a local stack by hand, start the sweep server with the stack's environment and post to it:
+
+```bash
+eval "$(a-novel run env service-genai)"
+REST_PORT=8090 go run ./cmd/sweep &
+curl -X POST localhost:8090/sweep
 ```
 
 ### Generations
