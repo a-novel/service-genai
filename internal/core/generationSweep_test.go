@@ -26,6 +26,8 @@ func TestGenerationSweep(t *testing.T) {
 	type batchMock struct {
 		swept []*dao.Generation
 		err   error
+		// shutdown ends the call's context while the batch is taken, as a stopping server does.
+		shutdown bool
 	}
 
 	type checkMock struct {
@@ -102,6 +104,23 @@ func TestGenerationSweep(t *testing.T) {
 			expect: &core.GenerationSweepResult{Checked: 1},
 		},
 		{
+			// A stopping server starts no check, not even of a batch already taken: it waits for a
+			// later call.
+			name: "Success/ShutdownStopsDispatch",
+
+			batches: []batchMock{{swept: []*dao.Generation{first, second}, shutdown: true}},
+
+			expect: &core.GenerationSweepResult{Checked: 2},
+		},
+		{
+			// A query cut by the shutdown is no failure: the call ends with what it checked.
+			name: "Success/ShutdownDuringQuery",
+
+			batches: []batchMock{{err: context.Canceled, shutdown: true}},
+
+			expect: &core.GenerationSweepResult{},
+		},
+		{
 			// A caller that cannot wait out a check gets none, and learns its deadline is the cause.
 			name: "Error/DeadlineTooShort",
 
@@ -122,6 +141,9 @@ func TestGenerationSweep(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+
 			sweepDao := coremocks.NewMockGenerationSweepDao(t)
 			check := coremocks.NewMockGenerationSweepServiceCheck(t)
 
@@ -131,7 +153,13 @@ func TestGenerationSweep(t *testing.T) {
 						Interval: sweep.Interval,
 						Limit:    sweep.BatchSize,
 					}).
-					Return(batch.swept, batch.err).
+					RunAndReturn(func(context.Context, *dao.GenerationSweepRequest) ([]*dao.Generation, error) {
+						if batch.shutdown {
+							cancel()
+						}
+
+						return batch.swept, batch.err
+					}).
 					Once()
 			}
 
@@ -147,13 +175,11 @@ func TestGenerationSweep(t *testing.T) {
 				}
 			}
 
-			ctx := t.Context()
-
 			if testCase.deadline > 0 {
-				var cancel context.CancelFunc
+				var cancelDeadline context.CancelFunc
 
-				ctx, cancel = context.WithTimeout(ctx, testCase.deadline)
-				defer cancel()
+				ctx, cancelDeadline = context.WithTimeout(ctx, testCase.deadline)
+				defer cancelDeadline()
 			}
 
 			result, err := core.NewGenerationSweep(sweepDao, check, sweep).Exec(ctx, &core.GenerationSweepRequest{})

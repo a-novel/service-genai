@@ -108,7 +108,7 @@ func main() {
 
 	router.Get("/ping", handlerPing.ServeHTTP)
 	router.Get("/healthcheck", handlerHealth.ServeHTTP)
-	router.Post("/sweep", handlerSweep.ServeHTTP)
+	router.With(httpf.EndOnShutdown(ctx)).Post("/sweep", handlerSweep.ServeHTTP)
 
 	// =================================================================================================================
 	// RUN
