@@ -42,8 +42,7 @@ func (caps Caps) Validate() error {
 	}
 
 	// A user whose tier is unknown must always be bounded: -1 lifts the limit, but only on purpose.
-	if globalDefault := caps.Global[DefaultTier]; globalDefault.Concurrency == nil &&
-		!globalDefault.Unlimited && !globalDefault.Forbidden {
+	if globalDefault := caps.Global[DefaultTier]; globalDefault.Concurrency == nil && !globalDefault.Forbidden {
 		return fmt.Errorf("%w: global: the %q tier sets no concurrency", ErrInvalidConfig, DefaultTier)
 	}
 
@@ -69,7 +68,7 @@ func (caps TierCaps) validate() error {
 	}
 
 	for tier, capOfTier := range caps {
-		if capOfTier.Unlimited || capOfTier.Forbidden {
+		if capOfTier.Forbidden {
 			continue
 		}
 
@@ -97,12 +96,11 @@ func (caps TierCaps) validate() error {
 
 // Cap is one user tier's limits within a scope: a purpose, or every purpose for the global caps.
 type Cap struct {
-	// Unlimited lifts every limit, concurrency included, written -1 in the file.
-	Unlimited bool
 	// Forbidden allows no usage, written 0 in the file.
 	Forbidden bool
 	// Concurrency is how many generations of the scope one user may have pending or running at
-	// once; -1 lifts it. Nil sets no concurrency limit.
+	// once; -1 lifts it. Nil sets no concurrency limit. A cap written -1 in the file sets -1 and no
+	// window, which lifts every limit.
 	Concurrency *int
 	// Windows maps a rolling duration to the usage it allows.
 	Windows map[time.Duration]Limit
@@ -128,7 +126,7 @@ func (capOfTier *Cap) UnmarshalYAML(unmarshal func(any) error) error {
 	if unmarshal(&scalar) == nil {
 		switch scalar {
 		case -1:
-			capOfTier.Unlimited = true
+			capOfTier.Concurrency = new(-1)
 		case 0:
 			capOfTier.Forbidden = true
 		default:
