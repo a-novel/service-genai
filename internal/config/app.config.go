@@ -54,12 +54,13 @@ type Generations struct {
 	Retention time.Duration `json:"retention" yaml:"retention"`
 }
 
-// OpenAI holds how the OpenAI connector reaches the Responses API.
+// OpenAI holds how the OpenAI connector reaches the Responses API. The entrypoints convert it to the
+// connector's own configuration, so its fields stay the same, in the same order.
 type OpenAI struct {
-	// APIKey authenticates against OpenAI. The only credential this service holds.
-	APIKey string `json:"-" yaml:"-"`
 	// BaseURL is the Responses API endpoint.
 	BaseURL string `json:"baseURL" yaml:"baseURL"`
+	// APIKey authenticates against OpenAI. The only credential this service holds.
+	APIKey string `json:"-" yaml:"-"`
 	// WebhookSecret verifies OpenAI's webhook notifications. Empty, none is read.
 	WebhookSecret string `json:"-" yaml:"-"`
 }
