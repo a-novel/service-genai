@@ -617,7 +617,7 @@ func (service *GenerationCheck) settleFailure(
 
 	service.logFailure(ctx, generation, cause)
 
-	settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), persistenceTimeout)
+	settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), settleTimeout)
 	defer cancel()
 
 	settled, err := service.commit(
@@ -812,6 +812,10 @@ const (
 	startTimeout = 20 * time.Second
 	// persistenceTimeout bounds a write that runs detached from a cancelled caller.
 	persistenceTimeout = 2 * time.Second
+	// settleTimeout bounds a failure's settle. A transaction never commits once its client gave up,
+	// unlike a single statement the database finishes anyway, so it outlasts the three seconds a
+	// migration waits for a lock: a settle queued behind one still lands.
+	settleTimeout = 4 * time.Second
 	// streamStartTimeout bounds a streamed start, which waits for the provider to begin the call.
 	streamStartTimeout = 30 * time.Second
 	// streamQueuedCeiling is how long a streamed call may stay queued before it is stopped.
