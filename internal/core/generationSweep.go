@@ -58,7 +58,8 @@ func NewGenerationSweep(
 }
 
 // Exec checks one batch after another while each comes back full, so a backlog drains in one call.
-// It starts no check its caller's deadline could not wait out, so it answers before that deadline.
+// It starts no check its caller's deadline could not wait out, and none once its context ends, as
+// when the server stops: it answers once the checks it started finish.
 func (service *GenerationSweep) Exec(
 	ctx context.Context, _ *GenerationSweepRequest,
 ) (*GenerationSweepResult, error) {
@@ -103,6 +104,11 @@ func (service *GenerationSweep) sweepBatch(ctx context.Context, lastStart time.T
 	generations, err := service.dao.Exec(ctx, &dao.GenerationSweepRequest{
 		Interval: service.sweep.Interval, Limit: service.sweep.BatchSize,
 	})
+	// A sweep stopped during its query checks nothing; what the query took waits for a later call.
+	if err != nil && ctx.Err() != nil {
+		return 0, nil
+	}
+
 	if err != nil {
 		return 0, otel.ReportError(span, fmt.Errorf("sweep generations: %w", err))
 	}
