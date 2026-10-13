@@ -51,6 +51,9 @@ var (
 	ErrNotificationInvalid = errors.New("notification failed verification")
 	// ErrNotificationIgnored means a notification reports nothing this service acts on.
 	ErrNotificationIgnored = errors.New("notification ignored")
+	// ErrResponseTooLarge means the provider's answer is larger than the connector reads: the call
+	// cannot be read, however often it is asked.
+	ErrResponseTooLarge = errors.New("provider response too large")
 )
 
 // RejectionError is a start the provider refused outright. Nothing ran, so nothing was paid.

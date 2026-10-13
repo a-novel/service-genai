@@ -42,6 +42,7 @@ func TestGenerationCheck(t *testing.T) {
 	unavailableMessage := "no connector serves the generation's provider"
 	overdueMessage := "the provider did not finish the call in time, so it was stopped"
 	notStoppedMessage := "the call could not be stopped, and the provider may still run it"
+	tooLargeMessage := "the provider's response is larger than the 24 MiB this service reads"
 	// runCeilingForTest mirrors the run ceiling, past which every call is stopped.
 	const runCeilingForTest = 2 * time.Hour
 
@@ -650,6 +651,19 @@ func TestGenerationCheck(t *testing.T) {
 
 			expectSettle: &settle{
 				attempt: 1, callID: &callID, status: dao.GenerationStatusFailed, reason: &lostMessage,
+			},
+			expectStatus: dao.GenerationStatusFailed,
+		},
+		{
+			// No read can ever get the call's answer, nor tell whether it still runs: the slot stays held.
+			name: "Success/ResponseTooLarge",
+
+			generation: runningGeneration(1),
+			observeErr: fmt.Errorf("%w: %w", connectors.ErrResponseTooLarge, errFoo),
+
+			expectSettle: &settle{
+				attempt: 1, callID: &callID, status: dao.GenerationStatusFailed, reason: &tooLargeMessage,
+				outcomeUnknown: true,
 			},
 			expectStatus: dao.GenerationStatusFailed,
 		},

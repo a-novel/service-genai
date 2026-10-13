@@ -20,6 +20,10 @@ var ErrInvalidConfig = errors.New("invalid configuration")
 // well inside that window.
 const SweepIntervalCeiling = 5 * time.Minute
 
+// MaxAttemptsCeiling bounds the provider calls a generation gets. A generation carries each answered
+// call's response, at most 24 MiB, so two of them fit the 64 MiB message a client receives.
+const MaxAttemptsCeiling = 2
+
 // UnknownOutcomeHold is how long a generation that failed with its call's outcome unknown keeps its
 // purpose's concurrency slot: the provider may still run a call that nothing tracks or meters, so
 // resending cannot multiply untracked spend. The retention outlasts it, or the purge would end the hold early.
@@ -41,6 +45,8 @@ type Sweep struct {
 	Interval time.Duration `json:"interval" yaml:"interval"`
 	// BatchSize caps the generations one batch of a sweep takes.
 	BatchSize int `json:"batchSize" yaml:"batchSize"`
+	// Concurrency caps the checks one batch runs at once.
+	Concurrency int `json:"concurrency" yaml:"concurrency"`
 }
 
 // Generations holds how generations are run and kept.
@@ -98,14 +104,16 @@ func (app App) Validate() error {
 	switch {
 	case app.Generations.CheckInterval <= 0:
 		return fmt.Errorf("%w: the check interval must be positive", ErrInvalidConfig)
-	case app.Generations.MaxAttempts < 1 || app.Generations.MaxAttempts > 10:
-		return fmt.Errorf("%w: max attempts must be between 1 and 10", ErrInvalidConfig)
+	case app.Generations.MaxAttempts < 1 || app.Generations.MaxAttempts > MaxAttemptsCeiling:
+		return fmt.Errorf("%w: max attempts must be between 1 and %d", ErrInvalidConfig, MaxAttemptsCeiling)
 	case app.Generations.Retention < UnknownOutcomeHold:
 		return fmt.Errorf("%w: the retention must be at least %s", ErrInvalidConfig, UnknownOutcomeHold)
 	case app.Sweep.Interval <= 0 || app.Sweep.Interval > SweepIntervalCeiling:
 		return fmt.Errorf("%w: the sweep interval must be positive and at most %s", ErrInvalidConfig, SweepIntervalCeiling)
 	case app.Sweep.BatchSize < 1 || app.Sweep.BatchSize > 100:
 		return fmt.Errorf("%w: the sweep batch size must be between 1 and 100", ErrInvalidConfig)
+	case app.Sweep.Concurrency < 1:
+		return fmt.Errorf("%w: the sweep concurrency must be positive", ErrInvalidConfig)
 	}
 
 	err := app.Caps.Validate()

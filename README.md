@@ -53,7 +53,7 @@ The service runs as published OCI images plus a PostgreSQL database. All state l
 
 Pin every image to the same release tag — see the [latest release](https://github.com/a-novel/service-genai/releases/latest). A production deployment runs `database`, then the migrations job to completion, then any number of `grpc` replicas, the `sweep` server, and optionally `rest` replicas. Provide `POSTGRES_HOST`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DATABASE` and `OPENAI_API_KEY` through the orchestrator; store the password and the API key as secrets. A caller controls the whole payload, including the model and the provider's built-in tools, so grant invocation to calling services only and restrict the OpenAI key to the Responses endpoints.
 
-Callers poll for results, and each poll checks its generation with the provider. The `sweep` server checks the generations nobody polled, so a result is captured before the provider discards it, a stuck call is stopped and a user's concurrency slot freed. Run it privately, and have a scheduler `POST /sweep` every `SWEEP_INTERVAL`: on Google Cloud, Cloud Scheduler with an OIDC token for the only identity allowed to invoke it. A call checks batch after batch and answers within two minutes. Every server does its work inside a request, so none needs CPU outside of them; each needs outbound access to the provider's API. A check its caller abandons only resumes with the server's next request, so give a streamed submit, which answers once the provider begins the call, a deadline of at least 35 seconds.
+Callers poll for results, and each poll checks its generation with the provider. The `sweep` server checks the generations nobody polled, so a result is captured before the provider discards it, a stuck call is stopped and a user's concurrency slot freed. Run it privately, and have a scheduler `POST /sweep` every `SWEEP_INTERVAL`: on Google Cloud, Cloud Scheduler with an OIDC token for the only identity allowed to invoke it. A call checks batch after batch, as many generations at once as its connection pool has connections, eight at most, and answers within two minutes. Every server does its work inside a request, so none needs CPU outside of them; each needs outbound access to the provider's API. A check its caller abandons only resumes with the server's next request, so give a streamed submit, which answers once the provider begins the call, a deadline of at least 35 seconds.
 
 The `rest` image checks a generation the moment its provider reports the call ended, instead of on the next poll or sweep. It serves `POST /webhooks/{provider}`, `/ping` and `/healthcheck`, reuses the database and the migrations, and needs the same variables as `grpc` plus `OPENAI_WEBHOOK_SECRET`. To enable it for OpenAI, expose it publicly, then create a webhook endpoint in the OpenAI project's settings pointing at `https://<host>/webhooks/openai`, subscribed to `response.completed`, `response.failed`, `response.cancelled` and `response.incomplete`, and store its signing secret. Polls and the sweep keep working for a notification that never comes; once notifications flow, raise `CHECK_INTERVAL` so polls stop reaching the provider.
 
@@ -170,13 +170,13 @@ OpenAI connector (all servers). The endpoint must meet the [provider requirement
 
 Checks (all servers) and sweep (`sweep`). [Generation checks](./docs/operations/generation-checks.md) explains how they move a generation forward.
 
-| Name               | Description                                                                                                                   | Default |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------- | ------- |
-| `CHECK_INTERVAL`   | How long a check stays fresh. However often callers poll, a generation reaches the provider at most once per interval.        | `2s`    |
-| `SWEEP_INTERVAL`   | How stale a generation must be for the sweep. Schedule the sweep at least this often. At most `5m`.                           | `1m`    |
-| `SWEEP_BATCH_SIZE` | Generations one batch of a sweep takes, from 1 to 100. A sweep takes another batch while each comes back full.                | `50`    |
-| `MAX_ATTEMPTS`     | Provider calls a generation gets when a call fails retryably, from 1 to 10. Each one is paid. A streamed generation gets one. | `2`     |
-| `RETENTION`        | How long a settled generation, its attempts and its request key survive before the purge deletes them. At least `15m`.        | `6h`    |
+| Name               | Description                                                                                                                                                          | Default |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| `CHECK_INTERVAL`   | How long a check stays fresh. However often callers poll, a generation reaches the provider at most once per interval.                                               | `2s`    |
+| `SWEEP_INTERVAL`   | How stale a generation must be for the sweep. Schedule the sweep at least this often. At most `5m`.                                                                  | `1m`    |
+| `SWEEP_BATCH_SIZE` | Generations one batch of a sweep takes, from 1 to 100. A sweep takes another batch while each comes back full.                                                       | `50`    |
+| `MAX_ATTEMPTS`     | Provider calls a generation gets when a call fails retryably, 1 or 2, so a generation's responses fit one message. Each one is paid. A streamed generation gets one. | `2`     |
+| `RETENTION`        | How long a settled generation, its attempts and its request key survive before the purge deletes them. At least `15m`.                                               | `6h`    |
 
 gRPC server:
 
@@ -202,6 +202,8 @@ REST servers (images `rest` and `sweep`). Every notification comes from the prov
 | `REST_TIMEOUT_IDLE`         | Idle keep-alive timeout.                                                                                                                      | `60s`           |
 | `REST_TIMEOUT_REQUEST`      | Per-request timeout. A sweep starts no check this deadline could not wait out, and a check takes a minute at most, so keep it above a minute. | `2m`            |
 | `REST_TIMEOUT_SHUTDOWN`     | Graceful shutdown budget. Keep it under the orchestrator's kill delay.                                                                        | `8s`            |
+
+Memory (server images). A request holds a few copies of what it carries: a submit its payload, up to 16 MiB, and a read its responses, up to 24 MiB each. Twenty concurrent submits of the largest payloads peak near 1.6 GiB on one `grpc` instance, so give it 2 GiB with `GOMEMLIMIT` near 1600MiB, or lower its request concurrency.
 
 Database connection pool (server images). The limits are **per process**: keep `POSTGRES_MAX_OPEN_CONNS` × the maximum replica count × 2, which covers a rollout's overlap, plus the migration job, under the database's `max_connections`. The server's sessions also give up on the database side: a statement after 9 seconds, a lock wait after 5, and a transaction left idle after 30.
 

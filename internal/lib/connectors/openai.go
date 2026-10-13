@@ -35,8 +35,16 @@ const readTimeout = 10 * time.Second
 // the ping may go unanswered.
 const healthCheckTimeout = 5 * time.Second
 
-// readOptions make a read a single bounded attempt: the next check is the retry.
-var readOptions = []option.RequestOption{option.WithMaxRetries(0), option.WithRequestTimeout(readTimeout)}
+// ResponseSizeCeiling bounds a provider response read whole, as a check reads a call. It holds twice
+// the largest output OpenAI writes, along with the instructions a response echoes from a payload at
+// its ceiling, and two attempts' responses fit the client's 64 MiB message.
+const ResponseSizeCeiling = 24 << 20
+
+// readOptions make a read a single bounded attempt: the next check is the retry. A response past
+// [ResponseSizeCeiling] fails the read rather than the process's memory.
+var readOptions = []option.RequestOption{
+	option.WithMaxRetries(0), option.WithRequestTimeout(readTimeout), option.WithMiddleware(capResponse),
+}
 
 // ErrNotConfigured is returned when the connector has no endpoint or no credentials.
 var ErrNotConfigured = errors.New("provider base URL and API key are required")
@@ -72,6 +80,16 @@ func NewOpenAI(config OpenAIConfig, opts ...option.RequestOption) (*OpenAI, erro
 	}, opts...)
 
 	return &OpenAI{client: openai.NewClient(opts...), webhookSecret: config.WebhookSecret}, nil
+}
+
+// capResponse stops reading a response past [ResponseSizeCeiling].
+func capResponse(request *http.Request, next option.MiddlewareNext) (*http.Response, error) {
+	response, err := next(request)
+	if err == nil {
+		response.Body = http.MaxBytesReader(nil, response.Body, ResponseSizeCeiling)
+	}
+
+	return response, err
 }
 
 // healthCheckedClient pings a connection the provider has gone quiet on, and drops it when the ping
@@ -158,7 +176,11 @@ func (provider *OpenAI) Stream(ctx context.Context, request *StreamRequest) iter
 		for decoder.Next() {
 			data := decoder.Event().Data
 
-			var head responses.ResponseStreamEventUnion
+			// Only the head is read: a terminal event carries the whole response.
+			var head struct {
+				Type           string `json:"type"`
+				SequenceNumber int64  `json:"sequence_number"` //nolint:tagliatelle // OpenAI's own field name.
+			}
 
 			err = json.Unmarshal(data, &head)
 			if err != nil {
@@ -516,7 +538,14 @@ func errorBody(apiErr *openai.Error) json.RawMessage {
 // are this service's configuration and say nothing about the operation. Anything else, a not-found
 // above all, means the operation cannot be read.
 func classifyOpenAIError(err error) error {
-	var apiErr *openai.Error
+	var (
+		apiErr       *openai.Error
+		oversizedErr *http.MaxBytesError
+	)
+
+	if errors.As(err, &oversizedErr) {
+		return fmt.Errorf("%w: %w", ErrResponseTooLarge, err)
+	}
 
 	if !errors.As(err, &apiErr) {
 		// No HTTP response at all: a dial failure, a timeout, a reset connection.

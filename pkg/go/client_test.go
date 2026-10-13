@@ -3,6 +3,7 @@ package servicegenai_test
 import (
 	"context"
 	"net"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -21,6 +22,7 @@ import (
 	golibproto "github.com/a-novel-kit/golib/grpcf/proto/gen"
 
 	"github.com/a-novel/service-genai/internal/config/env"
+	"github.com/a-novel/service-genai/internal/core"
 	servicegenai "github.com/a-novel/service-genai/pkg/go"
 )
 
@@ -166,6 +168,33 @@ func TestClient(t *testing.T) {
 		undeclared := submitRequest(owner)
 		undeclared.Purpose = "studio.undeclared"
 		_, err = client.GenerationSubmit(t.Context(), undeclared)
+		require.Equal(t, codes.InvalidArgument, status.Code(err))
+	})
+
+	// The largest payload the service accepts gets through the server's receive limit, and one byte more
+	// is refused by the service's own validation, which names the limit, not by the transport.
+	t.Run("LargestPayload", func(t *testing.T) {
+		t.Parallel()
+
+		client := newClient(t)
+
+		owner := uuid.Must(uuid.NewV7()).String()
+
+		payloadOfSize := func(size int) []byte {
+			head, tail := `{"model": "a-model", "input": "`, `"}`
+
+			return []byte(head + strings.Repeat("x", size-len(head)-len(tail)) + tail)
+		}
+
+		largest := submitRequest(owner)
+		largest.Payload = payloadOfSize(core.PayloadSizeCeiling)
+		created, err := client.GenerationSubmit(t.Context(), largest)
+		require.NoError(t, err)
+		require.True(t, created.GetCreated())
+
+		oversized := submitRequest(owner)
+		oversized.Payload = payloadOfSize(core.PayloadSizeCeiling + 1)
+		_, err = client.GenerationSubmit(t.Context(), oversized)
 		require.Equal(t, codes.InvalidArgument, status.Code(err))
 	})
 

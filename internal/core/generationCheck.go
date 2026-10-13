@@ -443,6 +443,8 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 	switch {
 	case err == nil && call.State.Terminal():
 		// Settled or requeued below.
+	case errors.Is(err, connectors.ErrResponseTooLarge):
+		failure, reason = failureResponseTooLarge, err.Error()
 	case err != nil && !errors.Is(err, connectors.ErrRetryable):
 		// Unreadable, typically gone past the provider's retention window.
 		failure, reason = failureResultLost, err.Error()
@@ -615,7 +617,7 @@ func (service *GenerationCheck) settleFailure(
 
 	service.logFailure(ctx, generation, cause)
 
-	settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), persistenceTimeout)
+	settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), settleTimeout)
 	defer cancel()
 
 	settled, err := service.commit(
@@ -810,6 +812,10 @@ const (
 	startTimeout = 20 * time.Second
 	// persistenceTimeout bounds a write that runs detached from a cancelled caller.
 	persistenceTimeout = 2 * time.Second
+	// settleTimeout bounds a failure's settle. A transaction never commits once its client gave up,
+	// unlike a single statement the database finishes anyway, so it outlasts the three seconds a
+	// migration waits for a lock: a settle queued behind one still lands.
+	settleTimeout = 4 * time.Second
 	// streamStartTimeout bounds a streamed start, which waits for the provider to begin the call.
 	streamStartTimeout = 30 * time.Second
 	// streamQueuedCeiling is how long a streamed call may stay queued before it is stopped.
@@ -849,8 +855,11 @@ const (
 	failureProviderUnavailable = "no connector serves the generation's provider"
 	failureOverdue             = "the provider did not finish the call in time, so it was stopped"
 	failureNotStopped          = "the call could not be stopped, and the provider may still run it"
+	failureResponseTooLarge    = "the provider's response is larger than the 24 MiB this service reads"
 )
 
 // outcomeUnknown holds the failures after which the provider may still run a call nothing tracks or
 // meters, so admission keeps counting the generation for a while.
-var outcomeUnknown = map[string]bool{failureOutcomeUnknown: true, failureNotStopped: true}
+var outcomeUnknown = map[string]bool{
+	failureOutcomeUnknown: true, failureNotStopped: true, failureResponseTooLarge: true,
+}

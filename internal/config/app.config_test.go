@@ -14,7 +14,7 @@ func TestApp(t *testing.T) {
 
 	valid := config.App{
 		Generations: config.Generations{CheckInterval: 2 * time.Second, MaxAttempts: 2, Retention: time.Hour},
-		Sweep:       config.Sweep{Interval: time.Minute, BatchSize: 50},
+		Sweep:       config.Sweep{Interval: time.Minute, BatchSize: 50, Concurrency: 8},
 		Caps:        config.CapsDefault,
 	}
 
@@ -38,7 +38,7 @@ func TestApp(t *testing.T) {
 		{
 			name: "Error/MaxAttemptsAboveCeiling",
 
-			adjust: func(app *config.App) { app.Generations.MaxAttempts = 11 },
+			adjust: func(app *config.App) { app.Generations.MaxAttempts = config.MaxAttemptsCeiling + 1 },
 
 			expectErr: config.ErrInvalidConfig,
 		},
@@ -47,6 +47,14 @@ func TestApp(t *testing.T) {
 			name: "Error/RetentionBelowHold",
 
 			adjust: func(app *config.App) { app.Generations.Retention = 10 * time.Minute },
+
+			expectErr: config.ErrInvalidConfig,
+		},
+		{
+			// A sweep that runs no check at once never checks anything.
+			name: "Error/NoSweepConcurrency",
+
+			adjust: func(app *config.App) { app.Sweep.Concurrency = 0 },
 
 			expectErr: config.ErrInvalidConfig,
 		},
