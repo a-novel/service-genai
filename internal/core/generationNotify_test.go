@@ -52,7 +52,7 @@ func TestGenerationNotify(t *testing.T) {
 			daoMock:          &daoMock{resp: runningGeneration(1)},
 			checkMock:        new(error),
 
-			expect: &core.GenerationNotifyResult{Checked: true},
+			expect: &core.GenerationNotifyResult{},
 		},
 		{
 			// An event the service does not act on is acknowledged, so the provider stops sending it.

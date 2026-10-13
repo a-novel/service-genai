@@ -34,10 +34,7 @@ type GenerationNotifyRequest struct {
 }
 
 // GenerationNotifyResult reports what a notification led to.
-type GenerationNotifyResult struct {
-	// Checked is false for a notification that names nothing this service follows.
-	Checked bool
-}
+type GenerationNotifyResult struct{}
 
 // A GenerationNotify checks the generation a provider's notification names, the moment the provider
 // reports its call ended, instead of when a poll or the sweep next asks.
@@ -105,5 +102,5 @@ func (service *GenerationNotify) Exec(
 		return nil, otel.ReportError(span, fmt.Errorf("check generation: %w", err))
 	}
 
-	return &GenerationNotifyResult{Checked: true}, nil
+	return &GenerationNotifyResult{}, nil
 }
