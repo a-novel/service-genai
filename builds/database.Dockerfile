@@ -47,7 +47,7 @@ COPY ./builds/database.sql /docker-entrypoint-initdb.d/init.sql
 COPY --chmod=755 ./builds/database.entrypoint.sh /usr/local/bin/database.entrypoint.sh
 # Preserve the service initialization and recovery paths around Wolfi's layout.
 #
-# pg_cron runs the retention purge scheduled by database.sql. It loads only as a preloaded
+# pg_cron runs the retention purge the migrations schedule. It loads only as a preloaded
 # library, and its jobs run as background workers because a job's own connection would need a
 # password under SCRAM authentication. initdb copies the sample, so the server that runs
 # database.sql has both settings.
