@@ -183,7 +183,8 @@ func (service *GenerationCheck) Exec(
 	return checked, nil
 }
 
-// start sends the provider call for the next attempt.
+// start sends the provider call for the next attempt, and stops it at once when its owner asked to
+// cancel meanwhile.
 func (service *GenerationCheck) start(ctx context.Context, generation *dao.Generation) (*dao.Generation, error) {
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(start)")
 	defer span.End()
@@ -244,23 +245,32 @@ func (service *GenerationCheck) start(ctx context.Context, generation *dao.Gener
 	switch {
 	case recordErr != nil:
 		return nil, otel.ReportError(span, fmt.Errorf("record provider call: %w", recordErr))
-	case recorded != nil:
-		return recorded, nil
-	case err != nil:
+	case recorded == nil && err != nil:
 		failed, failErr := service.failStart(ctx, intent, err)
 		if failErr != nil {
 			return nil, otel.ReportError(span, failErr)
 		}
 
 		return failed, nil
+	case recorded == nil:
+		err = record(call)
+		if err != nil {
+			return nil, otel.ReportError(span, fmt.Errorf("record provider call: %w", err))
+		}
 	}
 
-	err = record(call)
+	// A cancel requested while the start was in flight found no call to stop. Stopped now, the call
+	// costs nothing more and frees its owner's slot, instead of running until the next check.
+	if recorded.CancelRequestedAt == nil {
+		return recorded, nil
+	}
+
+	stopped, err := service.observe(ctx, recorded)
 	if err != nil {
-		return nil, otel.ReportError(span, fmt.Errorf("record provider call: %w", err))
+		return nil, otel.ReportError(span, err)
 	}
 
-	return recorded, nil
+	return stopped, nil
 }
 
 // recordCall attaches an accepted call to its attempt. The generation may have settled while the
@@ -669,12 +679,12 @@ func (service *GenerationCheck) commit(
 func (service *GenerationCheck) recordUsage(
 	ctx context.Context, generation *dao.Generation, call *connectors.Call,
 ) error {
-	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(recordUsage)")
-	defer span.End()
-
 	if call.Usage == nil {
 		return nil
 	}
+
+	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(recordUsage)")
+	defer span.End()
 
 	_, err := service.daoUsage.Exec(ctx, &dao.GenerationUsageInsertRequest{
 		GenerationID:      generation.ID,
@@ -708,12 +718,12 @@ func (service *GenerationCheck) recordUsage(
 func (service *GenerationCheck) recordAttempt(
 	ctx context.Context, generation *dao.Generation, response json.RawMessage,
 ) error {
-	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(recordAttempt)")
-	defer span.End()
-
 	if response == nil {
 		return nil
 	}
+
+	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(recordAttempt)")
+	defer span.End()
 
 	_, err := service.daoAttempt.Exec(ctx, &dao.GenerationAttemptInsertRequest{
 		GenerationID: generation.ID,
@@ -789,8 +799,6 @@ func settleOutcomeOf(generation *dao.Generation, call *connectors.Call) (dao.Gen
 		return dao.GenerationStatusCancelled, new(generationCancelledReason)
 	case connectors.CallFailed:
 		return dao.GenerationStatusFailed, new(failureCallFailed)
-	case connectors.CallRunning:
-		fallthrough
 	default:
 		// Unreachable: observe only settles a terminal state. Failing keeps a provider that grows a
 		// new status from stranding the generation.
@@ -813,9 +821,9 @@ const (
 	// still be in flight for it. A start leaves within startTimeout of its intent, then lasts at most
 	// streamStartTimeout plus its writes, which stays under it.
 	startOutcomeUnknownAfter = time.Minute
-	// checkTimeout bounds a whole check, detached from its caller: a start, as bounded above, or a
-	// read that takes the connector's ten seconds, twice for a stop that finds the call finished, plus
-	// its commit.
+	// checkTimeout bounds a whole check, detached from its caller: a start, as bounded above, then a
+	// stop when its owner cancelled meanwhile; or a read that takes the connector's ten seconds, three
+	// times for a streamed call found stuck queued whose stop finds it finished; plus its commit.
 	checkTimeout = time.Minute
 	// retryDelay is how long a fresh call waits on average after a rate limit or a retryable provider
 	// failure.
@@ -843,7 +851,7 @@ const (
 	failureRejected            = "the provider rejected the request"
 	failureProviderUnavailable = "no connector serves the generation's provider"
 	failureOverdue             = "the provider did not finish the call in time, so it was stopped"
-	failureNotStopped          = "the provider did not finish the call in time, and it could not be stopped"
+	failureNotStopped          = "the call could not be stopped, and the provider may still run it"
 )
 
 // outcomeUnknown holds the failures after which the provider may still run a call nothing tracks or

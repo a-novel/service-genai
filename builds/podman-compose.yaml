@@ -1,3 +1,11 @@
+# Podman drops a Dockerfile's HEALTHCHECK from OCI images, the format it builds by default and the
+# one images are published in: a service the others wait for declares its check here.
+x-postgres-healthcheck: &postgres-healthcheck
+  test: ["CMD", "pg_isready"]
+  interval: 1s
+  timeout: 5s
+  retries: 10
+
 services:
   # ====================================================================================================================
   # DATABASE
@@ -19,13 +27,15 @@ services:
       POSTGRES_INITDB_ARGS: --auth=scram-sha-256
     volumes:
       - genai-postgres-data:/var/lib/postgresql/
+    healthcheck: *postgres-healthcheck
 
   # ====================================================================================================================
   # ONE-SHOT TARGETS
   # ====================================================================================================================
 
   service-genai-migrations:
-    profiles: ["migrations"]
+    # Also under the profiles of the targets waiting for it, so `--profile <target>` runs it first.
+    profiles: ["migrations", "rest", "sweep"]
     build:
       context: ..
       dockerfile: ./builds/migrations.Dockerfile
@@ -51,8 +61,6 @@ services:
     depends_on:
       postgres-genai:
         condition: service_healthy
-      service-genai-migrations:
-        condition: service_completed_successfully
     environment:
       POSTGRES_DSN: postgres://postgres:postgres@postgres-genai:5432/postgres?sslmode=disable
       # The server refuses to start without a key. The placeholder starts it; generations fail until a
@@ -71,6 +79,7 @@ services:
     depends_on:
       postgres-genai:
         condition: service_healthy
+      # Its image holds no migrations, unlike the standalone grpc one: it waits for the job.
       service-genai-migrations:
         condition: service_completed_successfully
     environment:
@@ -78,6 +87,33 @@ services:
       OPENAI_API_KEY: "${OPENAI_API_KEY:-placeholder}"
       # Unset, the server answers every notification 404: no provider reaches a local stack anyway.
       OPENAI_WEBHOOK_SECRET: "${OPENAI_WEBHOOK_SECRET:-}"
+    networks:
+      - api
+
+  # The sweep reads REST_PORT, as the rest server does. A variable of its own keeps the two apart; it
+  # serves the same port inside the container and out, and its check follows it there.
+  service-genai-sweep:
+    profiles: ["sweep"]
+    build:
+      context: ..
+      dockerfile: ./builds/sweep.Dockerfile
+    ports:
+      - "${SWEEP_PORT}:${SWEEP_PORT}"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:$$REST_PORT/ping"]
+      interval: 1s
+      timeout: 5s
+      retries: 10
+    depends_on:
+      postgres-genai:
+        condition: service_healthy
+      # Its image holds no migrations, unlike the standalone grpc one: it waits for the job.
+      service-genai-migrations:
+        condition: service_completed_successfully
+    environment:
+      POSTGRES_DSN: postgres://postgres:postgres@postgres-genai:5432/postgres?sslmode=disable
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-placeholder}"
+      REST_PORT: "${SWEEP_PORT}"
     networks:
       - api
 

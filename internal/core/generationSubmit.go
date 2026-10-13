@@ -40,7 +40,7 @@ type GenerationSubmitDaoUsageSum interface {
 	Exec(ctx context.Context, request *dao.GenerationUsageSumRequest) (*dao.GenerationUsageTotals, error)
 }
 
-// GenerationSubmitDaoCountLive counts a user's pending and running generations.
+// GenerationSubmitDaoCountLive counts a user's generations in flight.
 type GenerationSubmitDaoCountLive interface {
 	Exec(ctx context.Context, request *dao.GenerationCountLiveRequest) (*dao.GenerationLiveCount, error)
 }
@@ -215,10 +215,13 @@ func (service *GenerationSubmit) Exec(
 
 	generation := result.Generation
 
+	// The generation is admitted and recorded, so a start that failed, such as on a lock a migration
+	// holds, is redone by the next poll or the sweep: the caller gets the generation to follow either
+	// way. The check's own span holds the failure.
 	if result.Created {
-		generation, err = service.serviceCheck.Exec(ctx, &GenerationCheckRequest{Generation: generation})
-		if err != nil {
-			return nil, otel.ReportError(span, fmt.Errorf("start generation: %w", err))
+		checked, checkErr := service.serviceCheck.Exec(ctx, &GenerationCheckRequest{Generation: generation})
+		if checkErr == nil {
+			generation = checked
 		}
 	}
 
@@ -349,7 +352,8 @@ func reached(limit *int64, used int64) bool {
 }
 
 // requestKeyTag versions what the request key covers. Changing the construction changes the tag, so
-// a key of one version never matches a key of another.
+// a key of one version never matches a key of another. A resend then no longer finds a generation
+// submitted under the previous tag: a release that changes it pays again for those still running.
 const requestKeyTag = "a-novel/genai/request-key/v4"
 
 // asyncMode and streamedMode name the execution mode in the request key, so the same payload

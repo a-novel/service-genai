@@ -70,6 +70,12 @@ services:
       POSTGRES_INITDB_ARGS: --auth=scram-sha-256
     volumes:
       - genai-postgres-data:/var/lib/postgresql/
+    # Podman ignores the image's own check, so the dependents' wait needs this one.
+    healthcheck:
+      test: ["CMD", "pg_isready"]
+      interval: 1s
+      timeout: 5s
+      retries: 10
 
   migrations-genai:
     image: ghcr.io/a-novel/service-genai/jobs/migrations:v0.4.0
@@ -131,7 +137,7 @@ volumes:
 
 ### Database image
 
-The database image packages PostgreSQL, `pg_cron` and pgBackRest on Wolfi. Its [package manifest](./builds/database.apko.yaml) is assembled with apko during the container build, pinned by its [lock file](./builds/database.apko.lock.json), so an unchanged image rebuilds to the same digest; Docker and Podman users need no additional host tools. PostgreSQL keeps its standard `POSTGRES_*` initialization variables and its volume at `/var/lib/postgresql`. On first start it schedules the retention purge in the `POSTGRES_DB` database (see [CONTRIBUTING](./CONTRIBUTING.md#retention-purge)). Backup scheduling and repository credentials remain the operator's responsibility.
+The database image packages PostgreSQL, `pg_cron` and pgBackRest on Wolfi. Its [package manifest](./builds/database.apko.yaml) is assembled with apko during the container build, pinned by its [lock file](./builds/database.apko.lock.json), so an unchanged image rebuilds to the same digest; Docker and Podman users need no additional host tools. PostgreSQL keeps its standard `POSTGRES_*` initialization variables and its volume at `/var/lib/postgresql`. On first start it installs `pg_cron` in the `POSTGRES_DB` database, where the migrations job schedules the retention purge (see [CONTRIBUTING](./CONTRIBUTING.md#retention-purge)). Backup scheduling and repository credentials remain the operator's responsibility.
 
 Start the image on a fresh volume. A data directory written by the earlier Debian-based image is not portable: the libc, collation and extension environment changed. To keep its data, take a logical dump and restore it into the new database.
 
@@ -274,6 +280,12 @@ a-novel run start service-genai/grpc
 eval "$(a-novel run env service-genai)"
 
 grpcurl --plaintext localhost:${SERVICE_GENAI_GRPC_PORT} list
+```
+
+Without the CLI, the repository's compose file runs a target on its own: enable its profile and set the host ports it publishes. The `sweep` target serves `POST /sweep` on `SWEEP_PORT`.
+
+```bash
+POSTGRES_PORT=5432 GRPC_PORT=8080 podman compose -f builds/podman-compose.yaml --profile grpc up -d
 ```
 
 Working on the code itself starts with [CONTRIBUTING.md](./CONTRIBUTING.md).

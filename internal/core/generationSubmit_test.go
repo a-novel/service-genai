@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/trace"
@@ -404,8 +405,9 @@ func TestGenerationSubmit(t *testing.T) {
 			expectErr: errFoo,
 		},
 		{
-			// The generation is recorded, so a resend finds it; the caller learns the start failed.
-			name: "Error/Start",
+			// The generation is admitted and recorded, so the next poll or the sweep starts it: the caller
+			// gets it to follow.
+			name: "Success/StartFailed",
 
 			request:  submitRequest(nil),
 			daoMock:  &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration(), Created: true}},
@@ -413,7 +415,7 @@ func TestGenerationSubmit(t *testing.T) {
 			usage:    underCaps,
 			checkErr: errFoo,
 
-			expectErr: errFoo,
+			expectCreated: true,
 		},
 		{
 			name: "Error/Attempts",
@@ -513,11 +515,11 @@ func TestGenerationSubmit(t *testing.T) {
 				if created && admitted && testCase.payloadErr == nil {
 					check.EXPECT().
 						Exec(mock.Anything, &core.GenerationCheckRequest{Generation: testCase.daoMock.resp.Generation}).
-						Return(testCase.daoMock.resp.Generation, testCase.checkErr)
+						Return(lo.Ternary(testCase.checkErr == nil, testCase.daoMock.resp.Generation, nil), testCase.checkErr)
 				}
 
 				// Only a generation with an answered attempt is listed; the fixtures' pending ones have none.
-				if testCase.daoMock.resp != nil && testCase.checkErr == nil && testCase.payloadErr == nil &&
+				if testCase.daoMock.resp != nil && testCase.payloadErr == nil &&
 					(!created || admitted) && testCase.daoMock.resp.Generation.SettledAt != nil {
 					attemptDao.EXPECT().
 						Exec(mock.Anything, &dao.GenerationAttemptListRequest{GenerationID: testGenerationID}).
