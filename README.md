@@ -70,6 +70,12 @@ services:
       POSTGRES_INITDB_ARGS: --auth=scram-sha-256
     volumes:
       - genai-postgres-data:/var/lib/postgresql/
+    # Podman ignores the image's own check, so the dependents' wait needs this one.
+    healthcheck:
+      test: ["CMD", "pg_isready"]
+      interval: 1s
+      timeout: 5s
+      retries: 10
 
   migrations-genai:
     image: ghcr.io/a-novel/service-genai/jobs/migrations:v0.4.0

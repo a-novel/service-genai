@@ -1,3 +1,11 @@
+# Podman drops a Dockerfile's HEALTHCHECK from OCI images, the format it builds by default and the
+# one images are published in: a service the others wait for declares its check here.
+x-postgres-healthcheck: &postgres-healthcheck
+  test: ["CMD", "pg_isready"]
+  interval: 1s
+  timeout: 5s
+  retries: 10
+
 services:
   postgres-genai:
     build:
@@ -11,6 +19,7 @@ services:
       POSTGRES_DB: "${POSTGRES_DB}"
       POSTGRES_HOST_AUTH_METHOD: scram-sha-256
       POSTGRES_INITDB_ARGS: --auth=scram-sha-256
+    healthcheck: *postgres-healthcheck
 
   service-genai:
     build:
