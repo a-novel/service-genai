@@ -679,12 +679,12 @@ func (service *GenerationCheck) commit(
 func (service *GenerationCheck) recordUsage(
 	ctx context.Context, generation *dao.Generation, call *connectors.Call,
 ) error {
-	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(recordUsage)")
-	defer span.End()
-
 	if call.Usage == nil {
 		return nil
 	}
+
+	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(recordUsage)")
+	defer span.End()
 
 	_, err := service.daoUsage.Exec(ctx, &dao.GenerationUsageInsertRequest{
 		GenerationID:      generation.ID,
@@ -718,12 +718,12 @@ func (service *GenerationCheck) recordUsage(
 func (service *GenerationCheck) recordAttempt(
 	ctx context.Context, generation *dao.Generation, response json.RawMessage,
 ) error {
-	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(recordAttempt)")
-	defer span.End()
-
 	if response == nil {
 		return nil
 	}
+
+	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(recordAttempt)")
+	defer span.End()
 
 	_, err := service.daoAttempt.Exec(ctx, &dao.GenerationAttemptInsertRequest{
 		GenerationID: generation.ID,
@@ -799,8 +799,6 @@ func settleOutcomeOf(generation *dao.Generation, call *connectors.Call) (dao.Gen
 		return dao.GenerationStatusCancelled, new(generationCancelledReason)
 	case connectors.CallFailed:
 		return dao.GenerationStatusFailed, new(failureCallFailed)
-	case connectors.CallRunning:
-		fallthrough
 	default:
 		// Unreachable: observe only settles a terminal state. Failing keeps a provider that grows a
 		// new status from stranding the generation.
