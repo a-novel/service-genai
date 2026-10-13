@@ -1,6 +1,6 @@
 -- How many generations one owner has in flight, for one purpose or every one: pending, running, or
--- failed within the window with a start the provider may have accepted. Each kind is read off its
--- own partial index.
+-- failed within the window with a call the provider may still run. Each kind is read off its own
+-- partial index.
 SELECT
   count(*) AS count
 FROM

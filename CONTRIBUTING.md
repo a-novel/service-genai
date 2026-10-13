@@ -36,7 +36,7 @@ curl -X POST localhost:8090/sweep
 
 ### Generations
 
-The payload and each attempt's response are `bytes` fields, so `grpcurl` takes and prints them base64-encoded. The local stack reads `OPENAI_API_KEY` from the environment it starts in, with a placeholder when it is unset (see [`builds/podman-compose.yaml`](./builds/podman-compose.yaml)); with the placeholder, every generation fails with OpenAI's authentication error as its response.
+The payload and each attempt's response are `bytes` fields, so `grpcurl` takes and prints them base64-encoded. The local stack reads `OPENAI_API_KEY` from the environment it starts in, with a placeholder when it is unset (see [`builds/podman-compose.yaml`](./builds/podman-compose.yaml)); with the placeholder, OpenAI refuses every start, which the service retries as a fault of its own configuration: the generation stays pending for ten minutes, then fails with no attempt.
 
 ```bash
 # Any UUID: the calling service supplies the owner, and this service trusts it.
@@ -85,7 +85,7 @@ grpcurl -plaintext -d "{\"id\":\"$GENERATION_ID\",\"owner_id\":\"$OWNER_ID\"}" \
 
 The [retention](./README.md#configuration) purge is the `purge_settled_generations()` function, which a migration defines and schedules as a `pg_cron` job wherever the extension is installed, as the `database` image does. Every minute, it deletes up to 10,000 settled generations whose `expires_at` has passed, and their payloads and attempts with them, so a backlog left by missed runs drains in short transactions. The Usage Records stay: they hold no content and no key to the purged rows. A change to the purge is a migration that replaces the function, and its tests run it.
 
-The migration skips the schedule where `pg_cron` is missing, as in the databases `postgrestest.RunDBTest` clones. **A bring-your-own-Postgres deployment without it schedules the purge itself**, once the migrations ran: `SELECT cron.schedule('service-genai-purge-settled', '* * * * *', 'SELECT purge_settled_generations()')`. Preload `pg_cron`, point `cron.database_name` at the service's database, and set `cron.use_background_workers = on`, as the image does: under SCRAM authentication, a job that opens its own connection fails without a password.
+The migration skips the schedule where `pg_cron` is missing, as in the databases `postgrestest.RunDBTest` clones. **A bring-your-own-Postgres deployment without it schedules the purge itself**, once the migrations ran: `SELECT cron.schedule('service-genai-purge-settled', '* * * * *', format('SELECT %I.purge_settled_generations()', current_schema()))`. Preload `pg_cron`, point `cron.database_name` at the service's database, and set `cron.use_background_workers = on`, as the image does: under SCRAM authentication, a job that opens its own connection fails without a password.
 
 ### Migrations on live tables
 
