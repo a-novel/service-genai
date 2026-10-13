@@ -73,10 +73,10 @@ var testCaps = config.Caps{
 				Concurrency: new(-1),
 				Windows:     map[time.Duration]config.Limit{5 * time.Hour: {InputTokens: new(int64(1000))}},
 			},
-			"unlimited": {Unlimited: true},
+			"unlimited": {Concurrency: new(-1)},
 			"forbidden": {Forbidden: true},
 		},
-		"studio.analysis": {config.DefaultTier: {Unlimited: true}},
+		"studio.analysis": {config.DefaultTier: {Concurrency: new(-1)}},
 	},
 	Global: config.TierCaps{
 		config.DefaultTier: {

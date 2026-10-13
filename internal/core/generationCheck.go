@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"time"
 
 	"github.com/samber/lo"
@@ -353,7 +354,7 @@ func (service *GenerationCheck) failStart(
 	retrying := intent.StartRequestedAt.Sub(*intent.FirstStartRequestedAt)
 
 	if errors.Is(cause, connectors.ErrRetryable) && retrying < startRetryCeiling {
-		released, err := service.releaseStart(ctx, intent, retryDelay)
+		released, err := service.releaseStart(ctx, intent, retryAfter())
 		if err != nil {
 			return nil, otel.ReportError(span, fmt.Errorf("release start: %w", err))
 		}
@@ -549,7 +550,7 @@ func (service *GenerationCheck) requeue(
 			ID:             generation.ID,
 			Attempt:        generation.Attempt,
 			ProviderCallID: *generation.ProviderCallID,
-			Delay:          retryDelay,
+			Delay:          retryAfter(),
 		})
 		if err != nil {
 			return fmt.Errorf("requeue generation: %w", err)
@@ -580,8 +581,10 @@ func (service *GenerationCheck) settle(
 
 	span.SetAttributes(attribute.String("generation.status", string(status)))
 
+	// Only a failed call carries the provider's reason. One this service stopped is explained by the
+	// outcome.
 	if status == dao.GenerationStatusFailed {
-		service.logFailure(ctx, generation, call.Reason)
+		service.logFailure(ctx, generation, lo.Ternary(call.State == connectors.CallFailed, call.Reason, *message))
 	}
 
 	settled, err := service.commit(ctx, generation, status, message, call)
@@ -762,6 +765,12 @@ func (service *GenerationCheck) logFailure(ctx context.Context, generation *dao.
 	service.logger.Err(ctx, fmt.Sprintf("generation %s failed: %s", generation.ID, reason))
 }
 
+// retryAfter draws a retry's delay between half and one and a half retryDelay. The calls one burst
+// turned away would otherwise come back together, and be turned away again.
+func retryAfter() time.Duration {
+	return retryDelay/2 + rand.N(retryDelay) //nolint:gosec // Spreading retries needs no secrecy.
+}
+
 // settleOutcomeOf maps a terminal provider state onto the status to land in, with the message a
 // caller reads.
 //
@@ -808,7 +817,8 @@ const (
 	// read that takes the connector's ten seconds, twice for a stop that finds the call finished, plus
 	// its commit.
 	checkTimeout = time.Minute
-	// retryDelay postpones a fresh call after a rate limit or a retryable provider failure.
+	// retryDelay is how long a fresh call waits on average after a rate limit or a retryable provider
+	// failure.
 	retryDelay = 15 * time.Second
 	// startRetryCeiling bounds how long an attempt keeps retrying a start the provider turns away,
 	// measured from its first start. Past it the generation fails, so a request the provider never

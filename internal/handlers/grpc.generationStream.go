@@ -53,12 +53,12 @@ func (handler *GrpcGenerationStream) GenerationStream(
 		ID: generationID, OwnerID: ownerID, StartingAfter: request.StartingAfter,
 	})
 	if err != nil {
-		return streamStatus(span, err)
+		return streamStatus(span, ctx.Err(), err)
 	}
 
 	for event, err := range result.Events {
 		if err != nil {
-			return streamStatus(span, err)
+			return streamStatus(span, ctx.Err(), err)
 		}
 
 		err = stream.Send(&genaiv0.GenerationStreamResponse{SequenceNumber: event.Sequence, Event: event.Data})
@@ -71,9 +71,13 @@ func (handler *GrpcGenerationStream) GenerationStream(
 	return nil
 }
 
-// streamStatus maps what ended a stream to the status its caller acts on.
-func streamStatus(span trace.Span, err error) error {
+// streamStatus maps what ended a stream to the status its caller acts on. left is the stream
+// context's error.
+func streamStatus(span trace.Span, left, err error) error {
 	switch {
+	// The caller left, which cut the provider's stream too: no server fault.
+	case left != nil:
+		return status.FromContextError(left).Err()
 	// Another owner's generation reports this too, so an id cannot be probed for existence.
 	case errors.Is(err, core.ErrGenerationNotFound):
 		return status.Error(codes.NotFound, "generation not found")

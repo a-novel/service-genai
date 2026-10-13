@@ -30,7 +30,7 @@ func TestCap(t *testing.T) {
 
 			document: `-1`,
 
-			expect: config.Cap{Unlimited: true},
+			expect: config.Cap{Concurrency: new(-1)},
 		},
 		{
 			name: "Success/Forbidden",
@@ -187,13 +187,13 @@ func TestCaps(t *testing.T) {
 			// Lifting every global limit for an unknown tier is a deliberate policy, not an omission.
 			name: "Success/GlobalDefaultUnlimited",
 
-			caps: config.Caps{Purposes: someTiers, Global: config.TierCaps{config.DefaultTier: {Unlimited: true}}},
+			caps: config.Caps{Purposes: someTiers, Global: config.TierCaps{config.DefaultTier: {Concurrency: new(-1)}}},
 		},
 		{
 			name: "Error/PurposeWithoutDefault",
 
 			caps: config.Caps{
-				Purposes: map[string]config.TierCaps{"studio.generation": {"admin": {Unlimited: true}}},
+				Purposes: map[string]config.TierCaps{"studio.generation": {"admin": {Concurrency: new(-1)}}},
 				Global:   someGlobal,
 			},
 
@@ -273,9 +273,9 @@ func TestCaps(t *testing.T) {
 func TestTierCaps(t *testing.T) {
 	t.Parallel()
 
-	caps := config.TierCaps{config.DefaultTier: {Forbidden: true}, "admin": {Unlimited: true}}
+	caps := config.TierCaps{config.DefaultTier: {Forbidden: true}, "admin": {Concurrency: new(-1)}}
 
-	require.Equal(t, config.Cap{Unlimited: true}, caps.For("admin"))
+	require.Equal(t, config.Cap{Concurrency: new(-1)}, caps.For("admin"))
 	// An unrecognized or absent tier answers to the default caps.
 	require.Equal(t, config.Cap{Forbidden: true}, caps.For("premium"))
 	require.Equal(t, config.Cap{Forbidden: true}, caps.For(""))
