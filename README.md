@@ -282,6 +282,12 @@ eval "$(a-novel run env service-genai)"
 grpcurl --plaintext localhost:${SERVICE_GENAI_GRPC_PORT} list
 ```
 
+Without the CLI, the repository's compose file runs a target on its own: enable its profile and set the host ports it publishes. The `sweep` target serves `POST /sweep` on `SWEEP_PORT`.
+
+```bash
+POSTGRES_PORT=5432 GRPC_PORT=8080 podman compose -f builds/podman-compose.yaml --profile grpc up -d
+```
+
 Working on the code itself starts with [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ## Contributing
