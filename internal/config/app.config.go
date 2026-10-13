@@ -71,7 +71,7 @@ type App struct {
 	App Main `json:"app" yaml:"app"`
 	// Grpc holds the gRPC server configuration.
 	Grpc grpcf.ServerConfig `json:"grpc" yaml:"grpc"`
-	// Rest holds the configuration of the REST server providers post their notifications to.
+	// Rest holds the configuration of the REST servers: the notification server and the sweep.
 	Rest httpf.ServerConfig `json:"rest" yaml:"rest"`
 	// Generations holds how generations are run and kept.
 	Generations Generations `json:"generations" yaml:"generations"`

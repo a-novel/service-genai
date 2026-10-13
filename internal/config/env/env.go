@@ -24,8 +24,8 @@ func getEnv(name string) string {
 const (
 	AppNameDefault = "service-genai"
 
-	// TimeoutShutdownDefault drains either server inside the ten seconds Cloud Run allows between
-	// SIGTERM and SIGKILL, so an in-flight check finishes before the process is killed.
+	// TimeoutShutdownDefault ends a server's drain inside the ten seconds Cloud Run allows between
+	// SIGTERM and SIGKILL, leaving the process time to flush its telemetry.
 	TimeoutShutdownDefault = 8 * time.Second
 
 	// TimeoutRequestDefault bounds a REST request, which runs its checks before it answers. A sweep call

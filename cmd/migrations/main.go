@@ -1,6 +1,5 @@
 // Command migrations applies the service's database schema migrations and exits.
-// The cmd/grpc and cmd/rest entrypoints serve the generation API and the providers' notifications
-// once the schema is in place.
+// The cmd/grpc, cmd/rest and cmd/sweep servers start once the schema is in place.
 package main
 
 import (

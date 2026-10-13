@@ -12,6 +12,6 @@ import (
 )
 
 // PostgresPreset is the PostgreSQL configuration used in integration tests. It aliases
-// config.PostgresPresetDefault, so tests track the production preset with no parallel
-// definition to maintain.
+// config.PostgresPresetDefault, the connection every preset shares, without the server's session
+// timeouts.
 var PostgresPreset = config.PostgresPresetDefault
