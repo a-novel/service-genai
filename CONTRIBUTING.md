@@ -87,6 +87,10 @@ The [retention](./README.md#configuration) purge is the `purge_settled_generatio
 
 The migration skips the schedule where `pg_cron` is missing, as in the databases `postgrestest.RunDBTest` clones. **A bring-your-own-Postgres deployment without it schedules the purge itself**, once the migrations ran: `SELECT cron.schedule('service-genai-purge-settled', '* * * * *', 'SELECT purge_settled_generations()')`. Preload `pg_cron`, point `cron.database_name` at the service's database, and set `cron.use_background_workers = on`, as the image does: under SCRAM authentication, a job that opens its own connection fails without a password.
 
+### Migrations on live tables
+
+Every check rewrites a row of `generations`, and some of those writes record a call the provider already accepted. A write left waiting for a lock gives up after the server's `lock_timeout`, five seconds, and a call whose id is not recorded settles failed with its outcome unknown, paid for and unread. A migration on `generations` therefore holds no lock that blocks writes for more than a second or two, following [`write-sql`](https://github.com/a-novel-kit/stack/blob/master/.agents/skills/write-sql/SKILL.md#migrations-on-live-tables): an index built concurrently, a constraint added `NOT VALID` then validated, a backfill run in batches outside the migration.
+
 ### Provider retention
 
 `store` asks the provider to keep the response after the call ends. OpenAI holds a stored response for about thirty days: it can be read back with `GET /v1/responses/{id}`, and a later request can reference it through `previous_response_id` to continue a conversation without resending its history. The field belongs to the caller's payload, [like the rest of the request](./README.md#what-it-does). With `store: false`, the answers a caller needs are kept only here, in `generation_attempts`, for the retention window.
