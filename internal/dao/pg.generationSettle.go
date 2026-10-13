@@ -31,7 +31,8 @@ type GenerationSettleRequest struct {
 	Error *string
 	// Retention is how long the settled row survives before the purge takes it.
 	Retention time.Duration
-	// OutcomeUnknown marks a failure whose start the provider may have accepted.
+	// OutcomeUnknown marks a failure after which the provider may still run the call: a start it may
+	// have accepted, or a stop that never took.
 	OutcomeUnknown bool
 }
 

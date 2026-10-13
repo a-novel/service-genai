@@ -313,7 +313,7 @@ func (service *GenerationCheck) recordCall(
 	return recorded, nil
 }
 
-// releaseStart gives back an attempt whose call was never sent. It runs detached, so it carries its
+// releaseStart gives back an attempt the provider never accepted. It runs detached, so it carries its
 // own deadline: a stalled database must not hold the process past shutdown.
 func (service *GenerationCheck) releaseStart(
 	ctx context.Context, intent *dao.Generation, delay time.Duration,
@@ -433,27 +433,32 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 	}
 
 	call, stopSince, err := service.ask(ctx, connector, generation)
-	stop := stopSince != nil
+	if err == nil {
+		span.SetAttributes(attribute.String("provider.state", string(call.State)))
+	}
 
-	// A transient failure, or a stop the provider has not applied yet, is retried by the next check. A
-	// stop still failing a while after it was first wanted is given up on: the call may still run, so
-	// the generation keeps its slot a while.
-	unsettled := errors.Is(err, connectors.ErrRetryable) || err == nil && stop && !call.State.Terminal()
+	// A call this check cannot follow fails its generation: starting another call would pay twice.
+	var failure, reason string
 
 	switch {
-	case unsettled && (!stop || generation.CheckedAt.Sub(*stopSince) < stopRetryWindow):
+	case err == nil && call.State.Terminal():
+		// Settled or requeued below.
+	case err != nil && !errors.Is(err, connectors.ErrRetryable):
+		// Unreadable, typically gone past the provider's retention window.
+		failure, reason = failureResultLost, err.Error()
+	case stopSince == nil || generation.CheckedAt.Sub(*stopSince) < stopRetryWindow:
+		// A transient failure, or a stop the provider has not applied yet: the next check asks again.
 		return generation, nil
-	case err != nil || unsettled:
-		// The operation is unreadable, typically gone past the provider's retention window, or it was
-		// given up on. Starting another call would pay twice, so the generation fails.
-		reason := fmt.Sprintf("the stop left the call %s", lo.FromPtr(call).State)
-		if err != nil {
-			reason = err.Error()
-		}
+	case err != nil:
+		// A stop still failing a while after it was first wanted is given up on. The call may still
+		// run, so the generation keeps its slot a while.
+		failure, reason = failureNotStopped, err.Error()
+	default:
+		failure, reason = failureNotStopped, fmt.Sprintf("the stop left the call %s", call.State)
+	}
 
-		settled, settleErr := service.settleFailure(
-			ctx, generation, lo.Ternary(unsettled, failureNotStopped, failureResultLost), reason, nil,
-		)
+	if failure != "" {
+		settled, settleErr := service.settleFailure(ctx, generation, failure, reason, nil)
 		if settleErr != nil {
 			return nil, otel.ReportError(span, settleErr)
 		}
@@ -461,16 +466,10 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 		return settled, nil
 	}
 
-	span.SetAttributes(attribute.String("provider.state", string(call.State)))
-
-	if !call.State.Terminal() {
-		return generation, nil
-	}
-
 	// Another check stopped the call, maybe on its owner's request after this one read the generation:
 	// the outcome is labelled from the request as it stands. Only the request is taken from the fresh
 	// read, so the settle stays fenced on the call this check observed.
-	if call.State == connectors.CallCancelled && generation.CancelRequestedAt == nil && !stop {
+	if call.State == connectors.CallCancelled && generation.CancelRequestedAt == nil && stopSince == nil {
 		current, getErr := service.daoGet.Exec(ctx, &dao.GenerationGetRequest{ID: generation.ID, OwnerID: generation.OwnerID})
 		if getErr != nil {
 			return nil, otel.ReportError(span, fmt.Errorf("re-read generation: %w", getErr))
@@ -797,11 +796,9 @@ func settleOutcomeOf(generation *dao.Generation, call *connectors.Call) (dao.Gen
 		}
 
 		return dao.GenerationStatusCancelled, new(generationCancelledReason)
-	case connectors.CallFailed:
-		return dao.GenerationStatusFailed, new(failureCallFailed)
 	default:
-		// Unreachable: observe only settles a terminal state. Failing keeps a provider that grows a
-		// new status from stranding the generation.
+		// A failed call, or, unreachable since observe settles only a terminal state, a status the
+		// provider added: failing keeps it from stranding the generation.
 		return dao.GenerationStatusFailed, new(failureCallFailed)
 	}
 }

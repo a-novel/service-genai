@@ -1150,45 +1150,45 @@ func TestOpenAI(t *testing.T) {
 			require.True(t, json.Valid(rejection.Response))
 		})
 	})
-}
 
-func TestNewOpenAI(t *testing.T) {
-	t.Parallel()
+	t.Run("New", func(t *testing.T) {
+		t.Parallel()
 
-	testCases := []struct {
-		name string
+		testCases := []struct {
+			name string
 
-		config connectors.OpenAIConfig
+			config connectors.OpenAIConfig
 
-		expectErr error
-	}{
-		{
-			name: "Success",
+			expectErr error
+		}{
+			{
+				name: "Success",
 
-			config: testConfig("https://provider.test/v1"),
-		},
-		{
-			name: "Error/NoBaseURL",
+				config: testConfig("https://provider.test/v1"),
+			},
+			{
+				name: "Error/NoBaseURL",
 
-			config: testConfig(""),
+				config: testConfig(""),
 
-			expectErr: connectors.ErrNotConfigured,
-		},
-		{
-			name: "Error/NoAPIKey",
+				expectErr: connectors.ErrNotConfigured,
+			},
+			{
+				name: "Error/NoAPIKey",
 
-			config: connectors.OpenAIConfig{BaseURL: "https://provider.test/v1"},
+				config: connectors.OpenAIConfig{BaseURL: "https://provider.test/v1"},
 
-			expectErr: connectors.ErrNotConfigured,
-		},
-	}
+				expectErr: connectors.ErrNotConfigured,
+			},
+		}
 
-	for _, testCase := range testCases {
-		t.Run(testCase.name, func(t *testing.T) {
-			t.Parallel()
+		for _, testCase := range testCases {
+			t.Run(testCase.name, func(t *testing.T) {
+				t.Parallel()
 
-			_, err := connectors.NewOpenAI(testCase.config)
-			require.ErrorIs(t, err, testCase.expectErr)
-		})
-	}
+				_, err := connectors.NewOpenAI(testCase.config)
+				require.ErrorIs(t, err, testCase.expectErr)
+			})
+		}
+	})
 }
