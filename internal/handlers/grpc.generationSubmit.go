@@ -14,6 +14,10 @@ import (
 	genaiv0 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v0"
 )
 
+// GrpcMaxReceiveBytes admits a submit whose payload is at [core.PayloadSizeCeiling], with room for
+// its envelope, so an oversized payload reaches core validation rather than gRPC's receive limit.
+const GrpcMaxReceiveBytes = core.PayloadSizeCeiling + 64<<10
+
 // GrpcGenerationSubmitService is the service dependency of [GrpcGenerationSubmit].
 type GrpcGenerationSubmitService interface {
 	Exec(ctx context.Context, request *core.GenerationSubmitRequest) (*core.GenerationSubmitResult, error)

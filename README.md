@@ -203,6 +203,8 @@ REST servers (images `rest` and `sweep`). Every notification comes from the prov
 | `REST_TIMEOUT_REQUEST`      | Per-request timeout. A sweep starts no check this deadline could not wait out, and a check takes a minute at most, so keep it above a minute. | `2m`            |
 | `REST_TIMEOUT_SHUTDOWN`     | Graceful shutdown budget. Keep it under the orchestrator's kill delay.                                                                        | `8s`            |
 
+Memory (server images). A request holds a few copies of what it carries: a submit its payload, up to 16 MiB, and a read its responses, up to 24 MiB each. Twenty concurrent submits of the largest payloads peak near 1.6 GiB on one `grpc` instance, so give it 2 GiB with `GOMEMLIMIT` near 1600MiB, or lower its request concurrency.
+
 Database connection pool (server images). The limits are **per process**: keep `POSTGRES_MAX_OPEN_CONNS` × the maximum replica count × 2, which covers a rollout's overlap, plus the migration job, under the database's `max_connections`. The server's sessions also give up on the database side: a statement after 9 seconds, a lock wait after 5, and a transaction left idle after 30.
 
 | Name                      | Description                               | Default |

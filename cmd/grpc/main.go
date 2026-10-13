@@ -138,7 +138,8 @@ func main() {
 
 	// A stopping server waits for its handlers, so none still runs once the database closes.
 	server := grpcf.NewServer(
-		ctx, cfg.Otel, cfg.GrpcLogger, cfg.App.DowntimeStart, ctxInterceptor, grpc.WaitForHandlers(true),
+		ctx, cfg.Otel, cfg.GrpcLogger, cfg.App.DowntimeStart, ctxInterceptor,
+		grpc.WaitForHandlers(true), grpc.MaxRecvMsgSize(handlers.GrpcMaxReceiveBytes),
 	)
 
 	healthcheck := grpcf.RegisterEchoServers(server)

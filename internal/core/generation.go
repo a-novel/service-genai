@@ -9,10 +9,10 @@ import (
 	"github.com/a-novel/service-genai/internal/dao"
 )
 
-// PayloadSizeCeiling bounds a payload. It stays below gRPC's default 4 MiB receive limit, leaving
-// room for the protobuf envelope, so an oversized payload reaches application validation. It bounds
-// transport and storage, not what a provider accepts.
-const PayloadSizeCeiling = 3_688_000
+// PayloadSizeCeiling bounds a payload at 16 MiB: about 3.5 million tokens of prose, over three times
+// the largest context OpenAI accepts. It bounds transport, storage and memory, not what a provider
+// accepts.
+const PayloadSizeCeiling = 16 << 20
 
 // GenerationStatus identifies where a generation sits in its lifecycle.
 type GenerationStatus string
