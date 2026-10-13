@@ -41,7 +41,7 @@ func TestGenerationCheck(t *testing.T) {
 	callFailedMessage := "the provider failed the call"
 	unavailableMessage := "no connector serves the generation's provider"
 	overdueMessage := "the provider did not finish the call in time, so it was stopped"
-	notStoppedMessage := "the provider did not finish the call in time, and it could not be stopped"
+	notStoppedMessage := "the call could not be stopped, and the provider may still run it"
 	// runCeilingForTest mirrors the run ceiling, past which every call is stopped.
 	const runCeilingForTest = 2 * time.Hour
 

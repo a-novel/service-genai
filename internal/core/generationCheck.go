@@ -853,7 +853,7 @@ const (
 	failureRejected            = "the provider rejected the request"
 	failureProviderUnavailable = "no connector serves the generation's provider"
 	failureOverdue             = "the provider did not finish the call in time, so it was stopped"
-	failureNotStopped          = "the provider did not finish the call in time, and it could not be stopped"
+	failureNotStopped          = "the call could not be stopped, and the provider may still run it"
 )
 
 // outcomeUnknown holds the failures after which the provider may still run a call nothing tracks or
