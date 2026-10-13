@@ -210,6 +210,26 @@ jobs:
           # The server refuses to start without a provider key. The smoke run never calls the provider.
           run_args: -e POSTGRES_DSN="${POSTGRES_DSN}" -e OPENAI_API_KEY=smoke-test
 
+  # Infra pins the published images in one pull request, which deploys the release once it merges.
+  deploy:
+    needs:
+      - release
+      - build-database
+      - build-migrations
+      - build-grpc
+      - build-rest
+      - build-sweep
+      - build-standalone-grpc
+    if: ${{ !inputs.dry_run }}
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - uses: a-novel-kit/workflows/publish-actions/deploy-release@v1.52.0
+        with:
+          client_id: ${{ vars.AGENT_BOT_CLIENT_ID }}
+          app_private_key: ${{ secrets.AGENT_BOT_PRIVATE_KEY }}
+          version: ${{ needs.release.outputs.tag }}
+
   # Everything shipped — clear this repo's awaiting-release board items.
   archive:
     needs:
