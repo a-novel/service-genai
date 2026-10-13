@@ -54,12 +54,13 @@ type Generations struct {
 	Retention time.Duration `json:"retention" yaml:"retention"`
 }
 
-// OpenAI holds how the OpenAI connector reaches the Responses API.
+// OpenAI holds how the OpenAI connector reaches the Responses API. The entrypoints convert it to the
+// connector's own configuration, so its fields stay the same, in the same order.
 type OpenAI struct {
-	// APIKey authenticates against OpenAI. The only credential this service holds.
-	APIKey string `json:"-" yaml:"-"`
 	// BaseURL is the Responses API endpoint.
 	BaseURL string `json:"baseURL" yaml:"baseURL"`
+	// APIKey authenticates against OpenAI. The only credential this service holds.
+	APIKey string `json:"-" yaml:"-"`
 	// WebhookSecret verifies OpenAI's webhook notifications. Empty, none is read.
 	WebhookSecret string `json:"-" yaml:"-"`
 }
@@ -70,7 +71,7 @@ type App struct {
 	App Main `json:"app" yaml:"app"`
 	// Grpc holds the gRPC server configuration.
 	Grpc grpcf.ServerConfig `json:"grpc" yaml:"grpc"`
-	// Rest holds the configuration of the REST server providers post their notifications to.
+	// Rest holds the configuration of the REST servers: the notification server and the sweep.
 	Rest httpf.ServerConfig `json:"rest" yaml:"rest"`
 	// Generations holds how generations are run and kept.
 	Generations Generations `json:"generations" yaml:"generations"`

@@ -204,45 +204,32 @@ func NewRegistry(openAI OpenAIConfig) (Registry, error) {
 
 // Streaming returns the connector serving the provider in the Streaming mode.
 func (registry Registry) Streaming(provider string) (Streaming, error) {
-	connector, ok := registry[provider]
-	if !ok {
-		return nil, ErrProviderUnknown
-	}
-
-	streaming, ok := connector.(Streaming)
-	if !ok {
-		return nil, ErrModeUnsupported
-	}
-
-	return streaming, nil
+	return modeOf[Streaming](registry, provider)
 }
 
 // Notifications returns the connector reading the provider's notifications.
 func (registry Registry) Notifications(provider string) (Notifications, error) {
-	connector, ok := registry[provider]
-	if !ok {
-		return nil, ErrProviderUnknown
-	}
-
-	notifications, ok := connector.(Notifications)
-	if !ok {
-		return nil, ErrModeUnsupported
-	}
-
-	return notifications, nil
+	return modeOf[Notifications](registry, provider)
 }
 
 // Async returns the connector running the provider's calls in the Async mode.
 func (registry Registry) Async(provider string) (Async, error) {
+	return modeOf[Async](registry, provider)
+}
+
+// modeOf returns the provider's connector in the mode M, which it offers by implementing M.
+func modeOf[M any](registry Registry, provider string) (M, error) {
+	var mode M
+
 	connector, ok := registry[provider]
 	if !ok {
-		return nil, ErrProviderUnknown
+		return mode, ErrProviderUnknown
 	}
 
-	async, ok := connector.(Async)
+	mode, ok = connector.(M)
 	if !ok {
-		return nil, ErrModeUnsupported
+		return mode, ErrModeUnsupported
 	}
 
-	return async, nil
+	return mode, nil
 }

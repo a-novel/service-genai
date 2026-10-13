@@ -83,9 +83,7 @@ func main() {
 	// SERVICES
 	// =================================================================================================================
 
-	registry := lo.Must(connectors.NewRegistry(connectors.OpenAIConfig{
-		BaseURL: cfg.OpenAI.BaseURL, APIKey: cfg.OpenAI.APIKey, WebhookSecret: cfg.OpenAI.WebhookSecret,
-	}))
+	registry := lo.Must(connectors.NewRegistry(connectors.OpenAIConfig(cfg.OpenAI)))
 
 	transactor := postgres.NewTransactor(nil)
 

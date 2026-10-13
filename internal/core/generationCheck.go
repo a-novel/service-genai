@@ -182,32 +182,15 @@ func (service *GenerationCheck) Exec(
 	return checked, nil
 }
 
-// providerUnavailable settles a generation no connector runs any more, as a deployment that drops a
-// provider leaves it: it cannot progress.
-func (service *GenerationCheck) providerUnavailable(
-	ctx context.Context, generation *dao.Generation, cause error,
-) (*dao.Generation, error) {
-	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(providerUnavailable)")
-	defer span.End()
-
-	service.logFailure(ctx, generation, cause.Error())
-
-	settled, err := service.settleFailure(ctx, generation, failureProviderUnavailable, nil)
-	if err != nil {
-		return nil, otel.ReportError(span, err)
-	}
-
-	return settled, nil
-}
-
 // start sends the provider call for the next attempt.
 func (service *GenerationCheck) start(ctx context.Context, generation *dao.Generation) (*dao.Generation, error) {
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(start)")
 	defer span.End()
 
+	// A deployment that dropped the provider leaves the generation unable to progress.
 	connector, err := service.registry.Async(generation.Provider)
 	if err != nil {
-		settled, settleErr := service.providerUnavailable(ctx, generation, err)
+		settled, settleErr := service.settleFailure(ctx, generation, failureProviderUnavailable, err.Error(), nil)
 		if settleErr != nil {
 			return nil, otel.ReportError(span, settleErr)
 		}
@@ -302,7 +285,8 @@ func (service *GenerationCheck) recordCall(
 
 	// A write that failed without an answer may still commit: the database finishes a statement its
 	// client gave up on. A second write waits behind it on the row, then lands itself if the first never
-	// did, so the read below sees what happened.
+	// did. Should both time out, the read below may still miss a write about to land: the call is then
+	// stopped, and the generation fails once the write lands.
 	if err != nil && !movedOn {
 		recorded, err = write()
 	}
@@ -391,9 +375,7 @@ func (service *GenerationCheck) failStart(
 		failure = failureOutcomeUnknown
 	}
 
-	service.logFailure(ctx, intent, cause.Error())
-
-	settled, err := service.settleFailure(ctx, intent, failure, response)
+	settled, err := service.settleFailure(ctx, intent, failure, cause.Error(), response)
 	if err != nil {
 		return nil, otel.ReportError(span, err)
 	}
@@ -414,9 +396,9 @@ func (service *GenerationCheck) resolveStart(
 		return generation, nil
 	}
 
-	service.logFailure(ctx, generation, "start intent recorded without a provider call id")
-
-	settled, err := service.settleFailure(ctx, generation, failureOutcomeUnknown, nil)
+	settled, err := service.settleFailure(
+		ctx, generation, failureOutcomeUnknown, "start intent recorded without a provider call id", nil,
+	)
 	if err != nil {
 		return nil, otel.ReportError(span, err)
 	}
@@ -431,7 +413,7 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 
 	connector, err := service.registry.Async(generation.Provider)
 	if err != nil {
-		settled, settleErr := service.providerUnavailable(ctx, generation, err)
+		settled, settleErr := service.settleFailure(ctx, generation, failureProviderUnavailable, err.Error(), nil)
 		if settleErr != nil {
 			return nil, otel.ReportError(span, settleErr)
 		}
@@ -439,10 +421,7 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 		return settled, nil
 	}
 
-	// How long the call has run, by the database clock. A recorded call always has its start.
-	age := generation.CheckedAt.Sub(*generation.StartRequestedAt)
-
-	call, stopSince, err := service.ask(ctx, connector, generation, age)
+	call, stopSince, err := service.ask(ctx, connector, generation)
 	stop := stopSince != nil
 
 	// A transient failure, or a stop the provider has not applied yet, is retried by the next check. A
@@ -461,10 +440,8 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 			reason = err.Error()
 		}
 
-		service.logFailure(ctx, generation, reason)
-
 		settled, settleErr := service.settleFailure(
-			ctx, generation, lo.Ternary(unsettled, failureNotStopped, failureResultLost), nil,
+			ctx, generation, lo.Ternary(unsettled, failureNotStopped, failureResultLost), reason, nil,
 		)
 		if settleErr != nil {
 			return nil, otel.ReportError(span, settleErr)
@@ -517,14 +494,15 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 // The call is stopped on its owner's request, or past the run ceiling whether they asked or not: one
 // the provider never finishes, or a key it no longer accepts, must not hold the owner's slot forever.
 func (service *GenerationCheck) ask(
-	ctx context.Context, connector connectors.Async, generation *dao.Generation, age time.Duration,
+	ctx context.Context, connector connectors.Async, generation *dao.Generation,
 ) (*connectors.Call, *time.Time, error) {
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(ask)")
 	defer span.End()
 
-	// Both times come from the database clock, as the check's own stamp does.
+	// Every timestamp here comes from the database clock. A recorded call always has its start.
 	start := *generation.StartRequestedAt
 	since := generation.CancelRequestedAt
+	age := generation.CheckedAt.Sub(start)
 
 	if ceiling := start.Add(runCeiling); age >= runCeiling && (since == nil || ceiling.Before(*since)) {
 		since = &ceiling
@@ -615,13 +593,15 @@ func (service *GenerationCheck) settle(
 }
 
 // settleFailure records a terminal failure in this service's words, with the provider's answer when
-// it gave one. It takes a deadline of its own, so a check that spent its budget on a slow start still
-// records the failure.
+// it gave one, and logs its cause for operators. It takes a deadline of its own, so a check that spent
+// its budget on a slow start still records the failure.
 func (service *GenerationCheck) settleFailure(
-	ctx context.Context, generation *dao.Generation, message string, response json.RawMessage,
+	ctx context.Context, generation *dao.Generation, message, cause string, response json.RawMessage,
 ) (*dao.Generation, error) {
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(settleFailure)")
 	defer span.End()
+
+	service.logFailure(ctx, generation, cause)
 
 	settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), persistenceTimeout)
 	defer cancel()

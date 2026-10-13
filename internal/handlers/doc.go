@@ -8,5 +8,6 @@
 //     Wired by cmd/grpc.
 //
 //   - REST handlers: the public endpoint providers post their notifications to, verified by the
-//     provider's connector. Wired by cmd/rest.
+//     provider's connector, wired by cmd/rest; and the private sweep a scheduler calls, wired by
+//     cmd/sweep.
 package handlers

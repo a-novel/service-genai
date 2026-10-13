@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"maps"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -248,11 +247,6 @@ func (service *GenerationSubmit) validateRequest(request *GenerationSubmitReques
 
 	if _, declared := service.caps.Purposes[request.Purpose]; !declared {
 		return fmt.Errorf("%w: purpose %q is not declared in the caps", ErrInvalidRequest, request.Purpose)
-	}
-
-	// A NUL byte cannot be stored in a PostgreSQL text column.
-	if strings.ContainsRune(request.Purpose, 0) {
-		return fmt.Errorf("%w: purpose contains a NUL character", ErrInvalidRequest)
 	}
 
 	if size := len(request.Payload); size > PayloadSizeCeiling {

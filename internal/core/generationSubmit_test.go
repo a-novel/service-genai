@@ -303,14 +303,6 @@ func TestGenerationSubmit(t *testing.T) {
 			expectErr: core.ErrInvalidRequest,
 		},
 		{
-			// PostgreSQL text cannot hold it.
-			name: "Error/PurposeWithNUL",
-
-			request: submitRequest(func(request *core.GenerationSubmitRequest) { request.Purpose = "studio\x00generation" }),
-
-			expectErr: core.ErrInvalidRequest,
-		},
-		{
 			name: "Error/NoProvider",
 
 			request: submitRequest(func(request *core.GenerationSubmitRequest) { request.Provider = "" }),
