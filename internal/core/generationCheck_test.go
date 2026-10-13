@@ -68,11 +68,14 @@ func TestGenerationCheck(t *testing.T) {
 		recordErr     error
 		// recordRetried lands the second write of a call id the first could not.
 		recordRetried bool
-		observe       *connectors.Call
-		observeErr    error
-		settleErr     error
-		attemptErr    error
-		usageErr      error
+		// cancelledInFlight has the owner cancel while the start is in flight, so the recorded call
+		// carries the request.
+		cancelledInFlight bool
+		observe           *connectors.Call
+		observeErr        error
+		settleErr         error
+		attemptErr        error
+		usageErr          error
 		// callerGone runs the check for a caller whose call already ended.
 		callerGone bool
 		// expectStop asks the provider to cancel instead of reading the call.
@@ -113,6 +116,45 @@ func TestGenerationCheck(t *testing.T) {
 			expectStart:  true,
 			expectRecord: true,
 			expectStatus: dao.GenerationStatusRunning,
+		},
+		{
+			// The owner cancelled while the start was in flight: the recorded call is stopped at once,
+			// rather than running until the next check.
+			name: "Success/CancelledDuringStart",
+
+			generation:        pendingGeneration(),
+			start:             providerCall(connectors.CallRunning),
+			cancelledInFlight: true,
+			expectStop:        true,
+			observe:           providerCall(connectors.CallCancelled),
+
+			expectStart:  true,
+			expectRecord: true,
+			expectSettle: &settle{
+				attempt: 1, callID: &callID, status: dao.GenerationStatusCancelled, reason: &cancelledReason,
+			},
+			expectAttempt: testResponse,
+			expectUsage:   true,
+			expectStatus:  dao.GenerationStatusCancelled,
+		},
+		{
+			// A streamed start records its call while it holds; the cancel is applied once the hold ends.
+			name: "Success/CancelledDuringStreamedStart",
+
+			generation:        streamed(pendingGeneration()),
+			start:             providerCall(connectors.CallRunning),
+			cancelledInFlight: true,
+			expectStop:        true,
+			observe:           providerCall(connectors.CallCancelled),
+
+			expectStart:  true,
+			expectRecord: true,
+			expectSettle: &settle{
+				attempt: 1, callID: &callID, status: dao.GenerationStatusCancelled, reason: &cancelledReason,
+			},
+			expectAttempt: testResponse,
+			expectUsage:   true,
+			expectStatus:  dao.GenerationStatusCancelled,
 		},
 		{
 			// The provider refused before accepting anything, so the attempt costs nothing and comes back.
@@ -778,12 +820,20 @@ func TestGenerationCheck(t *testing.T) {
 					ID: generation.ID, Attempt: intent.Attempt, ProviderCallID: testCallID,
 				}
 
-				record.EXPECT().Exec(mock.Anything, recordRequest).Return(runningGeneration(1), testCase.recordErr).Once()
+				// The intent's attempt, now running its call.
+				recorded := runningGeneration(intent.Attempt)
+				recorded.StartRequestedAt = intent.StartRequestedAt
+
+				if testCase.cancelledInFlight {
+					recorded = withCancel(recorded)
+				}
+
+				record.EXPECT().Exec(mock.Anything, recordRequest).Return(recorded, testCase.recordErr).Once()
 
 				// A write that failed without an answer is tried once more.
 				if testCase.recordErr != nil && !errors.Is(testCase.recordErr, dao.ErrGenerationChanged) {
 					record.EXPECT().Exec(mock.Anything, recordRequest).
-						Return(runningGeneration(1), lo.Ternary(testCase.recordRetried, nil, testCase.recordErr)).Once()
+						Return(recorded, lo.Ternary(testCase.recordRetried, nil, testCase.recordErr)).Once()
 				}
 			}
 
@@ -853,8 +903,14 @@ func TestGenerationCheck(t *testing.T) {
 			}
 
 			if testCase.expectUsage {
+				// A call this check started is metered on the intent's attempt.
+				metered := generation
+				if testCase.expectStart {
+					metered = intent
+				}
+
 				usage.EXPECT().
-					Exec(mock.Anything, usageOf(generation, lo.CoalesceOrEmpty(testCase.stopped, testCase.observe))).
+					Exec(mock.Anything, usageOf(metered, lo.CoalesceOrEmpty(testCase.stopped, testCase.observe))).
 					Return(&dao.GenerationUsage{}, testCase.usageErr)
 			}
 
