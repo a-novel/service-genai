@@ -25,12 +25,13 @@ type GenerationCountLiveRequest struct {
 	UnknownOutcomeWindow time.Duration
 }
 
-// GenerationLiveCount is how many generations an owner has pending or running.
+// GenerationLiveCount is how many generations an owner has in flight.
 type GenerationLiveCount struct {
 	Count int64 `bun:"count"`
 }
 
-// PgGenerationCountLive counts an owner's pending and running generations.
+// PgGenerationCountLive counts an owner's generations in flight: pending, running, or failed within
+// the window with an outcome unknown.
 type PgGenerationCountLive struct{}
 
 // NewPgGenerationCountLive returns a new PgGenerationCountLive dao.
