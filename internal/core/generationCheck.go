@@ -581,8 +581,10 @@ func (service *GenerationCheck) settle(
 
 	span.SetAttributes(attribute.String("generation.status", string(status)))
 
+	// Only a failed call carries the provider's reason. One this service stopped is explained by the
+	// outcome.
 	if status == dao.GenerationStatusFailed {
-		service.logFailure(ctx, generation, call.Reason)
+		service.logFailure(ctx, generation, lo.Ternary(call.State == connectors.CallFailed, call.Reason, *message))
 	}
 
 	settled, err := service.commit(ctx, generation, status, message, call)
