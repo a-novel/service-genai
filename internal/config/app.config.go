@@ -45,6 +45,8 @@ type Sweep struct {
 	Interval time.Duration `json:"interval" yaml:"interval"`
 	// BatchSize caps the generations one batch of a sweep takes.
 	BatchSize int `json:"batchSize" yaml:"batchSize"`
+	// Concurrency caps the checks one batch runs at once.
+	Concurrency int `json:"concurrency" yaml:"concurrency"`
 }
 
 // Generations holds how generations are run and kept.
@@ -110,6 +112,8 @@ func (app App) Validate() error {
 		return fmt.Errorf("%w: the sweep interval must be positive and at most %s", ErrInvalidConfig, SweepIntervalCeiling)
 	case app.Sweep.BatchSize < 1 || app.Sweep.BatchSize > 100:
 		return fmt.Errorf("%w: the sweep batch size must be between 1 and 100", ErrInvalidConfig)
+	case app.Sweep.Concurrency < 1:
+		return fmt.Errorf("%w: the sweep concurrency must be positive", ErrInvalidConfig)
 	}
 
 	err := app.Caps.Validate()

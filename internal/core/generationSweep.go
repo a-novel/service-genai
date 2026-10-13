@@ -13,9 +13,6 @@ import (
 	"github.com/a-novel/service-genai/internal/dao"
 )
 
-// sweepConcurrency bounds the checks one batch runs at once, well under the database pool.
-const sweepConcurrency = 8
-
 // ErrSweepDeadlineTooShort is returned when the caller's deadline leaves no room for a whole check,
 // so the sweep could check nothing.
 var ErrSweepDeadlineTooShort = errors.New("deadline too short for a sweep")
@@ -115,7 +112,7 @@ func (service *GenerationSweep) sweepBatch(ctx context.Context, lastStart time.T
 
 	var (
 		checks sync.WaitGroup
-		slots  = make(chan struct{}, sweepConcurrency)
+		slots  = make(chan struct{}, service.sweep.Concurrency)
 	)
 
 	for _, generation := range generations {

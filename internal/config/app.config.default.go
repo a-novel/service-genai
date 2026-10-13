@@ -52,8 +52,9 @@ var AppPresetDefault = App{
 		Retention:     env.Retention,
 	},
 	Sweep: Sweep{
-		Interval:  env.SweepInterval,
-		BatchSize: env.SweepBatchSize,
+		Interval:    env.SweepInterval,
+		BatchSize:   env.SweepBatchSize,
+		Concurrency: sweepConcurrency(env.PostgresMaxOpenConns),
 	},
 	OpenAI: OpenAI{
 		APIKey:        env.OpenAIAPIKey,
@@ -78,4 +79,17 @@ var AppPresetDefault = App{
 		&loggingpresets.HTTPGcloud{BaseLogger: LoggerProd},
 	),
 	Postgres: PostgresPresetServer,
+}
+
+// sweepConcurrencyCeiling bounds the checks a sweep batch runs at once.
+const sweepConcurrencyCeiling = 8
+
+// sweepConcurrency gives each check a sweep runs at once a connection of its own, so none waits on
+// the pool past its write deadlines. A pool of zero is unlimited.
+func sweepConcurrency(maxOpenConns int) int {
+	if maxOpenConns <= 0 {
+		return sweepConcurrencyCeiling
+	}
+
+	return min(maxOpenConns, sweepConcurrencyCeiling)
 }

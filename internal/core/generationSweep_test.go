@@ -17,7 +17,7 @@ import (
 func TestGenerationSweep(t *testing.T) {
 	t.Parallel()
 
-	sweep := config.Sweep{Interval: time.Minute, BatchSize: 2}
+	sweep := config.Sweep{Interval: time.Minute, BatchSize: 2, Concurrency: 8}
 
 	first := runningGeneration(1)
 	second := pendingGeneration()
