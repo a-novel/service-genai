@@ -24,11 +24,20 @@ import (
 type eventStream struct {
 	grpc.ServerStream
 
+	// left cancels the stream's context, as a caller closing the stream does.
+	left bool
 	sent []*genaiv0.GenerationStreamResponse
 }
 
 func (stream *eventStream) Context() context.Context {
-	return context.Background()
+	if !stream.left {
+		return context.Background()
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	return ctx
 }
 
 func (stream *eventStream) Send(response *genaiv0.GenerationStreamResponse) error {
@@ -68,6 +77,7 @@ func TestGrpcGenerationStream(t *testing.T) {
 		request *genaiv0.GenerationStreamRequest
 
 		serviceMock *serviceMock
+		callerLeft  bool
 
 		expect       []*genaiv0.GenerationStreamResponse
 		expectStatus codes.Code
@@ -93,6 +103,18 @@ func TestGrpcGenerationStream(t *testing.T) {
 
 			expect:       []*genaiv0.GenerationStreamResponse{{SequenceNumber: 3, Event: delta}},
 			expectStatus: codes.Unavailable,
+		},
+		{
+			// Leaving cuts the provider's stream too, which is no server fault.
+			name: "Error/CallerLeft",
+
+			request: &genaiv0.GenerationStreamRequest{Id: testGenerationID, OwnerId: testOwnerID},
+			serviceMock: &serviceMock{resp: &core.GenerationStreamResult{
+				Events: events(fmt.Errorf("%w: %w", core.ErrProviderRetryable, context.Canceled)),
+			}},
+			callerLeft: true,
+
+			expectStatus: codes.Canceled,
 		},
 		{
 			// Past the stream window, the caller polls for the result.
@@ -178,7 +200,7 @@ func TestGrpcGenerationStream(t *testing.T) {
 					Return(testCase.serviceMock.resp, testCase.serviceMock.err)
 			}
 
-			stream := &eventStream{}
+			stream := &eventStream{left: testCase.callerLeft}
 
 			err := handlers.NewGrpcGenerationStream(service).GenerationStream(testCase.request, stream)
 			resSt, ok := status.FromError(err)
