@@ -11,7 +11,6 @@ import (
 	"github.com/a-novel/service-genai/internal/config"
 )
 
-// PostgresPreset is the PostgreSQL configuration used in integration tests. It aliases
-// config.PostgresPresetDefault, the connection every preset shares, without the server's session
-// timeouts.
-var PostgresPreset = config.PostgresPresetDefault
+// PostgresPreset is the PostgreSQL configuration used in integration tests: the connection every
+// preset shares, without the server's session timeouts.
+var PostgresPreset = config.NewPostgresPreset()
