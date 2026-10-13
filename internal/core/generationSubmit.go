@@ -215,10 +215,13 @@ func (service *GenerationSubmit) Exec(
 
 	generation := result.Generation
 
+	// The generation is admitted and recorded, so a start that failed, such as on a lock a migration
+	// holds, is redone by the next poll or the sweep: the caller gets the generation to follow either
+	// way. The check's own span holds the failure.
 	if result.Created {
-		generation, err = service.serviceCheck.Exec(ctx, &GenerationCheckRequest{Generation: generation})
-		if err != nil {
-			return nil, otel.ReportError(span, fmt.Errorf("start generation: %w", err))
+		checked, checkErr := service.serviceCheck.Exec(ctx, &GenerationCheckRequest{Generation: generation})
+		if checkErr == nil {
+			generation = checked
 		}
 	}
 
