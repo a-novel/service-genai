@@ -157,6 +157,24 @@ func TestGenerationCheck(t *testing.T) {
 			expectStatus:  dao.GenerationStatusCancelled,
 		},
 		{
+			// The stop's settle failed: the call stays recorded with its cancel, for the next check.
+			name: "Error/CancelledDuringStartSettle",
+
+			generation:        pendingGeneration(),
+			start:             providerCall(connectors.CallRunning),
+			cancelledInFlight: true,
+			expectStop:        true,
+			observe:           providerCall(connectors.CallCancelled),
+			settleErr:         errFoo,
+
+			expectStart:  true,
+			expectRecord: true,
+			expectSettle: &settle{
+				attempt: 1, callID: &callID, status: dao.GenerationStatusCancelled, reason: &cancelledReason,
+			},
+			expectErr: errFoo,
+		},
+		{
 			// The provider refused before accepting anything, so the attempt costs nothing and comes back.
 			name: "Success/StartRateLimited",
 
@@ -211,6 +229,18 @@ func TestGenerationCheck(t *testing.T) {
 			expectSettle:  &settle{attempt: 1, status: dao.GenerationStatusFailed, reason: &rejectedMessage},
 			expectAttempt: rejectionBody,
 			expectStatus:  dao.GenerationStatusFailed,
+		},
+		{
+			// Recording the rejection failed: the start intent stays for the next check to resolve.
+			name: "Error/StartRejectedSettle",
+
+			generation: pendingGeneration(),
+			startErr:   &connectors.RejectionError{Response: rejectionBody, Err: errFoo},
+			settleErr:  errFoo,
+
+			expectStart:  true,
+			expectSettle: &settle{attempt: 1, status: dao.GenerationStatusFailed, reason: &rejectedMessage},
+			expectErr:    errFoo,
 		},
 		{
 			name: "Success/StartFailed",
