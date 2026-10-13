@@ -35,7 +35,7 @@ services:
 
   service-genai-migrations:
     # Also under the profiles of the targets waiting for it, so `--profile <target>` runs it first.
-    profiles: ["migrations", "grpc", "rest", "sweep"]
+    profiles: ["migrations", "rest", "sweep"]
     build:
       context: ..
       dockerfile: ./builds/migrations.Dockerfile
@@ -61,8 +61,6 @@ services:
     depends_on:
       postgres-genai:
         condition: service_healthy
-      service-genai-migrations:
-        condition: service_completed_successfully
     environment:
       POSTGRES_DSN: postgres://postgres:postgres@postgres-genai:5432/postgres?sslmode=disable
       # The server refuses to start without a key. The placeholder starts it; generations fail until a
@@ -81,6 +79,7 @@ services:
     depends_on:
       postgres-genai:
         condition: service_healthy
+      # Its image holds no migrations, unlike the standalone grpc one: it waits for the job.
       service-genai-migrations:
         condition: service_completed_successfully
     environment:
@@ -108,6 +107,7 @@ services:
     depends_on:
       postgres-genai:
         condition: service_healthy
+      # Its image holds no migrations, unlike the standalone grpc one: it waits for the job.
       service-genai-migrations:
         condition: service_completed_successfully
     environment:
