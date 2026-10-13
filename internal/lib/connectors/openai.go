@@ -176,7 +176,11 @@ func (provider *OpenAI) Stream(ctx context.Context, request *StreamRequest) iter
 		for decoder.Next() {
 			data := decoder.Event().Data
 
-			var head responses.ResponseStreamEventUnion
+			// Only the head is read: a terminal event carries the whole response.
+			var head struct {
+				Type           string `json:"type"`
+				SequenceNumber int64  `json:"sequence_number"` //nolint:tagliatelle // OpenAI's own field name.
+			}
 
 			err = json.Unmarshal(data, &head)
 			if err != nil {
