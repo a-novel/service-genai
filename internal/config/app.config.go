@@ -20,6 +20,10 @@ var ErrInvalidConfig = errors.New("invalid configuration")
 // well inside that window.
 const SweepIntervalCeiling = 5 * time.Minute
 
+// MaxAttemptsCeiling bounds the provider calls a generation gets. A generation carries each answered
+// call's response, at most 24 MiB, so two of them fit the 64 MiB message a client receives.
+const MaxAttemptsCeiling = 2
+
 // UnknownOutcomeHold is how long a generation that failed with its call's outcome unknown keeps its
 // purpose's concurrency slot: the provider may still run a call that nothing tracks or meters, so
 // resending cannot multiply untracked spend. The retention outlasts it, or the purge would end the hold early.
@@ -98,8 +102,8 @@ func (app App) Validate() error {
 	switch {
 	case app.Generations.CheckInterval <= 0:
 		return fmt.Errorf("%w: the check interval must be positive", ErrInvalidConfig)
-	case app.Generations.MaxAttempts < 1 || app.Generations.MaxAttempts > 10:
-		return fmt.Errorf("%w: max attempts must be between 1 and 10", ErrInvalidConfig)
+	case app.Generations.MaxAttempts < 1 || app.Generations.MaxAttempts > MaxAttemptsCeiling:
+		return fmt.Errorf("%w: max attempts must be between 1 and %d", ErrInvalidConfig, MaxAttemptsCeiling)
 	case app.Generations.Retention < UnknownOutcomeHold:
 		return fmt.Errorf("%w: the retention must be at least %s", ErrInvalidConfig, UnknownOutcomeHold)
 	case app.Sweep.Interval <= 0 || app.Sweep.Interval > SweepIntervalCeiling:

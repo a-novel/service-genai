@@ -443,6 +443,8 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 	switch {
 	case err == nil && call.State.Terminal():
 		// Settled or requeued below.
+	case errors.Is(err, connectors.ErrResponseTooLarge):
+		failure, reason = failureResponseTooLarge, err.Error()
 	case err != nil && !errors.Is(err, connectors.ErrRetryable):
 		// Unreadable, typically gone past the provider's retention window.
 		failure, reason = failureResultLost, err.Error()
@@ -849,8 +851,11 @@ const (
 	failureProviderUnavailable = "no connector serves the generation's provider"
 	failureOverdue             = "the provider did not finish the call in time, so it was stopped"
 	failureNotStopped          = "the call could not be stopped, and the provider may still run it"
+	failureResponseTooLarge    = "the provider's response is larger than the 24 MiB this service reads"
 )
 
 // outcomeUnknown holds the failures after which the provider may still run a call nothing tracks or
 // meters, so admission keeps counting the generation for a while.
-var outcomeUnknown = map[string]bool{failureOutcomeUnknown: true, failureNotStopped: true}
+var outcomeUnknown = map[string]bool{
+	failureOutcomeUnknown: true, failureNotStopped: true, failureResponseTooLarge: true,
+}

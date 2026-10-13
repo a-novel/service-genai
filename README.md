@@ -170,13 +170,13 @@ OpenAI connector (all servers). The endpoint must meet the [provider requirement
 
 Checks (all servers) and sweep (`sweep`). [Generation checks](./docs/operations/generation-checks.md) explains how they move a generation forward.
 
-| Name               | Description                                                                                                                   | Default |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------- | ------- |
-| `CHECK_INTERVAL`   | How long a check stays fresh. However often callers poll, a generation reaches the provider at most once per interval.        | `2s`    |
-| `SWEEP_INTERVAL`   | How stale a generation must be for the sweep. Schedule the sweep at least this often. At most `5m`.                           | `1m`    |
-| `SWEEP_BATCH_SIZE` | Generations one batch of a sweep takes, from 1 to 100. A sweep takes another batch while each comes back full.                | `50`    |
-| `MAX_ATTEMPTS`     | Provider calls a generation gets when a call fails retryably, from 1 to 10. Each one is paid. A streamed generation gets one. | `2`     |
-| `RETENTION`        | How long a settled generation, its attempts and its request key survive before the purge deletes them. At least `15m`.        | `6h`    |
+| Name               | Description                                                                                                                                                          | Default |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| `CHECK_INTERVAL`   | How long a check stays fresh. However often callers poll, a generation reaches the provider at most once per interval.                                               | `2s`    |
+| `SWEEP_INTERVAL`   | How stale a generation must be for the sweep. Schedule the sweep at least this often. At most `5m`.                                                                  | `1m`    |
+| `SWEEP_BATCH_SIZE` | Generations one batch of a sweep takes, from 1 to 100. A sweep takes another batch while each comes back full.                                                       | `50`    |
+| `MAX_ATTEMPTS`     | Provider calls a generation gets when a call fails retryably, 1 or 2, so a generation's responses fit one message. Each one is paid. A streamed generation gets one. | `2`     |
+| `RETENTION`        | How long a settled generation, its attempts and its request key survive before the purge deletes them. At least `15m`.                                               | `6h`    |
 
 gRPC server:
 

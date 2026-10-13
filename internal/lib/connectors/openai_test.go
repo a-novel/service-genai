@@ -488,6 +488,17 @@ func TestOpenAI(t *testing.T) {
 
 				expectErr: connectors.ErrRetryable,
 			},
+			{
+				// No read gets past the size the connector reads, so asking again cannot help.
+				name: "Error/TooLarge",
+
+				script: &scriptedProvider{
+					status: http.StatusOK,
+					body:   response("completed", `"pad": "`+strings.Repeat("x", connectors.ResponseSizeCeiling)+`"`),
+				},
+
+				expectErr: connectors.ErrResponseTooLarge,
+			},
 		}
 
 		for _, testCase := range testCases {
@@ -503,7 +514,9 @@ func TestOpenAI(t *testing.T) {
 
 					if testCase.expectErr != nil {
 						require.ErrorIs(t, err, testCase.expectErr)
-					} else {
+					}
+
+					if !errors.Is(testCase.expectErr, connectors.ErrRetryable) {
 						require.NotErrorIs(t, err, connectors.ErrRetryable)
 					}
 

@@ -54,7 +54,7 @@ const (
 )
 
 // maxReceiveBytes lets a generation through whole: its attempts carry the provider's raw responses,
-// and several of them can outgrow gRPC's default 4 MiB receive limit.
+// two at most, of up to 24 MiB each, past gRPC's default 4 MiB receive limit.
 const maxReceiveBytes = 64 << 20
 
 // A Client issues the service's gRPC calls, one method per RPC. Construct one

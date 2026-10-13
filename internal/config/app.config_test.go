@@ -38,7 +38,7 @@ func TestApp(t *testing.T) {
 		{
 			name: "Error/MaxAttemptsAboveCeiling",
 
-			adjust: func(app *config.App) { app.Generations.MaxAttempts = 11 },
+			adjust: func(app *config.App) { app.Generations.MaxAttempts = config.MaxAttemptsCeiling + 1 },
 
 			expectErr: config.ErrInvalidConfig,
 		},
