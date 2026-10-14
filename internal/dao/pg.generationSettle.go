@@ -74,7 +74,7 @@ func (dao *PgGenerationSettle) Exec(ctx context.Context, request *GenerationSett
 			err = errors.Join(err, ErrGenerationChanged)
 		}
 
-		return nil, otel.ReportError(span, fmt.Errorf("execute query: %w", err))
+		return nil, otel.ReportError(span, fmt.Errorf("execute query: %w", refused(err)))
 	}
 
 	return entity, nil

@@ -25,6 +25,8 @@ func TestPgGenerationAttemptInsert(t *testing.T) {
 		purgeParent bool
 
 		response json.RawMessage
+
+		expectErr error
 	}{
 		{
 			// Stored as sent: the caller reads the provider's own bytes back.
@@ -37,6 +39,14 @@ func TestPgGenerationAttemptInsert(t *testing.T) {
 
 			purgeParent: true,
 			response:    json.RawMessage(`{"status": "completed"}`),
+		},
+		{
+			// An answer the column cannot hold fails however often it is sent.
+			name: "Error/Refused",
+
+			response: json.RawMessage(`{"status": `),
+
+			expectErr: dao.ErrRefused,
 		},
 	}
 
@@ -55,7 +65,12 @@ func TestPgGenerationAttemptInsert(t *testing.T) {
 				attempt, err := daoAttemptInsert.Exec(ctx, &dao.GenerationAttemptInsertRequest{
 					GenerationID: running.ID, Attempt: running.Attempt, Response: testCase.response,
 				})
-				require.NoError(t, err)
+				require.ErrorIs(t, err, testCase.expectErr)
+
+				if testCase.expectErr != nil {
+					return
+				}
+
 				require.Equal(t, running.Attempt, attempt.Attempt)
 
 				// Stored as sent: the caller reads the provider's own bytes back.

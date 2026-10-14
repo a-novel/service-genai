@@ -97,7 +97,7 @@ func (dao *PgGenerationUsageInsert) Exec(
 			err = errors.Join(err, ErrGenerationUsageExists)
 		}
 
-		return nil, otel.ReportError(span, fmt.Errorf("execute query: %w", err))
+		return nil, otel.ReportError(span, fmt.Errorf("execute query: %w", refused(err)))
 	}
 
 	return entity, nil
