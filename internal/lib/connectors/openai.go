@@ -147,10 +147,14 @@ func (provider *OpenAI) Start(ctx context.Context, request *AsyncStartRequest) (
 		return nil, otel.ReportError(span, classifyOpenAIStartError(err, sent.Load()))
 	}
 
-	// Accepted, but unreadable: the provider may run the call, and nothing names it.
+	// Accepted, but unreadable or unnamed: the provider may run the call, and nothing names it.
 	call, err := providerCallOf(raw)
 	if err != nil {
 		return nil, otel.ReportError(span, fmt.Errorf("%w: %w", ErrStartAmbiguous, err))
+	}
+
+	if call.ID == "" {
+		return nil, otel.ReportError(span, fmt.Errorf("%w: the response names no operation", ErrStartAmbiguous))
 	}
 
 	return call, nil

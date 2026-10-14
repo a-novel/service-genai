@@ -291,6 +291,14 @@ func TestOpenAI(t *testing.T) {
 			expectErr: connectors.ErrStartAmbiguous,
 		},
 		{
+			// A compatible endpoint that answers without naming the call leaves nothing to follow either.
+			name: "Error/UnnamedIsAmbiguous",
+
+			script: &scriptedProvider{status: http.StatusOK, body: `{"id": "", "status": "queued"}`},
+
+			expectErr: connectors.ErrStartAmbiguous,
+		},
+		{
 			// Retrying cannot help until an operator adds credit, so the generation fails with the body.
 			name: "Error/QuotaExhausted",
 
