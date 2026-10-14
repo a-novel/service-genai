@@ -277,6 +277,14 @@ func TestOpenAI(t *testing.T) {
 			expectErr: connectors.ErrStartAmbiguous,
 		},
 		{
+			// Accepted, but no id can be read off the answer: the provider may run a call nothing names.
+			name: "Error/UnreadableIsAmbiguous",
+
+			script: &scriptedProvider{status: http.StatusOK, body: `{"id": "resp_1", "created_at": "soon"}`},
+
+			expectErr: connectors.ErrStartAmbiguous,
+		},
+		{
 			// Retrying cannot help until an operator adds credit, so the generation fails with the body.
 			name: "Error/QuotaExhausted",
 
@@ -489,6 +497,14 @@ func TestOpenAI(t *testing.T) {
 				expectErr: connectors.ErrRetryable,
 			},
 			{
+				// A garbled answer says nothing about the operation, which the next read may find intact.
+				name: "Error/Unreadable",
+
+				script: &scriptedProvider{status: http.StatusOK, body: `{"id": "resp_1", "status": `},
+
+				expectErr: connectors.ErrRetryable,
+			},
+			{
 				// No read gets past the size the connector reads, so asking again cannot help.
 				name: "Error/TooLarge",
 
@@ -571,6 +587,13 @@ func TestOpenAI(t *testing.T) {
 				name: "Error/Retryable",
 
 				script: &scriptedProvider{status: http.StatusBadGateway, body: `{"error":{"message":"bad gateway"}}`},
+
+				expectErr: connectors.ErrRetryable,
+			},
+			{
+				name: "Error/Unreadable",
+
+				script: &scriptedProvider{status: http.StatusOK, body: `{"id": "resp_1", "status": `},
 
 				expectErr: connectors.ErrRetryable,
 			},

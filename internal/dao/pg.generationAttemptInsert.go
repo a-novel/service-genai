@@ -2,10 +2,8 @@ package dao
 
 import (
 	"context"
-	"database/sql"
 	_ "embed"
 	"encoding/json"
-	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -17,10 +15,6 @@ import (
 
 //go:embed pg.generationAttemptInsert.sql
 var generationAttemptInsertQuery string
-
-// ErrGenerationAttemptExists is returned when this attempt already has its answer recorded. A settle
-// that lands twice must not record it twice.
-var ErrGenerationAttemptExists = errors.New("attempt already recorded")
 
 // GenerationAttemptInsertRequest is the input to [PgGenerationAttemptInsert.Exec].
 type GenerationAttemptInsertRequest struct {
@@ -65,10 +59,6 @@ func (dao *PgGenerationAttemptInsert) Exec(
 		request.Response,
 	).Scan(ctx, entity)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			err = errors.Join(err, ErrGenerationAttemptExists)
-		}
-
 		return nil, otel.ReportError(span, fmt.Errorf("execute query: %w", err))
 	}
 

@@ -737,8 +737,7 @@ func (service *GenerationCheck) recordAttempt(
 		Attempt:      generation.Attempt,
 		Response:     response,
 	})
-
-	if err != nil && !errors.Is(err, dao.ErrGenerationAttemptExists) {
+	if err != nil {
 		return otel.ReportError(span, fmt.Errorf("record attempt: %w", err))
 	}
 
