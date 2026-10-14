@@ -25,6 +25,10 @@ import (
 	"github.com/a-novel/service-genai/internal/lib/connectors"
 )
 
+// ErrUsageCapReached is returned when the user already reached a limit the submit answers to. Its
+// message names the limit.
+var ErrUsageCapReached = errors.New("usage cap reached")
+
 // GenerationSubmitDao records the generation.
 type GenerationSubmitDao interface {
 	Exec(ctx context.Context, request *dao.GenerationSubmitRequest) (*dao.GenerationSubmitResult, error)
