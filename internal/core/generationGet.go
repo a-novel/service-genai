@@ -91,9 +91,11 @@ func (service *GenerationGet) Exec(ctx context.Context, request *GenerationGetRe
 
 	switch {
 	case err == nil:
-		generation, err = service.serviceCheck.Exec(ctx, &GenerationCheckRequest{Generation: generation})
-		if err != nil {
-			return nil, otel.ReportError(span, fmt.Errorf("check generation: %w", err))
+		// A check that failed, such as on a lock a migration holds, is redone by a later poll or the
+		// sweep: the caller gets the generation as elected. The check's own span holds the failure.
+		checked, checkErr := service.serviceCheck.Exec(ctx, &GenerationCheckRequest{Generation: generation})
+		if checkErr == nil {
+			generation = checked
 		}
 	case errors.Is(err, dao.ErrGenerationCheckNotDue):
 		// Checked within the interval, settled, or not this owner's: the read answers.

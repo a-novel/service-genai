@@ -2,6 +2,7 @@ package core_test
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -87,28 +88,6 @@ var testCaps = config.Caps{
 	},
 }
 
-// liveMock is one count of live generations admission reads, and what it finds. The count includes
-// the generation the submit just created.
-type liveMock struct {
-	purpose bool
-	count   int64
-	err     error
-}
-
-// alone is the admission of a default-tier user whose only live generation is the one just created.
-var alone = []liveMock{{purpose: true, count: 1}, {count: 1}}
-
-// usageMock is one window sum admission reads, and what it finds.
-type usageMock struct {
-	purpose bool
-	window  time.Duration
-	used    dao.GenerationUsageTotals
-	err     error
-}
-
-// underCaps is the admission of a default-tier user with room left under every cap.
-var underCaps = []usageMock{{purpose: true, window: 5 * time.Hour}, {window: 720 * time.Hour}}
-
 func TestGenerationSubmit(t *testing.T) {
 	t.Parallel()
 
@@ -118,6 +97,28 @@ func TestGenerationSubmit(t *testing.T) {
 		resp *dao.GenerationSubmitResult
 		err  error
 	}
+
+	// liveMock is one count of live generations admission reads, and what it finds. The count includes
+	// the generation the submit just created.
+	type liveMock struct {
+		purpose bool
+		count   int64
+		err     error
+	}
+
+	// usageMock is one window sum admission reads, and what it finds.
+	type usageMock struct {
+		purpose bool
+		window  time.Duration
+		used    dao.GenerationUsageTotals
+		err     error
+	}
+
+	// alone is the admission of a default-tier user whose only live generation is the one just created.
+	alone := []liveMock{{purpose: true, count: 1}, {count: 1}}
+
+	// underCaps is the admission of a default-tier user with room left under every cap.
+	underCaps := []usageMock{{purpose: true, window: 5 * time.Hour}, {window: 720 * time.Hour}}
 
 	testCases := []struct {
 		name string
@@ -601,6 +602,21 @@ func TestGenerationSubmit(t *testing.T) {
 			submittedKey(t, withSchema(`{"reasoning": {}, "answer": {}}`)),
 			submittedKey(t, withSchema(`{"answer": {}, "reasoning": {}}`)),
 		)
+	})
+
+	// A key is stored with its generation, so one computed another way for the same request misses it
+	// and pays again: changing these bytes means changing the key's tag.
+	t.Run("RequestKey/Stable", func(t *testing.T) {
+		t.Parallel()
+
+		// Members sorted at the top level only, the number as written, the escaped letter decoded and
+		// the HTML characters escaped.
+		nested := submittedKey(t, submitRequest(func(request *core.GenerationSubmitRequest) {
+			request.Payload = json.RawMessage(`{"text": {"format": {"b": 1.50, "a": "<\u00e9&>"}}, "model": "m"}`)
+		}))
+
+		require.Equal(t, "5911295a5b8a1f65b689558f6611c183ec942364196ad02b466d86c4841cadf9", hex.EncodeToString(baseKey))
+		require.Equal(t, "0fd7c5c113277aa9fe9a26d90a0936edf98ba287ea53f0da00d07b8b5ccfc1dc", hex.EncodeToString(nested))
 	})
 
 	// Polling and streaming the same payload are two requests.

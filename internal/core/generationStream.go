@@ -16,6 +16,10 @@ import (
 	"github.com/a-novel/service-genai/internal/lib/connectors"
 )
 
+// ErrGenerationNotStreamed is returned when a stream is asked of a generation not submitted for
+// streaming.
+var ErrGenerationNotStreamed = errors.New("generation not submitted for streaming")
+
 // GenerationStreamDao reads the generation to stream.
 type GenerationStreamDao interface {
 	Exec(ctx context.Context, request *dao.GenerationGetRequest) (*dao.Generation, error)
