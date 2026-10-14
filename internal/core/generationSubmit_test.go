@@ -87,28 +87,6 @@ var testCaps = config.Caps{
 	},
 }
 
-// liveMock is one count of live generations admission reads, and what it finds. The count includes
-// the generation the submit just created.
-type liveMock struct {
-	purpose bool
-	count   int64
-	err     error
-}
-
-// alone is the admission of a default-tier user whose only live generation is the one just created.
-var alone = []liveMock{{purpose: true, count: 1}, {count: 1}}
-
-// usageMock is one window sum admission reads, and what it finds.
-type usageMock struct {
-	purpose bool
-	window  time.Duration
-	used    dao.GenerationUsageTotals
-	err     error
-}
-
-// underCaps is the admission of a default-tier user with room left under every cap.
-var underCaps = []usageMock{{purpose: true, window: 5 * time.Hour}, {window: 720 * time.Hour}}
-
 func TestGenerationSubmit(t *testing.T) {
 	t.Parallel()
 
@@ -118,6 +96,28 @@ func TestGenerationSubmit(t *testing.T) {
 		resp *dao.GenerationSubmitResult
 		err  error
 	}
+
+	// liveMock is one count of live generations admission reads, and what it finds. The count includes
+	// the generation the submit just created.
+	type liveMock struct {
+		purpose bool
+		count   int64
+		err     error
+	}
+
+	// usageMock is one window sum admission reads, and what it finds.
+	type usageMock struct {
+		purpose bool
+		window  time.Duration
+		used    dao.GenerationUsageTotals
+		err     error
+	}
+
+	// alone is the admission of a default-tier user whose only live generation is the one just created.
+	alone := []liveMock{{purpose: true, count: 1}, {count: 1}}
+
+	// underCaps is the admission of a default-tier user with room left under every cap.
+	underCaps := []usageMock{{purpose: true, window: 5 * time.Hour}, {window: 720 * time.Hour}}
 
 	testCases := []struct {
 		name string
