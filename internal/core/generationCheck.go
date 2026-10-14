@@ -482,24 +482,30 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 		generation = &labelled
 	}
 
+	var recorded *dao.Generation
+
 	// A streamed generation is one call: its stream's cursor counts that call's events, and a fresh call
 	// would number its own from zero. Its caller resends it to run it again.
 	if call.State == connectors.CallFailed && call.Retryable && !generation.Streamed &&
 		generation.Attempt < generation.MaxAttempts && generation.CancelRequestedAt == nil {
-		requeued, requeueErr := service.requeue(ctx, generation, call)
-		if requeueErr != nil {
-			return nil, otel.ReportError(span, requeueErr)
-		}
-
-		return requeued, nil
+		recorded, err = service.requeue(ctx, generation, call)
+	} else {
+		recorded, err = service.settle(ctx, generation, call)
 	}
 
-	settled, err := service.settle(ctx, generation, call)
+	// An answer the database keeps refusing, such as usage that breaks a constraint, would keep the
+	// generation running for as long as the provider holds it. Once a stopped call would have been
+	// given up on, the generation fails without it.
+	if err != nil && !errors.Is(err, dao.ErrGenerationChanged) &&
+		generation.CheckedAt.Sub(*generation.StartRequestedAt) >= runCeiling+stopRetryWindow {
+		recorded, err = service.settleFailure(ctx, generation, failureNotRecorded, err.Error(), nil)
+	}
+
 	if err != nil {
 		return nil, otel.ReportError(span, err)
 	}
 
-	return settled, nil
+	return recorded, nil
 }
 
 // ask reads the call, or stops it, and reports since when the stop was wanted, nil when it only read.
@@ -856,6 +862,7 @@ const (
 	failureOverdue             = "the provider did not finish the call in time, so it was stopped"
 	failureNotStopped          = "the call could not be stopped, and the provider may still run it"
 	failureResponseTooLarge    = "the provider's response is larger than the 24 MiB this service reads"
+	failureNotRecorded         = "the provider's answer could not be recorded"
 )
 
 // outcomeUnknown holds the failures after which the provider may still run a call nothing tracks or

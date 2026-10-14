@@ -43,6 +43,7 @@ func TestGenerationCheck(t *testing.T) {
 	overdueMessage := "the provider did not finish the call in time, so it was stopped"
 	notStoppedMessage := "the call could not be stopped, and the provider may still run it"
 	tooLargeMessage := "the provider's response is larger than the 24 MiB this service reads"
+	notRecordedMessage := "the provider's answer could not be recorded"
 	// runCeilingForTest mirrors the run ceiling, past which every call is stopped.
 	const runCeilingForTest = 2 * time.Hour
 
@@ -89,7 +90,9 @@ func TestGenerationCheck(t *testing.T) {
 		expectRecord     bool
 		expectStopOrphan bool
 		expectSettle     *settle
-		expectRequeue    bool
+		// expectNotRecorded settles the generation failed without the answer its settle could not record.
+		expectNotRecorded *settle
+		expectRequeue     bool
 		// expectAttempt is the provider answer the attempt records, if any.
 		expectAttempt json.RawMessage
 		// expectUsage records what the observed call consumed.
@@ -771,6 +774,23 @@ func TestGenerationCheck(t *testing.T) {
 			expectErr:     errFoo,
 		},
 		{
+			// An answer the database keeps refusing must not hold the generation running for as long as
+			// the provider keeps it: once a stop would have been given up on, it fails without the answer.
+			name: "Success/AnswerNotRecorded",
+
+			generation: startedAgo(runningGeneration(1), 3*time.Hour),
+			observe:    providerCall(connectors.CallSucceeded),
+			expectStop: true,
+			attemptErr: errFoo,
+
+			expectSettle:  &settle{attempt: 1, callID: &callID, status: dao.GenerationStatusSucceeded},
+			expectAttempt: testResponse,
+			expectNotRecorded: &settle{
+				attempt: 1, callID: &callID, status: dao.GenerationStatusFailed, reason: &notRecordedMessage,
+			},
+			expectStatus: dao.GenerationStatusFailed,
+		},
+		{
 			// The settle and its answer commit together, or not at all.
 			name: "Error/Attempt",
 
@@ -903,7 +923,7 @@ func TestGenerationCheck(t *testing.T) {
 				connector.EXPECT().Cancel(mock.Anything, testCallID).Return(testCase.stopped, nil)
 			}
 
-			if expected := testCase.expectSettle; expected != nil {
+			expectSettle := func(expected *settle, err error) {
 				// A settle is fenced on the start it read: the fresh intent's once one was taken here.
 				started := generation.StartRequestedAt
 				if testCase.expectStart {
@@ -921,7 +941,15 @@ func TestGenerationCheck(t *testing.T) {
 						Retention:        retention,
 						OutcomeUnknown:   expected.outcomeUnknown,
 					}).
-					Return(settledGeneration(expected.status), testCase.settleErr)
+					Return(settledGeneration(expected.status), err)
+			}
+
+			if testCase.expectSettle != nil {
+				expectSettle(testCase.expectSettle, testCase.settleErr)
+			}
+
+			if testCase.expectNotRecorded != nil {
+				expectSettle(testCase.expectNotRecorded, nil)
 			}
 
 			if testCase.expectRequeue {

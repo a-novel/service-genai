@@ -23,7 +23,7 @@ A start that never left, was rate-limited, met a conflict or was refused for thi
 
 A streamed generation is one provider call: its stream's cursor counts that call's events, and a fresh call would number its own from zero. A retryable failure therefore settles it, and its caller resends it to run it again. Its call is recorded the moment the provider names it, before the creation stream's hold ends, so a process stopped during the hold still tracks the call.
 
-A read the provider refuses for credentials is retried too, since the key is this service's configuration and says nothing about the call. Only a call the provider no longer holds settles as lost. A response larger than 24 MiB is never read: its generation fails and, since the call may still run, keeps its owner's slot in its purpose for 15 minutes.
+A read the provider refuses for credentials is retried too, since the key is this service's configuration and says nothing about the call. Only a call the provider no longer holds settles as lost. A response larger than 24 MiB is never read: its generation fails and, since the call may still run, keeps its owner's slot in its purpose for 15 minutes. An answer the database keeps refusing to record fails its generation without it, once 2 hours and 10 minutes have passed since the call's start, when a call that cannot be stopped is given up on too.
 
 ## Deploying and recovering
 
