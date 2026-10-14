@@ -121,13 +121,14 @@ func TestGenerationGet(t *testing.T) {
 			expectErr: errFoo,
 		},
 		{
-			name: "Error/Check",
+			// A failed check is redone later: the poll still answers with the generation as elected.
+			name: "Success/CheckFails",
 
 			request:   &core.GenerationGetRequest{ID: testGenerationID, OwnerID: testOwner},
 			electMock: &daoMock{resp: runningGeneration(1)},
 			checkMock: &daoMock{err: errFoo},
 
-			expectErr: errFoo,
+			expectStatus: core.GenerationStatusRunning,
 		},
 		{
 			// The data access reports not-found for another owner's generation too, so the
