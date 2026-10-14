@@ -100,6 +100,8 @@ func TestGenerationCheck(t *testing.T) {
 		expectReread bool
 		// rereadAs is what the re-read finds, a settled generation unless stated.
 		rereadAs *dao.Generation
+		// rereadErr fails the re-read.
+		rereadErr error
 
 		expectStatus dao.GenerationStatus
 		expectErr    error
@@ -669,12 +671,43 @@ func TestGenerationCheck(t *testing.T) {
 			expectStatus: dao.GenerationStatusSucceeded,
 		},
 		{
-			// The write failed but landed: the generation carries the call, which must keep running.
-			name: "Error/Record",
+			// The write failed but landed: the generation carries the call, which keeps running.
+			name: "Success/RecordLanded",
 
 			generation: pendingGeneration(),
 			start:      providerCall(connectors.CallRunning),
 			recordErr:  errFoo,
+
+			expectStart:  true,
+			expectRecord: true,
+			expectReread: true,
+			rereadAs:     runningGeneration(1),
+			expectStatus: dao.GenerationStatusRunning,
+		},
+		{
+			// A streamed start keeps holding the call its late write recorded: leaving the stream while
+			// the call is queued can leave it queued for good.
+			name: "Success/StreamedRecordLanded",
+
+			generation: streamed(pendingGeneration()),
+			start:      providerCall(connectors.CallQueued),
+			recordErr:  errFoo,
+
+			expectStart:  true,
+			expectRecord: true,
+			expectReread: true,
+			rereadAs:     runningGeneration(1),
+			expectStatus: dao.GenerationStatusRunning,
+		},
+		{
+			// A generation that cannot be read may carry the call: it is left running, and the next
+			// check finds out.
+			name: "Error/RecordUnreadable",
+
+			generation: pendingGeneration(),
+			start:      providerCall(connectors.CallRunning),
+			recordErr:  errFoo,
+			rereadErr:  errFoo,
 
 			expectStart:  true,
 			expectRecord: true,
@@ -974,9 +1007,14 @@ func TestGenerationCheck(t *testing.T) {
 			}
 
 			if testCase.expectReread {
+				reread := lo.CoalesceOrEmpty(testCase.rereadAs, settledGeneration(dao.GenerationStatusSucceeded))
+				if testCase.rereadErr != nil {
+					reread = nil
+				}
+
 				get.EXPECT().
 					Exec(mock.Anything, &dao.GenerationGetRequest{ID: generation.ID, OwnerID: generation.OwnerID}).
-					Return(lo.CoalesceOrEmpty(testCase.rereadAs, settledGeneration(dao.GenerationStatusSucceeded)), nil)
+					Return(reread, testCase.rereadErr)
 			}
 
 			logger := coremocks.NewMockGenerationCheckLogger(t)
