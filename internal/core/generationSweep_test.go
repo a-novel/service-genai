@@ -2,6 +2,8 @@ package core_test
 
 import (
 	"context"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -190,4 +192,50 @@ func TestGenerationSweep(t *testing.T) {
 			check.AssertExpectations(t)
 		})
 	}
+
+	// A scheduler call that runs long overlaps the next one. Both share the process's concurrency,
+	// which the connection pool sizes, rather than each running as many checks.
+	t.Run("Success/OverlappingCallsShareConcurrency", func(t *testing.T) {
+		t.Parallel()
+
+		const calls = 3
+
+		shared := config.Sweep{Interval: time.Minute, BatchSize: 2, Concurrency: 1}
+
+		sweepDao := coremocks.NewMockGenerationSweepDao(t)
+		sweepDao.EXPECT().Exec(mock.Anything, mock.Anything).Return([]*dao.Generation{first}, nil).Times(calls)
+
+		var (
+			running    atomic.Int32
+			overlapped atomic.Bool
+		)
+
+		check := coremocks.NewMockGenerationSweepServiceCheck(t)
+		check.EXPECT().Exec(mock.Anything, mock.Anything).
+			RunAndReturn(func(context.Context, *core.GenerationCheckRequest) (*dao.Generation, error) {
+				if running.Add(1) > 1 {
+					overlapped.Store(true)
+				}
+
+				time.Sleep(20 * time.Millisecond)
+				running.Add(-1)
+
+				return first, nil
+			}).
+			Times(calls)
+
+		service := core.NewGenerationSweep(sweepDao, check, shared)
+
+		var overlapping sync.WaitGroup
+
+		for range calls {
+			overlapping.Go(func() {
+				_, err := service.Exec(t.Context(), &core.GenerationSweepRequest{})
+				require.NoError(t, err)
+			})
+		}
+
+		overlapping.Wait()
+		require.False(t, overlapped.Load())
+	})
 }

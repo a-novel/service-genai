@@ -40,18 +40,22 @@ type GenerationSweepResult struct {
 //
 // Callers polling a generation keep it fresh. The sweep catches the rest: a generation whose caller
 // went away still settles while the provider holds its result, and one whose start never ran still
-// starts. A scheduler calls it, so it runs within a request, where the instance has its CPU.
+// starts. A scheduler calls it, so it runs within a request, where the instance has its CPU. Calls
+// that overlap share its concurrency, which the connection pool sizes.
 type GenerationSweep struct {
 	dao          GenerationSweepDao
 	serviceCheck GenerationSweepServiceCheck
 	sweep        config.Sweep
+	slots        chan struct{}
 }
 
 // NewGenerationSweep returns a new GenerationSweep service.
 func NewGenerationSweep(
 	dao GenerationSweepDao, serviceCheck GenerationSweepServiceCheck, sweep config.Sweep,
 ) *GenerationSweep {
-	return &GenerationSweep{dao: dao, serviceCheck: serviceCheck, sweep: sweep}
+	return &GenerationSweep{
+		dao: dao, serviceCheck: serviceCheck, sweep: sweep, slots: make(chan struct{}, sweep.Concurrency),
+	}
 }
 
 // Exec checks one batch after another while each comes back full, so a backlog drains in one call.
@@ -110,23 +114,26 @@ func (service *GenerationSweep) sweepBatch(ctx context.Context, lastStart time.T
 		return 0, otel.ReportError(span, fmt.Errorf("sweep generations: %w", err))
 	}
 
-	var (
-		checks sync.WaitGroup
-		slots  = make(chan struct{}, service.sweep.Concurrency)
-	)
+	var checks sync.WaitGroup
 
+dispatch:
 	for _, generation := range generations {
 		select {
-		case slots <- struct{}{}:
+		case service.slots <- struct{}{}:
 		case <-ctx.Done():
+			break dispatch
 		}
 
+		// The wait for a slot may outlast the deadline or the server: the slot goes back to the calls
+		// sharing it.
 		if ctx.Err() != nil || !mayStart(lastStart) {
+			<-service.slots
+
 			break
 		}
 
 		checks.Go(func() {
-			defer func() { <-slots }()
+			defer func() { <-service.slots }()
 
 			service.checkOne(ctx, generation)
 		})
