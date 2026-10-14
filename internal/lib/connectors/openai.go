@@ -11,6 +11,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptrace"
+	"net/url"
 	"strconv"
 	"sync/atomic"
 	"time"
@@ -139,14 +140,20 @@ func (provider *OpenAI) Start(ctx context.Context, request *AsyncStartRequest) (
 		return call, nil
 	}
 
-	response := &responses.Response{}
+	var raw []byte
 
-	err = provider.client.Post(ctx, responsesPath, body, response, option.WithMaxRetries(0))
+	err = provider.client.Post(ctx, responsesPath, body, &raw, option.WithMaxRetries(0))
 	if err != nil {
 		return nil, otel.ReportError(span, classifyOpenAIStartError(err, sent.Load()))
 	}
 
-	return providerCallOf(response), nil
+	// Accepted, but unreadable: the provider may run the call, and nothing names it.
+	call, err := providerCallOf(raw)
+	if err != nil {
+		return nil, otel.ReportError(span, fmt.Errorf("%w: %w", ErrStartAmbiguous, err))
+	}
+
+	return call, nil
 }
 
 // Stream reads the operation's events after the cursor. openai-go's GetStreaming sends a body on
@@ -163,7 +170,7 @@ func (provider *OpenAI) Stream(ctx context.Context, request *StreamRequest) iter
 
 		var raw *http.Response
 
-		err := provider.client.Get(ctx, responsesPath+"/"+request.ID, nil, &raw, opts...)
+		err := provider.client.Get(ctx, callPath(request.ID), nil, &raw, opts...)
 		if err != nil {
 			yield(nil, otel.ReportError(span, classifyOpenAIStreamError(err)))
 
@@ -253,12 +260,19 @@ func (provider *OpenAI) Get(ctx context.Context, id string) (*Call, error) {
 
 	span.SetAttributes(attribute.String("provider.call_id", id))
 
-	response, err := provider.client.Responses.Get(ctx, id, responses.ResponseGetParams{}, readOptions...)
+	var raw []byte
+
+	err := provider.client.Get(ctx, callPath(id), nil, &raw, readOptions...)
 	if err != nil {
 		return nil, otel.ReportError(span, classifyOpenAIError(err))
 	}
 
-	return providerCallOf(response), nil
+	call, err := providerCallOf(raw)
+	if err != nil {
+		return nil, otel.ReportError(span, fmt.Errorf("%w: %w", ErrRetryable, err))
+	}
+
+	return call, nil
 }
 
 // Cancel stops an operation so an abandoned generation stops costing.
@@ -268,7 +282,9 @@ func (provider *OpenAI) Cancel(ctx context.Context, id string) (*Call, error) {
 
 	span.SetAttributes(attribute.String("provider.call_id", id))
 
-	response, err := provider.client.Responses.Cancel(ctx, id, readOptions...)
+	var raw []byte
+
+	err := provider.client.Post(ctx, callPath(id)+"/cancel", nil, &raw, readOptions...)
 
 	// OpenAI refuses to cancel a response that already finished. Its result is still there, and paid.
 	var apiErr *openai.Error
@@ -285,7 +301,12 @@ func (provider *OpenAI) Cancel(ctx context.Context, id string) (*Call, error) {
 		return nil, otel.ReportError(span, classifyOpenAIError(err))
 	}
 
-	return providerCallOf(response), nil
+	call, err := providerCallOf(raw)
+	if err != nil {
+		return nil, otel.ReportError(span, fmt.Errorf("%w: %w", ErrRetryable, err))
+	}
+
+	return call, nil
 }
 
 // Notification verifies one of OpenAI's webhook events with the endpoint's signing secret, and names
@@ -337,15 +358,22 @@ func (provider *OpenAI) holdStream(
 	var call *Call
 
 	for decoder.Next() {
-		var event responses.ResponseStreamEventUnion
+		var event struct {
+			Response json.RawMessage `json:"response"`
+		}
 
-		if json.Unmarshal(decoder.Event().Data, &event) != nil || event.Response.ID == "" {
+		if json.Unmarshal(decoder.Event().Data, &event) != nil {
+			continue
+		}
+
+		current, decodeErr := providerCallOf(event.Response)
+		if decodeErr != nil || current.ID == "" {
 			continue
 		}
 
 		named := call == nil
 
-		call = providerCallOf(&event.Response)
+		call = current
 
 		if named && accepted != nil {
 			err = accepted(call)
@@ -400,12 +428,56 @@ func encodeJSON(value any) (json.RawMessage, error) {
 	return bytes.TrimSuffix(buffer.Bytes(), []byte("\n")), nil
 }
 
+// callPath is the endpoint of one operation.
+func callPath(id string) string {
+	return responsesPath + "/" + url.PathEscape(id)
+}
+
+// openAIResponse holds the fields of a Responses API object a check reads. The rest stays in the
+// bytes as sent: the SDK's typed decode allocates about ten times a response's size.
+//
+//nolint:tagliatelle // OpenAI's own field names.
+type openAIResponse struct {
+	ID     string                   `json:"id"`
+	Status responses.ResponseStatus `json:"status"`
+	Error  struct {
+		Code    responses.ResponseErrorCode `json:"code"`
+		Message string                      `json:"message"`
+	} `json:"error"`
+	Model     string `json:"model"`
+	Reasoning struct {
+		Effort shared.ReasoningEffort `json:"effort"`
+	} `json:"reasoning"`
+	ServiceTier responses.ResponseServiceTier `json:"service_tier"`
+	CreatedAt   float64                       `json:"created_at"`
+	CompletedAt *float64                      `json:"completed_at"`
+	Usage       struct {
+		InputTokens        int64 `json:"input_tokens"`
+		InputTokensDetails struct {
+			CachedTokens     int64 `json:"cached_tokens"`
+			CacheWriteTokens int64 `json:"cache_write_tokens"`
+		} `json:"input_tokens_details"`
+		OutputTokens        int64 `json:"output_tokens"`
+		OutputTokensDetails struct {
+			ReasoningTokens int64 `json:"reasoning_tokens"`
+		} `json:"output_tokens_details"`
+		TotalTokens *int64 `json:"total_tokens"`
+	} `json:"usage"`
+}
+
 // providerCallOf reads the operation's state, and once terminal its usage, off a provider response,
 // and keeps the response itself.
 //
 // A completed or incomplete response is finished: an output cut at the caller's max_output_tokens,
 // or a refusal, is the caller's to read.
-func providerCallOf(response *responses.Response) *Call {
+func providerCallOf(raw json.RawMessage) (*Call, error) {
+	var response openAIResponse
+
+	err := json.Unmarshal(raw, &response)
+	if err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+
 	call := &Call{ID: response.ID, State: CallRunning}
 
 	switch response.Status {
@@ -426,10 +498,10 @@ func providerCallOf(response *responses.Response) *Call {
 	}
 
 	if !call.State.Terminal() {
-		return call
+		return call, nil
 	}
 
-	call.Response = json.RawMessage(response.RawJSON())
+	call.Response = raw
 	call.Model = response.Model
 	call.Class = string(response.Reasoning.Effort)
 	call.Tier = string(response.ServiceTier)
@@ -443,14 +515,14 @@ func providerCallOf(response *responses.Response) *Call {
 		call.Class = string(shared.ReasoningEffortNone)
 	}
 
-	if response.JSON.CompletedAt.Valid() && response.CompletedAt > 0 {
-		completedAt := unixTime(response.CompletedAt)
+	if response.CompletedAt != nil && *response.CompletedAt > 0 {
+		completedAt := unixTime(*response.CompletedAt)
 		call.CompletedAt = &completedAt
 	}
 
 	// Zero tokens is a real answer and not a missing one, so presence is decided by the provider
 	// reporting the field.
-	if response.Usage.JSON.TotalTokens.Valid() {
+	if response.Usage.TotalTokens != nil {
 		call.Usage = &Usage{
 			InputTokens:       response.Usage.InputTokens,
 			CachedInputTokens: response.Usage.InputTokensDetails.CachedTokens,
@@ -460,7 +532,7 @@ func providerCallOf(response *responses.Response) *Call {
 		}
 	}
 
-	return call
+	return call, nil
 }
 
 // unixTime reads the provider's fractional Unix seconds.
