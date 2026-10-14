@@ -78,7 +78,9 @@ type Client interface {
 		ctx context.Context, req *GenerationSubmitRequest, opts ...grpc.CallOption,
 	) (*GenerationSubmitResponse, error)
 	// GenerationGet reads one of an owner's generations, checking it with the provider when it is
-	// stale. Poll it until the generation settles. Another owner's reports not-found.
+	// stale. Poll it until the generation settles. Another owner's reports not-found. A poll may start
+	// a streamed generation's call again after the provider turned one away: give it the submit's
+	// deadline.
 	GenerationGet(
 		ctx context.Context, req *GenerationGetRequest, opts ...grpc.CallOption,
 	) (*GenerationGetResponse, error)
