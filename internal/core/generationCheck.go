@@ -709,7 +709,7 @@ func (service *GenerationCheck) recordUsage(
 		CompletedAt: call.CompletedAt,
 	})
 
-	// A replay of the same provider result finds the row already there, which is no failure.
+	// The stop of an orphaned call may have recorded this attempt's usage already, which is no failure.
 	if err != nil && !errors.Is(err, dao.ErrGenerationUsageExists) {
 		return otel.ReportError(span, fmt.Errorf("record usage: %w", err))
 	}

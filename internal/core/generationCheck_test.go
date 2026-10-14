@@ -768,7 +768,8 @@ func TestGenerationCheck(t *testing.T) {
 			expectErr:    errFoo,
 		},
 		{
-			// The same usage recorded by an earlier settle that did not commit its status is counted once.
+			// The stop of an orphaned call recorded this attempt's usage before its call id landed: it is
+			// counted once.
 			name: "Success/UsageAlreadyRecorded",
 
 			generation: runningGeneration(1),

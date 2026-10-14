@@ -18,8 +18,9 @@ import (
 //go:embed pg.generationUsageInsert.sql
 var generationUsageInsertQuery string
 
-// ErrGenerationUsageExists is returned when this attempt's usage is already recorded. A settle that
-// lands twice must not count it twice.
+// ErrGenerationUsageExists is returned when this attempt's usage is already recorded. The stop of an
+// orphaned call records it outside any settle, and a call id write that landed late lets a check
+// settle the same call afterwards.
 var ErrGenerationUsageExists = errors.New("usage already recorded for this attempt")
 
 // GenerationUsageInsertRequest is the input to [PgGenerationUsageInsert.Exec].
@@ -47,7 +48,8 @@ type GenerationUsageInsertRequest struct {
 // PgGenerationUsageInsert records what one answered attempt consumed.
 //
 // Call it in the same transaction as the settle or requeue it belongs to: a transition without its
-// usage is a billed call nothing counts.
+// usage is a billed call nothing counts. The stop of an orphaned call, which no transition tracks,
+// calls it alone.
 type PgGenerationUsageInsert struct{}
 
 // NewPgGenerationUsageInsert returns a new PgGenerationUsageInsert dao.
