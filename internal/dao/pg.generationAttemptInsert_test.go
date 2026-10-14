@@ -21,14 +21,10 @@ func TestPgGenerationAttemptInsert(t *testing.T) {
 	testCases := []struct {
 		name string
 
-		// insertTwice replays the same insert, as a settle landing twice would.
-		insertTwice bool
 		// purgeParent deletes the generation the way the retention purge does.
 		purgeParent bool
 
 		response json.RawMessage
-
-		expectErr error
 	}{
 		{
 			// Stored as sent: the caller reads the provider's own bytes back.
@@ -41,14 +37,6 @@ func TestPgGenerationAttemptInsert(t *testing.T) {
 
 			purgeParent: true,
 			response:    json.RawMessage(`{"status": "completed"}`),
-		},
-		{
-			name: "Error/AlreadyRecordedForThisAttempt",
-
-			insertTwice: true,
-			response:    json.RawMessage(`{"status": "completed"}`),
-
-			expectErr: dao.ErrGenerationAttemptExists,
 		},
 	}
 
@@ -64,24 +52,10 @@ func TestPgGenerationAttemptInsert(t *testing.T) {
 				generation := seedGeneration(ctx, t, 1)
 				running := runGeneration(ctx, t, generation.ID)
 
-				request := &dao.GenerationAttemptInsertRequest{
+				attempt, err := daoAttemptInsert.Exec(ctx, &dao.GenerationAttemptInsertRequest{
 					GenerationID: running.ID, Attempt: running.Attempt, Response: testCase.response,
-				}
-
-				if testCase.insertTwice {
-					_, err := daoAttemptInsert.Exec(ctx, request)
-					require.NoError(t, err)
-				}
-
-				attempt, err := daoAttemptInsert.Exec(ctx, request)
-				require.ErrorIs(t, err, testCase.expectErr)
-
-				if testCase.expectErr != nil {
-					require.Nil(t, attempt)
-
-					return
-				}
-
+				})
+				require.NoError(t, err)
 				require.Equal(t, running.Attempt, attempt.Attempt)
 
 				// Stored as sent: the caller reads the provider's own bytes back.

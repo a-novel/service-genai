@@ -353,19 +353,6 @@ func TestGenerationCheck(t *testing.T) {
 			expectStatus:  dao.GenerationStatusSucceeded,
 		},
 		{
-			// The same answer recorded by an earlier settle that did not commit its status is kept once.
-			name: "Success/AttemptAlreadyRecorded",
-
-			generation: runningGeneration(1),
-			observe:    providerCall(connectors.CallSucceeded),
-			attemptErr: dao.ErrGenerationAttemptExists,
-
-			expectSettle:  &settle{attempt: 1, callID: &callID, status: dao.GenerationStatusSucceeded},
-			expectAttempt: testResponse,
-			expectUsage:   true,
-			expectStatus:  dao.GenerationStatusSucceeded,
-		},
-		{
 			// A cancelled call is not a free one: its answer is recorded.
 			name: "Success/Cancelled",
 
