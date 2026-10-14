@@ -100,14 +100,18 @@ func (service *GenerationStream) Exec(
 		return nil, otel.ReportError(span, fmt.Errorf("provider %q: %w", generation.Provider, err))
 	}
 
-	events := connector.Stream(ctx, &connectors.StreamRequest{
-		ID: *generation.ProviderCallID, StartingAfter: request.StartingAfter,
-	})
-
+	// The events are read after Exec returns, so their reading takes a span of its own.
 	return &GenerationStreamResult{Events: func(yield func(*GenerationStreamEvent, error) bool) {
+		ctx, span := otel.Tracer().Start(ctx, "core.GenerationStream(events)")
+		defer span.End()
+
+		events := connector.Stream(ctx, &connectors.StreamRequest{
+			ID: *generation.ProviderCallID, StartingAfter: request.StartingAfter,
+		})
+
 		for event, err := range events {
 			if err != nil {
-				yield(nil, err)
+				yield(nil, otel.ReportError(span, err))
 
 				return
 			}

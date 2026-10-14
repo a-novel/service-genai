@@ -93,6 +93,10 @@ func newTestProvider(t *testing.T, script *scriptedProvider) *connectors.OpenAI 
 const testPayload = `{"model": "gpt-5.6-terra", "input": "a & b", ` +
 	`"text": {"format": {"type": "json_schema", "schema": {"properties": {"z": {}, "a": {}}}}}}`
 
+// unauthorizedBody is how OpenAI refuses a key: its message echoes the key's ends.
+const unauthorizedBody = `{"error":{"message":"Incorrect API key provided: sk-proj-****abcd.",` +
+	`"type":"invalid_request_error","code":"invalid_api_key"}}`
+
 func testStartRequest() *connectors.AsyncStartRequest {
 	return &connectors.AsyncStartRequest{Payload: json.RawMessage(testPayload)}
 }
@@ -156,6 +160,8 @@ func TestOpenAI(t *testing.T) {
 		expectReason    string
 		expectRetryable bool
 		expectErr       error
+		// expectHidden is text of the provider's answer the error must leave out.
+		expectHidden string
 		// expectRejection marks a definitive start rejection; expectBody is the error body it carries.
 		expectRejection bool
 		expectBody      string
@@ -285,6 +291,14 @@ func TestOpenAI(t *testing.T) {
 			expectErr: connectors.ErrStartAmbiguous,
 		},
 		{
+			// A compatible endpoint that answers without naming the call leaves nothing to follow either.
+			name: "Error/UnnamedIsAmbiguous",
+
+			script: &scriptedProvider{status: http.StatusOK, body: `{"id": "", "status": "queued"}`},
+
+			expectErr: connectors.ErrStartAmbiguous,
+		},
+		{
 			// Retrying cannot help until an operator adds credit, so the generation fails with the body.
 			name: "Error/QuotaExhausted",
 
@@ -309,12 +323,14 @@ func TestOpenAI(t *testing.T) {
 			expectBody:      `{"error":{"message":"bad schema","param":"text.format.schema"}}`,
 		},
 		{
-			// The service's own key, not the caller's request: retried, and its body never passed on.
+			// The service's own key, not the caller's request: retried, and its body never passed on, nor
+			// logged: it echoes part of the key.
 			name: "Error/Unauthorized",
 
-			script: &scriptedProvider{status: http.StatusUnauthorized, body: `{"error":{"message":"bad key"}}`},
+			script: &scriptedProvider{status: http.StatusUnauthorized, body: unauthorizedBody},
 
-			expectErr: connectors.ErrRetryable,
+			expectErr:    connectors.ErrRetryable,
+			expectHidden: "sk-proj-****abcd",
 		},
 		{
 			// A proxy in front of the provider may answer with anything; nothing is passed on.
@@ -362,6 +378,10 @@ func TestOpenAI(t *testing.T) {
 			}
 
 			require.ErrorIs(t, err, testCase.expectErr)
+
+			if testCase.expectHidden != "" {
+				require.NotContains(t, err.Error(), testCase.expectHidden)
+			}
 
 			if testCase.expectErr != nil {
 				return
@@ -464,8 +484,9 @@ func TestOpenAI(t *testing.T) {
 
 			script *scriptedProvider
 
-			expectState connectors.CallState
-			expectErr   error
+			expectState  connectors.CallState
+			expectErr    error
+			expectHidden string
 		}{
 			{
 				name: "Success",
@@ -492,9 +513,10 @@ func TestOpenAI(t *testing.T) {
 				// key is fixed, the result is read again.
 				name: "Error/Unauthorized",
 
-				script: &scriptedProvider{status: http.StatusUnauthorized, body: `{"error":{"message":"bad key"}}`},
+				script: &scriptedProvider{status: http.StatusUnauthorized, body: unauthorizedBody},
 
-				expectErr: connectors.ErrRetryable,
+				expectErr:    connectors.ErrRetryable,
+				expectHidden: "sk-proj-****abcd",
 			},
 			{
 				// A garbled answer says nothing about the operation, which the next read may find intact.
@@ -534,6 +556,10 @@ func TestOpenAI(t *testing.T) {
 
 					if !errors.Is(testCase.expectErr, connectors.ErrRetryable) {
 						require.NotErrorIs(t, err, connectors.ErrRetryable)
+					}
+
+					if testCase.expectHidden != "" {
+						require.NotContains(t, err.Error(), testCase.expectHidden)
 					}
 
 					return
