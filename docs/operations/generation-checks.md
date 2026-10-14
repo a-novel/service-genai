@@ -6,7 +6,7 @@ No process holds a generation. A **check** looks at one generation and applies w
 
 - `GenerationSubmit` checks a generation it just created, which starts its provider call.
 - `GenerationGet` checks a generation nobody checked within `CHECK_INTERVAL`. Concurrent polls elect one checker, so a generation reaches the provider at most once per interval however many callers poll it.
-- A provider's notification that a call ended checks the generation running it, through the `rest` server.
+- A provider's notification that a call ended checks the generation running it, through the `rest` server. One that arrives before the call's id is recorded finds no generation, and the next poll or sweep settles it.
 - The `sweep` server checks the unsettled generations nobody checked within `SWEEP_INTERVAL`, each time a scheduler posts to `/sweep`. A call takes batches of `SWEEP_BATCH_SIZE` while each comes back full, and starts no check its deadline could not wait out. Overlapping calls take disjoint batches. It exists for generations whose caller stopped polling: the provider keeps a finished result only for a while when it does not store it, and only a check frees the concurrency slot of a generation nobody follows.
 
 ## What a check does
