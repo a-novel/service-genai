@@ -489,10 +489,11 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 		recorded, err = service.settle(ctx, generation, call)
 	}
 
-	// An answer the database keeps refusing, such as usage that breaks a constraint, would keep the
-	// generation running for as long as the provider holds it. Once a stopped call would have been
-	// given up on, the generation fails without it.
-	if err != nil && !errors.Is(err, dao.ErrGenerationChanged) &&
+	// An answer the database refuses, such as usage that breaks a constraint, would keep the generation
+	// running for as long as the provider holds it. Once a stopped call would have been given up on, the
+	// generation fails without it. Any other failure, such as a lock wait or a lost connection, is
+	// retried by the next check.
+	if errors.Is(err, dao.ErrRefused) &&
 		generation.CheckedAt.Sub(*generation.StartRequestedAt) >= runCeiling+stopRetryWindow {
 		recorded, err = service.settleFailure(ctx, generation, failureNotRecorded, err.Error(), nil)
 	}

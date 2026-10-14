@@ -794,9 +794,26 @@ func TestGenerationCheck(t *testing.T) {
 			expectErr:     errFoo,
 		},
 		{
-			// An answer the database keeps refusing must not hold the generation running for as long as
-			// the provider keeps it: once a stop would have been given up on, it fails without the answer.
+			// An answer the database refuses must not hold the generation running for as long as the
+			// provider keeps it: once a stop would have been given up on, it fails without the answer.
 			name: "Success/AnswerNotRecorded",
+
+			generation: startedAgo(runningGeneration(1), 3*time.Hour),
+			observe:    providerCall(connectors.CallSucceeded),
+			expectStop: true,
+			attemptErr: errors.Join(errFoo, dao.ErrRefused),
+
+			expectSettle:  &settle{attempt: 1, callID: &callID, status: dao.GenerationStatusSucceeded},
+			expectAttempt: testResponse,
+			expectNotRecorded: &settle{
+				attempt: 1, callID: &callID, status: dao.GenerationStatusFailed, reason: &notRecordedMessage,
+			},
+			expectStatus: dao.GenerationStatusFailed,
+		},
+		{
+			// A failure the database may not repeat, such as a lock wait, keeps the paid answer for the
+			// next check, however long the call ran.
+			name: "Error/AnswerNotRecordedYet",
 
 			generation: startedAgo(runningGeneration(1), 3*time.Hour),
 			observe:    providerCall(connectors.CallSucceeded),
@@ -805,10 +822,7 @@ func TestGenerationCheck(t *testing.T) {
 
 			expectSettle:  &settle{attempt: 1, callID: &callID, status: dao.GenerationStatusSucceeded},
 			expectAttempt: testResponse,
-			expectNotRecorded: &settle{
-				attempt: 1, callID: &callID, status: dao.GenerationStatusFailed, reason: &notRecordedMessage,
-			},
-			expectStatus: dao.GenerationStatusFailed,
+			expectErr:     errFoo,
 		},
 		{
 			// The settle and its answer commit together, or not at all.
