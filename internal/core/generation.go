@@ -59,6 +59,7 @@ type Generation struct {
 
 // GenerationAttempt is the provider's answer to one attempt.
 type GenerationAttempt struct {
+	// Number is the attempt's place in the generation, from one.
 	Number int16
 	// Response is the provider's final answer, as it sent it.
 	Response json.RawMessage

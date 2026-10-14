@@ -739,7 +739,7 @@ func (service *GenerationCheck) recordAttempt(
 	return nil
 }
 
-// stopOrphan cancels an accepted call whose generation settled first, and records what it consumed.
+// stopOrphan cancels an accepted call its generation does not carry, and records what it consumed.
 // Best effort: a failure is logged, and the call runs to completion unread.
 func (service *GenerationCheck) stopOrphan(
 	ctx context.Context, connector connectors.Async, generation *dao.Generation, callID string,

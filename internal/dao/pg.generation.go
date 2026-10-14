@@ -19,7 +19,7 @@ const (
 	GenerationStatusRunning GenerationStatus = "running"
 	// GenerationStatusSucceeded means the provider finished the call.
 	GenerationStatusSucceeded GenerationStatus = "succeeded"
-	// GenerationStatusFailed means the generation failed with no attempt left to retry.
+	// GenerationStatusFailed means the generation holds no finished response.
 	GenerationStatusFailed GenerationStatus = "failed"
 	// GenerationStatusCancelled means the generation was settled on the owner's request rather than
 	// by running to completion.
