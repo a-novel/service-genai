@@ -113,6 +113,19 @@ func TestPgGenerationSettle(t *testing.T) {
 			expectErr: dao.ErrGenerationChanged,
 		},
 		{
+			// Only a failure can leave a call running untracked: the values break a constraint, which no
+			// retry changes.
+			name: "Error/Refused",
+
+			state:          "running",
+			attempt:        1,
+			callID:         &callID,
+			status:         dao.GenerationStatusSucceeded,
+			outcomeUnknown: true,
+
+			expectErr: dao.ErrRefused,
+		},
+		{
 			name: "Error/AlreadySettled",
 
 			state:   "settled",

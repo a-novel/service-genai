@@ -89,7 +89,8 @@ type App struct {
 	Caps Caps `json:"caps" yaml:"caps"`
 	// Otel configures the OpenTelemetry exporter for traces and metrics.
 	Otel otel.Config `json:"otel" yaml:"otel"`
-	// Logger is the base application logger, which checks and the sweep write to.
+	// Logger is the base application logger: checks log provider failures to it, and the REST handlers
+	// their errors.
 	Logger logging.Log `json:"logger" yaml:"logger"`
 	// GrpcLogger configures the gRPC request logging middleware.
 	GrpcLogger logging.RPCConfig `json:"grpclogger" yaml:"grpclogger"`

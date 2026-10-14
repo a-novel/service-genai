@@ -1,5 +1,5 @@
--- One row per answered attempt. A replay of the same settle must not count it twice, so a row that
--- already exists for this attempt wins.
+-- One row per answered attempt. The stop of an orphaned call records its usage outside any settle,
+-- and a check may settle the same call once its late call id write lands: the row already there wins.
 INSERT INTO
   generation_usage (
     generation_id,

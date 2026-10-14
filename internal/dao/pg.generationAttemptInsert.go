@@ -59,7 +59,7 @@ func (dao *PgGenerationAttemptInsert) Exec(
 		request.Response,
 	).Scan(ctx, entity)
 	if err != nil {
-		return nil, otel.ReportError(span, fmt.Errorf("execute query: %w", err))
+		return nil, otel.ReportError(span, fmt.Errorf("execute query: %w", refused(err)))
 	}
 
 	return entity, nil

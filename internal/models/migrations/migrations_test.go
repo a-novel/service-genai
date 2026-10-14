@@ -145,4 +145,39 @@ func TestPurgeSettledGenerations(t *testing.T) {
 			}
 		})
 	})
+
+	// A call stops at its byte budget, but always takes a generation, so large ones still drain.
+	t.Run("Success/ByteBudget", func(t *testing.T) {
+		t.Parallel()
+
+		postgrestest.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
+			t.Helper()
+
+			db, err := postgres.GetContext(ctx)
+			require.NoError(t, err)
+
+			for _, seed := range []string{
+				`INSERT INTO generations (
+					owner_id, purpose, provider, request_key, status, attempt, start_requested_at, provider_call_id,
+					settled_at, expires_at
+				) SELECT
+					gen_random_uuid(), 'studio.generation', 'openai', uuid_send(gen_random_uuid()), 'succeeded', 1,
+					CURRENT_TIMESTAMP, 'resp_1', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP - interval '1 minute'
+				FROM generate_series(1, 2)`,
+				"INSERT INTO generation_payloads (generation_id, payload) SELECT id, '{}' FROM generations",
+				"INSERT INTO generation_attempts (generation_id, attempt, response) SELECT id, 1, '{}' FROM generations",
+			} {
+				_, err = db.NewRaw(seed).Exec(ctx)
+				require.NoError(t, err)
+			}
+
+			for _, expected := range []int64{1, 1, 0} {
+				var purged int64
+
+				err = db.NewRaw("SELECT purge_settled_generations(1)").Scan(ctx, &purged)
+				require.NoError(t, err)
+				require.Equal(t, expected, purged)
+			}
+		})
+	})
 }

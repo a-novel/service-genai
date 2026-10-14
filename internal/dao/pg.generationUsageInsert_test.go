@@ -25,7 +25,8 @@ func TestPgGenerationUsageInsert(t *testing.T) {
 	testCases := []struct {
 		name string
 
-		// insertTwice replays the same insert, as a settle landing twice would.
+		// insertTwice records the attempt's usage first, as the stop of an orphaned call does outside
+		// the settle.
 		insertTwice bool
 
 		usage *dao.GenerationUsageInsertRequest
@@ -64,6 +65,17 @@ func TestPgGenerationUsageInsert(t *testing.T) {
 			},
 
 			expectErr: dao.ErrGenerationUsageExists,
+		},
+		{
+			// Cached input is part of the input: a provider count mapped wrong breaks a constraint, which no
+			// retry changes.
+			name: "Error/Refused",
+
+			usage: &dao.GenerationUsageInsertRequest{
+				Model: "a-model-snapshot", Class: "low", InputTokens: 10, CachedInputTokens: 20, StartedAt: startedAt,
+			},
+
+			expectErr: dao.ErrRefused,
 		},
 	}
 

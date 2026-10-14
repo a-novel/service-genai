@@ -3,6 +3,8 @@ package handlers
 import (
 	"time"
 
+	"github.com/samber/lo"
+
 	"github.com/a-novel/service-genai/internal/core"
 	genaiv0 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v0"
 )
@@ -24,14 +26,11 @@ func NewGrpcGeneration(generation *core.Generation) *genaiv0.Generation {
 		OwnerId:   generation.OwnerID.String(),
 		Purpose:   generation.Purpose,
 		Provider:  generation.Provider,
+		Error:     lo.FromPtr(generation.Error),
 		Status:    generationStatuses[generation.Status],
 		Attempts:  make([]*genaiv0.GenerationAttempt, len(generation.Attempts)),
 		CreatedAt: generation.CreatedAt.Format(time.RFC3339),
 		UpdatedAt: generation.UpdatedAt.Format(time.RFC3339),
-	}
-
-	if generation.Error != nil {
-		message.Error = *generation.Error
 	}
 
 	if generation.SettledAt != nil {

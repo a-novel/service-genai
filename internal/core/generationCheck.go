@@ -296,21 +296,36 @@ func (service *GenerationCheck) recordCall(
 
 	// A write that failed without an answer may still commit: the database finishes a statement its
 	// client gave up on. A second write waits behind it on the row, then lands itself if the first never
-	// did. Should both time out, the read below may still miss a write about to land: the call is then
-	// stopped, and the generation fails once the write lands.
+	// did.
 	if err != nil && !movedOn {
 		recorded, err = write()
 	}
 
-	if err != nil {
-		if movedOn || !service.carriesCall(ctx, intent, callID) {
-			service.stopOrphan(ctx, connector, intent, callID)
-		}
-
-		return nil, otel.ReportError(span, err)
+	if err == nil {
+		return recorded, nil
 	}
 
-	return recorded, nil
+	// Either write may have landed after all, the second then finding the generation moved on. Should
+	// both time out, the read may still miss a write about to land: the call is then stopped, and the
+	// generation fails once the write lands.
+	if !movedOn {
+		getCtx, cancel := context.WithTimeout(ctx, persistenceTimeout)
+		current, getErr := service.daoGet.Exec(getCtx, &dao.GenerationGetRequest{ID: intent.ID, OwnerID: intent.OwnerID})
+
+		cancel()
+
+		switch {
+		case getErr != nil:
+			// A generation that cannot be read may carry the call, which is then left running.
+			return nil, otel.ReportError(span, err)
+		case lo.FromPtr(current.ProviderCallID) == callID:
+			return current, nil
+		}
+	}
+
+	service.stopOrphan(ctx, connector, intent, callID)
+
+	return nil, otel.ReportError(span, err)
 }
 
 // releaseStart gives back an attempt the provider never accepted. It runs detached, so it carries its
@@ -332,25 +347,6 @@ func (service *GenerationCheck) releaseStart(
 	}
 
 	return released, nil
-}
-
-// carriesCall re-reads a generation whose call id write failed: the write may have landed anyway.
-// A generation that cannot be read counts as carrying the call, so a call it may track is never
-// stopped.
-func (service *GenerationCheck) carriesCall(ctx context.Context, intent *dao.Generation, callID string) bool {
-	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(carriesCall)")
-	defer span.End()
-
-	getCtx, cancel := context.WithTimeout(ctx, persistenceTimeout)
-	defer cancel()
-
-	// The read's own span carries its failure; here it is a handled outcome.
-	current, err := service.daoGet.Exec(getCtx, &dao.GenerationGetRequest{ID: intent.ID, OwnerID: intent.OwnerID})
-	if err != nil {
-		return true
-	}
-
-	return lo.FromPtr(current.ProviderCallID) == callID
 }
 
 // failStart decides what a rejected start costs. Only a definitive refusal gives the attempt back.
@@ -493,10 +489,11 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 		recorded, err = service.settle(ctx, generation, call)
 	}
 
-	// An answer the database keeps refusing, such as usage that breaks a constraint, would keep the
-	// generation running for as long as the provider holds it. Once a stopped call would have been
-	// given up on, the generation fails without it.
-	if err != nil && !errors.Is(err, dao.ErrGenerationChanged) &&
+	// An answer the database refuses, such as usage that breaks a constraint, would keep the generation
+	// running for as long as the provider holds it. Once a stopped call would have been given up on, the
+	// generation fails without it. Any other failure, such as a lock wait or a lost connection, is
+	// retried by the next check.
+	if errors.Is(err, dao.ErrRefused) &&
 		generation.CheckedAt.Sub(*generation.StartRequestedAt) >= runCeiling+stopRetryWindow {
 		recorded, err = service.settleFailure(ctx, generation, failureNotRecorded, err.Error(), nil)
 	}
@@ -712,7 +709,7 @@ func (service *GenerationCheck) recordUsage(
 		CompletedAt: call.CompletedAt,
 	})
 
-	// A replay of the same provider result finds the row already there, which is no failure.
+	// The stop of an orphaned call may have recorded this attempt's usage already, which is no failure.
 	if err != nil && !errors.Is(err, dao.ErrGenerationUsageExists) {
 		return otel.ReportError(span, fmt.Errorf("record usage: %w", err))
 	}
