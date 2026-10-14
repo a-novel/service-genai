@@ -144,10 +144,8 @@ func (service *GenerationSweep) checkOne(ctx context.Context, generation *dao.Ge
 	defer span.End()
 	defer otel.RecoverPanic(ctx, span)
 
-	_, err := service.serviceCheck.Exec(ctx, &GenerationCheckRequest{Generation: generation})
-	if err != nil {
-		_ = otel.ReportError(span, err)
-	}
+	// A failed check leaves the batch running; its own span holds the failure.
+	_, _ = service.serviceCheck.Exec(ctx, &GenerationCheckRequest{Generation: generation})
 }
 
 // mayStart reports whether a check may start now and still end before its caller's deadline, which
