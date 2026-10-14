@@ -639,9 +639,10 @@ func classifyOpenAIError(err error) error {
 }
 
 // withProviderMessage adds the provider's explanation, which the SDK leaves out of its error text.
-// It reaches server logs; a caller reads the provider's error body instead.
+// It reaches server logs; a caller reads the provider's error body instead. A refused key's message
+// echoes part of the key, so it is left out.
 func withProviderMessage(err error, apiErr *openai.Error) error {
-	if apiErr.Message == "" {
+	if apiErr.Message == "" || apiErr.StatusCode == http.StatusUnauthorized {
 		return err
 	}
 
