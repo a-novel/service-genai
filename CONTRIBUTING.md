@@ -1,6 +1,6 @@
 # Contributing to service-genai
 
-The shared architecture, layers, and conventions live in the [service & architecture concepts](https://github.com/a-novel/.github/blob/master/CONTRIBUTING.md); this file covers only what's specific to the GenAI service. Platform setup and day-to-day commands are in the [developer onboarding guide](https://github.com/a-novel-kit/.github/blob/master/README.md).
+The shared architecture, layers, and conventions live in the [service & architecture concepts](https://github.com/a-novel/.github/blob/master/CONTRIBUTING.md); this file covers only what's specific to the GenAI service. Platform setup and day-to-day commands are in the [developer guide](https://a-novel-kit.github.io/stack/).
 
 Read the [README](./README.md) first — it covers what the service does and how operators run it.
 
