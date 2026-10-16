@@ -294,4 +294,4 @@ Working on the code itself starts with [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ## Contributing
 
-Platform setup and the day-to-day commands live in the [developer onboarding guide](https://github.com/a-novel-kit/.github/blob/master/README.md). What is specific to this service is in [CONTRIBUTING.md](./CONTRIBUTING.md).
+Platform setup and the day-to-day commands live in the [developer guide](https://a-novel-kit.github.io/stack/). What is specific to this service is in [CONTRIBUTING.md](./CONTRIBUTING.md).
