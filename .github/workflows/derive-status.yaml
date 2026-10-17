@@ -27,6 +27,10 @@ on:
 jobs:
   derive:
     runs-on: ubuntu-latest
+    # The Agent key is a secret of the governance environment, which no feature branch opens.
+    environment:
+      name: governance
+      deployment: false
     # derive-status only reads here (the PR and its linked issue); the privileged
     # board write happens on the [Agent] token minted inside board-write.
     permissions:

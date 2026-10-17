@@ -61,6 +61,10 @@ jobs:
       github.event.workflow_run.head_repository.full_name == github.repository &&
       (github.event.workflow_run.event == 'push' || github.event.workflow_run.event == 'pull_request')
     runs-on: ubuntu-latest
+    # The Agent key is a secret of the governance environment, which no feature branch opens.
+    environment:
+      name: governance
+      deployment: false
     concurrency:
       group: dependabot-${{ github.event.workflow_run.head_sha }}
       cancel-in-progress: false
