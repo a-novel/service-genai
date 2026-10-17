@@ -8,7 +8,7 @@ require (
 	github.com/go-playground/validator/v10 v10.30.5
 	github.com/goccy/go-yaml v1.19.2
 	github.com/google/uuid v1.6.0
-	github.com/openai/openai-go/v3 v3.78.0
+	github.com/openai/openai-go/v3 v3.79.0
 	github.com/samber/lo v1.53.0
 	github.com/stretchr/testify v1.12.1
 	github.com/uptrace/bun v1.3.0
