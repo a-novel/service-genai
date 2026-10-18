@@ -157,7 +157,7 @@ var (
 	// Retention is how long a settled generation's user content survives before the purge.
 	Retention = config.LoadEnv(retention, RetentionDefault, config.DurationParser)
 
-	// SweepInterval is how stale a generation must be for the sweep.
+	// SweepInterval is how often the scheduler calls the sweep.
 	SweepInterval = config.LoadEnv(sweepInterval, SweepIntervalDefault, config.DurationParser)
 	// SweepBatchSize caps the generations one batch of a sweep takes.
 	SweepBatchSize = config.LoadEnv(sweepBatchSize, SweepBatchSizeDefault, config.IntParser)

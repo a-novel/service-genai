@@ -17,6 +17,11 @@ import (
 // so the sweep could check nothing.
 var ErrSweepDeadlineTooShort = errors.New("deadline too short for a sweep")
 
+// sweepFreshness divides the interval into how long a check spares a generation from the sweep. A
+// call marks what it takes a moment after it starts, so with the whole interval the next call, one
+// interval later, would find those generations fresh and skip them.
+const sweepFreshness = 2
+
 // GenerationSweepDao takes the generations nobody checked within the interval.
 type GenerationSweepDao interface {
 	Exec(ctx context.Context, request *dao.GenerationSweepRequest) ([]*dao.Generation, error)
@@ -103,7 +108,7 @@ func (service *GenerationSweep) sweepBatch(ctx context.Context, lastStart time.T
 	defer span.End()
 
 	generations, err := service.dao.Exec(ctx, &dao.GenerationSweepRequest{
-		Interval: service.sweep.Interval, Limit: service.sweep.BatchSize,
+		Interval: service.sweep.Interval / sweepFreshness, Limit: service.sweep.BatchSize,
 	})
 	// A sweep stopped during its query checks nothing; what the query took waits for a later call.
 	if err != nil && ctx.Err() != nil {

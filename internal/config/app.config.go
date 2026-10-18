@@ -40,8 +40,8 @@ type Main struct {
 
 // Sweep holds the settings of the sweep that checks generations nobody polled.
 type Sweep struct {
-	// Interval is how stale a generation must be for the sweep. The scheduler calls the sweep at least
-	// this often.
+	// Interval is how often the scheduler calls the sweep. Each call checks every generation nobody
+	// checked within half of it.
 	Interval time.Duration `json:"interval" yaml:"interval"`
 	// BatchSize caps the generations one batch of a sweep takes.
 	BatchSize int `json:"batchSize" yaml:"batchSize"`

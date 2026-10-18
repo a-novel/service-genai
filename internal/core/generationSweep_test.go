@@ -152,7 +152,8 @@ func TestGenerationSweep(t *testing.T) {
 			for _, batch := range testCase.batches {
 				sweepDao.EXPECT().
 					Exec(mock.Anything, &dao.GenerationSweepRequest{
-						Interval: sweep.Interval,
+						// Half the interval: what the previous call checked is due again.
+						Interval: 30 * time.Second,
 						Limit:    sweep.BatchSize,
 					}).
 					RunAndReturn(func(context.Context, *dao.GenerationSweepRequest) ([]*dao.Generation, error) {
