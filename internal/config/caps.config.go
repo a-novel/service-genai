@@ -152,7 +152,7 @@ func (capOfTier *Cap) UnmarshalYAML(unmarshal func(any) error) error {
 			return fmt.Errorf("%w: got %q", ErrCapWindow, name)
 		}
 
-		// 1h and 60m are one window: keeping either would silently drop the other's limits.
+		// 1h and 60m are one window, which holds the limits of only one of them.
 		if _, repeated := capOfTier.Windows[window]; repeated {
 			return fmt.Errorf("%w: %q repeats another window", ErrCapWindow, name)
 		}

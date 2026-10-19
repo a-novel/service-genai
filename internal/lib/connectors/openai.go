@@ -516,8 +516,8 @@ func providerCallOf(raw json.RawMessage) (*Call, error) {
 		call.State = CallQueued
 	case responses.ResponseStatusInProgress:
 	default:
-		// An unknown status is treated as still running rather than terminal: polling again is
-		// cheap, and settling on a status we do not understand throws away work already paid for.
+		// An unknown status reads as still running: polling again is cheap, and settling on a status
+		// this service does not understand throws away work already paid for.
 	}
 
 	if !call.State.Terminal() {

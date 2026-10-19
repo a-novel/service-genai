@@ -21,8 +21,7 @@ const (
 	GenerationStatusSucceeded GenerationStatus = "succeeded"
 	// GenerationStatusFailed means the generation holds no finished response.
 	GenerationStatusFailed GenerationStatus = "failed"
-	// GenerationStatusCancelled means the generation was settled on the owner's request rather than
-	// by running to completion.
+	// GenerationStatusCancelled means the generation settled after its owner requested cancellation.
 	GenerationStatusCancelled GenerationStatus = "cancelled"
 )
 

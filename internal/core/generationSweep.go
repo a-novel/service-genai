@@ -18,8 +18,8 @@ import (
 var ErrSweepDeadlineTooShort = errors.New("deadline too short for a sweep")
 
 // sweepFreshness divides the interval into how long a check spares a generation from the sweep. A
-// call marks what it takes a moment after it starts, so with the whole interval the next call, one
-// interval later, would find those generations fresh and skip them.
+// call marks what it takes a moment after it starts, so half the interval lets the next call, one
+// interval later, take those generations again.
 const sweepFreshness = 2
 
 // GenerationSweepDao takes the generations nobody checked within the interval.
@@ -101,8 +101,8 @@ func (service *GenerationSweep) Exec(
 }
 
 // sweepBatch takes one batch and checks it. Checks of different generations are independent, so
-// several run at once: a slow provider then stretches a batch by its latency, not by the batch size
-// times it. A generation taken but left unchecked waits for a later call.
+// several run at once, and a slow provider stretches a batch by its latency alone. A generation taken
+// but left unchecked waits for a later call.
 func (service *GenerationSweep) sweepBatch(ctx context.Context, lastStart time.Time) (int, error) {
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationSweep(sweepBatch)")
 	defer span.End()
