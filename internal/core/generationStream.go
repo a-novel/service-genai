@@ -100,25 +100,33 @@ func (service *GenerationStream) Exec(
 		return nil, otel.ReportError(span, fmt.Errorf("provider %q: %w", generation.Provider, err))
 	}
 
-	// The events are read after Exec returns, so their reading takes a span of its own.
+	streamRequest := &connectors.StreamRequest{ID: *generation.ProviderCallID, StartingAfter: request.StartingAfter}
+
 	return &GenerationStreamResult{Events: func(yield func(*GenerationStreamEvent, error) bool) {
-		ctx, span := otel.Tracer().Start(ctx, "core.GenerationStream(events)")
-		defer span.End()
-
-		events := connector.Stream(ctx, &connectors.StreamRequest{
-			ID: *generation.ProviderCallID, StartingAfter: request.StartingAfter,
-		})
-
-		for event, err := range events {
-			if err != nil {
-				yield(nil, otel.ReportError(span, err))
-
-				return
-			}
-
-			if !yield(&GenerationStreamEvent{Sequence: event.Sequence, Data: event.Data}, nil) {
-				return
-			}
-		}
+		forwardEvents(ctx, connector, streamRequest, yield)
 	}}, nil
+}
+
+// forwardEvents yields the provider's events until the terminal one, a failure, or the caller stops.
+// It runs after Exec returns, so it takes a span of its own.
+func forwardEvents(
+	ctx context.Context,
+	connector connectors.Streaming,
+	request *connectors.StreamRequest,
+	yield func(*GenerationStreamEvent, error) bool,
+) {
+	ctx, span := otel.Tracer().Start(ctx, "core.GenerationStream(events)")
+	defer span.End()
+
+	for event, err := range connector.Stream(ctx, request) {
+		if err != nil {
+			yield(nil, otel.ReportError(span, err))
+
+			return
+		}
+
+		if !yield(&GenerationStreamEvent{Sequence: event.Sequence, Data: event.Data}, nil) {
+			return
+		}
+	}
 }

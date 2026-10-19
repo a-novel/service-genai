@@ -379,9 +379,7 @@ func requestKey(request *GenerationSubmitRequest) ([]byte, error) {
 		return nil, fmt.Errorf("canonicalize payload: %w", err)
 	}
 
-	digest := sha256.New()
-
-	for _, field := range [][]byte{
+	fields := [][]byte{
 		[]byte(requestKeyTag),
 		request.OwnerID[:],
 		[]byte(request.Purpose),
@@ -389,7 +387,11 @@ func requestKey(request *GenerationSubmitRequest) ([]byte, error) {
 		[]byte(lo.Ternary(request.Stream, streamedMode, asyncMode)),
 		payload,
 		binary.BigEndian.AppendUint32(nil, request.Variant),
-	} {
+	}
+
+	digest := sha256.New()
+
+	for _, field := range fields {
 		digest.Write(binary.BigEndian.AppendUint64(nil, uint64(len(field))))
 		digest.Write(field)
 	}

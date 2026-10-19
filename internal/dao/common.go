@@ -17,15 +17,18 @@ var ErrGenerationChanged = errors.New("generation changed before the transition"
 // often they are sent, unlike a lock wait or a lost connection.
 var ErrRefused = errors.New("values refused by the database")
 
-// refused joins [ErrRefused] to an error the database raised for a statement's values: a data
-// exception, an integrity constraint violation or an exceeded limit.
+// refusedClasses are the SQLSTATE classes of an error raised for a statement's values: a data
+// exception, an integrity constraint violation and an exceeded limit.
+var refusedClasses = []string{"22", "23", "54"}
+
+// refused joins [ErrRefused] to an error the database raised for a statement's values.
 func refused(err error) error {
 	var pgErr pgdriver.Error
 	if !errors.As(err, &pgErr) {
 		return err
 	}
 
-	for _, class := range []string{"22", "23", "54"} {
+	for _, class := range refusedClasses {
 		if strings.HasPrefix(pgErr.Field('C'), class) {
 			return errors.Join(err, ErrRefused)
 		}
