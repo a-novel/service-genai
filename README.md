@@ -1,6 +1,6 @@
 # GenAI service
 
-Every AI provider call on the platform runs here: the caller builds the request, and this service executes it durably, never pays for it twice, and returns what the provider answered.
+Executes the platform's AI provider calls durably, pays for each once, and returns what the provider answered.
 
 [![X (formerly Twitter) Follow](https://img.shields.io/twitter/follow/agorastoryverse)](https://twitter.com/agorastoryverse)
 [![Discord](https://img.shields.io/discord/1315240114691248138?logo=discord)](https://discord.gg/rp4Qr8cA)
@@ -18,27 +18,27 @@ Every AI provider call on the platform runs here: the caller builds the request,
 
 ## What it does
 
-A provider call can take minutes, costs real money, and must never be paid for twice. This service owns how such a call executes; the caller owns what is executed. It never reads the content of the request it runs or of the answers it returns.
+A provider call can take minutes, costs real money, and must be paid for once. The caller decides what a call executes, and this service decides how it executes. The service never reads the requests it runs or the answers it returns.
 
-It is an execution service, not a proxy. The caller holds no connection while the provider works: it submits the call, then polls for the result, so the call outlives the caller's request, a restart of either side, and a deploy.
+The caller holds no connection while the provider works. It submits the call, then polls for the result, so the call outlives the caller's request, a restart of either side, and a deploy.
 
-Five things shape the contract:
+Five rules shape the contract.
 
-**The caller builds the request.** A submission names why it is made (its `purpose`, in the caller's own vocabulary) and a provider (`openai` today), and carries the payload: the provider's own request body, as raw JSON. The model, the prompt, the output schema, the limits and the privacy fields such as `store` belong to the caller. The provider's connector writes only the fields the execution mode needs, and authenticates with the platform's only provider credential. Calls run in the Async mode: the provider accepts the call and runs it on its side while the caller polls. A submission can also ask to `stream`: its call is created so `GenerationStream` can forward the provider's events as they are produced, for the first 5 minutes of the call, while polls and checks work on it as on any other.
+**The caller builds the request.** A submission names its `purpose`, in the caller's own vocabulary, and a provider, `openai` today. Its payload is the provider's own request body, as raw JSON. The caller owns the model, the prompt, the output schema, the limits and the privacy fields such as `store`. The provider's connector writes only the fields the execution mode needs, and authenticates with the platform's only provider credential. Calls run in the Async mode: the provider runs the call on its side while the caller polls. A submission can also ask to `stream`. `GenerationStream` then forwards the provider's events as they come, for the first 5 minutes of the call, while polls and checks work on it as on any other.
 
-**A resend is a replay.** The service derives each generation's key from its owner, its purpose, its provider, whether it streams, its payload and its `variant`, so a caller that lost its connection or crashed sends the same request again and gets the same generation back, running or finished. It keeps no key of its own; the same request is the same call, whatever its formatting or the order of its top-level fields. Nested fields keep their order in the key, since a provider can read meaning into it, such as a schema's property order. A failed or cancelled generation is not served again: resending its request runs it from scratch. To ask for another result of a request that succeeded, send it with the next `variant`.
+**A resend is a replay.** The service derives each generation's key from its owner, purpose, provider, `stream` flag, payload and `variant`. A caller that lost its connection or crashed sends the same request again and gets the same generation back, running or finished. The caller keeps no key of its own. Formatting and the order of top-level fields leave the key unchanged. Nested fields keep their order in the key, since a provider can read meaning into it, such as a schema's property order. A failed or cancelled generation is not served again: resending its request runs it from scratch. To ask for another result of a request that succeeded, send it with the next `variant`.
 
-**A crash re-attaches instead of re-paying.** The provider's own identifier for an in-flight operation is recorded the moment the call starts, and every later check reads it back. No process holds a generation, so a restart or a deploy loses nothing: the next poll or sweep picks up the operation already paid for. Every accepted call is followed until it settles, whether anyone polls it or not.
+**A crash re-attaches instead of paying again.** The service records the provider's identifier for a call the moment the call starts, and every later check reads it back. No process holds a generation, so a restart or a deploy loses nothing. The next poll or sweep picks up the call already paid for. Every accepted call is followed until it settles, whether anyone polls it or not.
 
-**The provider's answers come back as sent.** Each generation lists every attempt that reached an answer, retried and cancelled ones included, with the provider's raw response, which holds the output and the usage. The service also keeps a permanent Usage Record of every answered attempt, with no content: who and what it was for, its token counts, the model, reasoning effort and service tier that ran, and when it started and finished. The generation and its responses are purged after `RETENTION`; the usage stays. A generation that holds no finished response says why in the service's own words, and a request the provider rejected comes back with the provider's error body.
+**The provider's answers come back as sent.** Each generation lists every attempt that reached an answer, retried and cancelled ones included, with the provider's raw response. That response holds the output and the usage. The service also keeps a permanent Usage Record of every answered attempt, with no content. It records who and what the call was for, its token counts, the model, reasoning effort and service tier that ran, and when it started and finished. The purge deletes a generation and its responses after `RETENTION`, and the usage stays. A generation that holds no finished response says why in the service's own words. A request the provider rejected comes back with the provider's error body.
 
-**Usage is capped per purpose and user tier.** The [caps file](./internal/config/caps.config.yaml), built into the image so every change is reviewed, declares each purpose a caller may submit, the token limits each user tier gets over rolling windows, and how many generations a user may run at once, per purpose and across all of them; its comments explain every key. Once a user has reached a limit, a submit that would start a new generation answers `RESOURCE_EXHAUSTED`, naming it. An admitted call always finishes, even past its cap, and a resend of a running generation always attaches to it.
+**Usage is capped per purpose and user tier.** The [caps file](./internal/config/caps.config.yaml) is built into the image, so every change to it is reviewed. It declares each purpose a caller may submit, the token limits of each user tier over rolling windows, and how many generations a user may run at once, per purpose and across all of them. Its comments explain every key. Once a user reaches a limit, a submit that would start a new generation answers `RESOURCE_EXHAUSTED`, naming the limit. An admitted call always finishes, even past its cap, and a resend of a running generation always attaches to it.
 
-Callers are other services, which reach the generation API over **gRPC** on the internal network. The optional `rest` server is public but serves no generation: it only receives the providers' notifications that their calls ended.
+Callers are other services, which reach the generation API over **gRPC** on the internal network. The optional `rest` server is public and serves no generation. It only receives the providers' notifications that their calls ended.
 
 ## Deploying
 
-The service runs as published OCI images plus a PostgreSQL database. All state lives in Postgres, so the server scales to as many replicas as you need; replicas coordinate through conditional writes on each generation row.
+The service runs as published OCI images plus a PostgreSQL database. All state lives in Postgres, so the server scales to as many replicas as you need. Replicas coordinate through conditional writes on each generation row.
 
 > **OpenTofu modules are the planned canonical deployment path.** Until they land, deploy the images with any container orchestrator — the composition below is the reference for which images to run, how they wire together, and the environment they expect.
 
@@ -51,11 +51,9 @@ The service runs as published OCI images plus a PostgreSQL database. All state l
 | `service-genai/database`        | PostgreSQL with `pg_cron` and pgBackRest — or bring your own Postgres.      |
 | `service-genai/standalone-grpc` | Server plus migrations in one image. Local development only.                |
 
-Pin every image to the same release tag — see the [latest release](https://github.com/a-novel/service-genai/releases/latest). A production deployment runs `database`, then the migrations job to completion, then any number of `grpc` replicas, the `sweep` server, and optionally `rest` replicas. Provide `POSTGRES_HOST`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DATABASE` and `OPENAI_API_KEY` through the orchestrator; store the password and the API key as secrets. A caller controls the whole payload, including the model and the provider's built-in tools, so grant invocation to calling services only and restrict the OpenAI key to the Responses endpoints.
+Pin every image to the same release tag, from the [latest release](https://github.com/a-novel/service-genai/releases/latest). A production deployment starts `database` and runs the migrations job to completion. It then runs any number of `grpc` replicas, the `sweep` server, and optionally `rest` replicas. Provide the required [configuration](#configuration) through the orchestrator.
 
-Callers poll for results, and each poll checks its generation with the provider. The `sweep` server checks the generations nobody polled, so a result is captured before the provider discards it, a stuck call is stopped and a user's concurrency slot freed. Run it privately, and have a scheduler `POST /sweep` every `SWEEP_INTERVAL`: on Google Cloud, Cloud Scheduler with an OIDC token for the only identity allowed to invoke it. A call checks batch after batch and answers within two minutes; the server checks as many generations at once as its connection pool has connections, eight at most, however many calls overlap. Every server does its work inside a request, so none needs CPU outside of them; each needs outbound access to the provider's API. A check its caller abandons only resumes with the server's next request, and a streamed start waits for the provider to begin the call, so give a streamed generation's submit and polls a deadline of at least 35 seconds.
-
-The `rest` image checks a generation the moment its provider reports the call ended, instead of on the next poll or sweep. It serves `POST /webhooks/{provider}`, `/ping` and `/healthcheck`, reuses the database and the migrations, and needs the same variables as `grpc` plus `OPENAI_WEBHOOK_SECRET`. To enable it for OpenAI, expose it publicly, then create a webhook endpoint in the OpenAI project's settings pointing at `https://<host>/webhooks/openai`, subscribed to `response.completed`, `response.failed`, `response.cancelled` and `response.incomplete`, and store its signing secret. Polls and the sweep keep working for a notification that never comes; once notifications flow, raise `CHECK_INTERVAL` so polls stop reaching the provider.
+A caller controls the whole payload, including the model and the provider's built-in tools. Grant invocation to calling services only, and restrict the OpenAI key to the Responses endpoints.
 
 ```yaml
 services:
@@ -135,17 +133,37 @@ volumes:
   genai-postgres-data:
 ```
 
+### The sweep
+
+Each poll checks its generation with the provider. The `sweep` server checks the generations nobody polled. It captures a result before the provider discards it, stops a stuck call, and frees a user's concurrency slot.
+
+Run it privately, and have a scheduler `POST /sweep` every `SWEEP_INTERVAL`. On Google Cloud, use Cloud Scheduler with an OIDC token for the only identity allowed to invoke it. A call checks batch after batch and answers within two minutes. The server checks as many generations at once as its connection pool has connections, eight at most, however many calls overlap.
+
+Every server does its work inside a request, so none needs CPU outside of one. Each needs outbound access to the provider's API. A check its caller abandons resumes only with the server's next request, and a streamed start waits for the provider to begin the call. Give a streamed generation's submit and polls a deadline of at least 35 seconds.
+
+### Provider notifications
+
+The `rest` image checks a generation the moment its provider reports the call ended, instead of on the next poll or sweep. It serves `POST /webhooks/{provider}`, `/ping` and `/healthcheck`. It reuses the database and the migrations, and needs the same variables as `grpc` plus `OPENAI_WEBHOOK_SECRET`.
+
+To enable it for OpenAI:
+
+1. Expose the `rest` server publicly.
+2. In the OpenAI project's settings, create a webhook endpoint pointing at `https://<host>/webhooks/openai`. Subscribe it to `response.completed`, `response.failed`, `response.cancelled` and `response.incomplete`.
+3. Store the endpoint's signing secret as `OPENAI_WEBHOOK_SECRET`.
+
+Polls and the sweep keep working for a notification that never comes. Once notifications flow, raise `CHECK_INTERVAL` so polls stop reaching the provider.
+
 ### Database image
 
-The database image packages PostgreSQL, `pg_cron` and pgBackRest on Wolfi. Its [package manifest](./builds/database.apko.yaml) is assembled with apko during the container build, pinned by its [lock file](./builds/database.apko.lock.json), so an unchanged image rebuilds to the same digest; Docker and Podman users need no additional host tools. PostgreSQL keeps its standard `POSTGRES_*` initialization variables and its volume at `/var/lib/postgresql`. On first start it installs `pg_cron` in the `POSTGRES_DB` database, where the migrations job schedules the retention purge (see [CONTRIBUTING](./CONTRIBUTING.md#retention-purge)). Backup scheduling and repository credentials remain the operator's responsibility.
+The database image packages PostgreSQL, `pg_cron` and pgBackRest on Wolfi. apko assembles its [package manifest](./builds/database.apko.yaml) during the container build, pinned by its [lock file](./builds/database.apko.lock.json), so an unchanged image rebuilds to the same digest. Docker and Podman users need no additional host tools. PostgreSQL keeps its standard `POSTGRES_*` initialization variables and its volume at `/var/lib/postgresql`. On first start, it installs `pg_cron` in the `POSTGRES_DB` database, where the migrations job schedules the [retention purge](./CONTRIBUTING.md#retention-purge). Backup scheduling and repository credentials remain the operator's responsibility.
 
-Start the image on a fresh volume. A data directory written by the earlier Debian-based image is not portable: the libc, collation and extension environment changed. To keep its data, take a logical dump and restore it into the new database.
+Start the image on a fresh volume. A data directory written by the earlier Debian-based image is not portable, since its libc, collation and extension environment differ. To keep its data, take a logical dump and restore it into the new database.
 
-Wolfi's package repository rolls forward. Retain published service images for recovery rather than relying on an old package manifest remaining rebuildable indefinitely.
+Wolfi's package repository rolls forward, so an old package manifest may stop rebuilding. Keep the published service images for recovery.
 
 ### Configuration
 
-Every variable is read from the process environment. Names can be globally prefixed with `SERVICE_GENAI_ENV_PREFIX`, which avoids collisions when another project embeds this service. Set `POSTGRES_HOST` to use the discrete connection fields; without it, the service reads `POSTGRES_DSN`.
+Every variable is read from the process environment. `SERVICE_GENAI_ENV_PREFIX` prefixes every name, which avoids collisions when another project embeds this service. `POSTGRES_HOST` selects the discrete connection fields. Without it, the service reads `POSTGRES_DSN`.
 
 | Name                    | Description                                                                                                                           | Images      |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
@@ -160,9 +178,9 @@ Every variable is read from the process environment. Names can be globally prefi
 | `OPENAI_WEBHOOK_SECRET` | Signing secret of the OpenAI webhook endpoint, `whsec_…`. **Inject it as a secret.** Without it, OpenAI's notifications answer `404`. | `rest`      |
 
 <details>
-<summary>Optional configuration (OpenAI connector, checks, retention, gRPC, REST, connection pool, OpenTelemetry)</summary>
+<summary>Optional configuration</summary>
 
-OpenAI connector (all servers). The endpoint must meet the [provider requirements](./docs/providers.md), which a conformance check verifies. The OpenAI SDK also reads `OPENAI_ORG_ID`, `OPENAI_PROJECT_ID` and `OPENAI_CUSTOM_HEADERS` from the environment, never prefixed; leave them unset unless the account needs them.
+OpenAI connector (all servers). The endpoint must meet the [provider requirements](./docs/providers.md), which a conformance check verifies. The OpenAI SDK also reads `OPENAI_ORG_ID`, `OPENAI_PROJECT_ID` and `OPENAI_CUSTOM_HEADERS` from the environment, never prefixed. Leave them unset unless the account needs them.
 
 | Name              | Description             | Default                      |
 | ----------------- | ----------------------- | ---------------------------- |
@@ -185,7 +203,7 @@ gRPC server:
 | `GRPC_PORT`             | Port the server listens on.                                                                                               | `8080`  |
 | `GRPC_TIMEOUT_SHUTDOWN` | Graceful shutdown budget. Keep it under the orchestrator's kill delay: Cloud Run sends SIGKILL ten seconds after SIGTERM. | `8s`    |
 
-REST servers (images `rest` and `sweep`). Every notification comes from the provider's few addresses, so the rate limit is sized for the provider's bursts, not for a visitor.
+REST servers (images `rest` and `sweep`). Every notification comes from the provider's few addresses, so the rate limit is sized for the provider's bursts.
 
 | Name                        | Description                                                                                                                                   | Default         |
 | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | --------------- |
@@ -203,9 +221,9 @@ REST servers (images `rest` and `sweep`). Every notification comes from the prov
 | `REST_TIMEOUT_REQUEST`      | Per-request timeout. A sweep starts no check this deadline could not wait out, and a check takes a minute at most, so keep it above a minute. | `2m`            |
 | `REST_TIMEOUT_SHUTDOWN`     | Graceful shutdown budget. Keep it under the orchestrator's kill delay.                                                                        | `8s`            |
 
-Memory (server images). A request holds a few copies of what it carries: a submit its payload, up to 16 MiB, and a read its responses, up to 24 MiB each. Twenty concurrent submits of the largest payloads peak near 1.6 GiB on one `grpc` instance, so give it 2 GiB with `GOMEMLIMIT` near 1600MiB, or lower its request concurrency.
+Memory (server images). A request holds a few copies of what it carries: a submit its payload, up to 16 MiB, and a read its responses, up to 24 MiB each. Twenty concurrent submits of the largest payloads peak near 1.6 GiB on one `grpc` instance. Give it 2 GiB with `GOMEMLIMIT` near `1600MiB`, or lower its request concurrency.
 
-Database connection pool (server images). The limits are **per process**: keep `POSTGRES_MAX_OPEN_CONNS` × the maximum replica count × 2, which covers a rollout's overlap, plus the migration job, under the database's `max_connections`. The server's sessions also give up on the database side: a statement after 9 seconds, a lock wait after 5, and a transaction left idle after 30.
+Database connection pool (server images). The limits are **per process**. Keep `POSTGRES_MAX_OPEN_CONNS` × the maximum replica count × 2, which covers a rollout's overlap, plus the migration job, under the database's `max_connections`. The server's sessions also give up on the database side: a statement after 9 seconds, a lock wait after 5, and a transaction left idle after 30.
 
 | Name                      | Description                               | Default |
 | ------------------------- | ----------------------------------------- | ------- |
@@ -214,11 +232,13 @@ Database connection pool (server images). The limits are **per process**: keep `
 
 Planned downtime (server images):
 
-| Name             | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Default |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| `DOWNTIME_START` | When a planned downtime starts, in RFC 3339. From then until it is removed, even past the announced end, the servers answer `503` / `UNAVAILABLE` except for ping, gRPC health and echo, and start without the database. A request already running still finishes, a sweep up to `REST_TIMEOUT_REQUEST` later, so stop the database only once that has passed. The provider delivers the notifications it could not send once the downtime ends. Calls already sent keep running at the provider, and OpenAI keeps a finished background response it does not store for about 10 minutes: a call that finishes longer than that before the downtime ends settles failed, its result lost. Keep a downtime shorter while generations run. |         |
+| Name             | Description                                  | Default |
+| ---------------- | -------------------------------------------- | ------- |
+| `DOWNTIME_START` | When a planned downtime starts, in RFC 3339. |         |
 
-Logs and tracing — OpenTelemetry supports a stdout and a Google Cloud exporter (all server images):
+From `DOWNTIME_START` until the variable is removed, even past the announced end, the servers answer `503` / `UNAVAILABLE` except for ping, gRPC health and echo, and start without the database. A request already running still finishes, a sweep up to `REST_TIMEOUT_REQUEST` later, so stop the database only once that has passed. The provider delivers the notifications it could not send once the downtime ends. Calls already sent keep running at the provider. OpenAI keeps a finished background response it does not store for about 10 minutes, so a call that finishes longer than that before the downtime ends settles failed, its result lost. Keep a downtime short while generations run.
+
+Logs and tracing (all server images). OpenTelemetry exports to stdout or to Google Cloud.
 
 | Name                | Description                                                                    | Default         |
 | ------------------- | ------------------------------------------------------------------------------ | --------------- |
@@ -230,7 +250,7 @@ Logs and tracing — OpenTelemetry supports a stdout and a Google Cloud exporter
 
 ## Using the client package
 
-The Go client is what a consuming service imports. The snippet below is the **minimum viable call**; the full surface is what your editor's intellisense and [pkg.go.dev](https://pkg.go.dev/github.com/a-novel/service-genai) are for.
+The Go client is what a consuming service imports. Its full surface is on [pkg.go.dev](https://pkg.go.dev/github.com/a-novel/service-genai).
 
 ```bash
 go get github.com/a-novel/service-genai
@@ -252,9 +272,9 @@ import (
 func main() {
 	ctx := context.Background()
 
-	// In production, swap insecure.NewCredentials() for a TLS or mTLS credential — the
-	// server has no application-layer auth, so transport security is the only thing
-	// protecting it from a network adversary.
+	// The server has no application-layer auth, so transport security alone protects it from a
+	// network adversary. In production, replace insecure.NewCredentials() with a TLS or mTLS
+	// credential.
 	client, err := servicegenai.NewClient(
 		"service-genai:8080",
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -275,7 +295,7 @@ func main() {
 
 ## Running locally
 
-The `standalone-grpc` image bundles the migration job with the server, so a single container brings the service up against an empty database. It is a development convenience: a production deployment runs migrations as their own job, so a failed migration stops the rollout instead of restarting a server. Nothing sweeps a local stack: polls settle its generations.
+The `standalone-grpc` image bundles the migration job with the server, so a single container brings the service up against an empty database. A production deployment runs migrations as their own job instead, so a failed migration stops the rollout rather than restarting a server. Nothing sweeps a local stack: polls settle its generations.
 
 ```bash
 a-novel run start service-genai/grpc
@@ -284,13 +304,11 @@ eval "$(a-novel run env service-genai)"
 grpcurl --plaintext localhost:${SERVICE_GENAI_GRPC_PORT} list
 ```
 
-Without the CLI, the repository's compose file runs a target on its own: enable its profile and set the host ports it publishes. The `sweep` target serves `POST /sweep` on `SWEEP_PORT`.
+Without the CLI, the repository's compose file runs a target on its own. Enable the target's profile and set the host ports it publishes. The `sweep` target serves `POST /sweep` on `SWEEP_PORT`.
 
 ```bash
 POSTGRES_PORT=5432 GRPC_PORT=8080 podman compose -f builds/podman-compose.yaml --profile grpc up -d
 ```
-
-Working on the code itself starts with [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ## Contributing
 
