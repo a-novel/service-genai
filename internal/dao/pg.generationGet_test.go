@@ -23,19 +23,6 @@ func TestPgGenerationGet(t *testing.T) {
 	otherOwner := uuid.MustParse("00000000-0000-0000-0000-000000000002")
 	generationID := uuid.MustParse("01999999-0000-7000-8000-000000000001")
 
-	fixture := func(id, ownerID uuid.UUID) *dao.Generation {
-		return &dao.Generation{
-			ID:          id,
-			OwnerID:     ownerID,
-			Purpose:     "studio.generation",
-			Provider:    "openai",
-			RequestKey:  []byte("key-" + id.String()),
-			Payload:     json.RawMessage(`{"model": "a-model"}`),
-			Status:      dao.GenerationStatusPending,
-			MaxAttempts: 1,
-		}
-	}
-
 	testCases := []struct {
 		name string
 
@@ -49,7 +36,7 @@ func TestPgGenerationGet(t *testing.T) {
 		{
 			name: "Success",
 
-			fixtures: []*dao.Generation{fixture(generationID, owner)},
+			fixtures: []*dao.Generation{pendingFixture(generationID, owner)},
 
 			request: &dao.GenerationGetRequest{ID: generationID, OwnerID: owner},
 
@@ -60,7 +47,7 @@ func TestPgGenerationGet(t *testing.T) {
 			// indistinguishable from one that does not exist, or the identifier becomes probeable.
 			name: "Error/NotFound/OtherOwner",
 
-			fixtures: []*dao.Generation{fixture(generationID, otherOwner)},
+			fixtures: []*dao.Generation{pendingFixture(generationID, otherOwner)},
 
 			request: &dao.GenerationGetRequest{ID: generationID, OwnerID: owner},
 
@@ -110,5 +97,19 @@ func TestPgGenerationGet(t *testing.T) {
 				require.Nil(t, result.Payload)
 			})
 		})
+	}
+}
+
+// pendingFixture is a pending generation of the owner, as inserted directly.
+func pendingFixture(id, ownerID uuid.UUID) *dao.Generation {
+	return &dao.Generation{
+		ID:          id,
+		OwnerID:     ownerID,
+		Purpose:     "studio.generation",
+		Provider:    "openai",
+		RequestKey:  []byte("key-" + id.String()),
+		Payload:     json.RawMessage(`{"model": "a-model"}`),
+		Status:      dao.GenerationStatusPending,
+		MaxAttempts: 1,
 	}
 }

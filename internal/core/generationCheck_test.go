@@ -861,25 +861,8 @@ func TestGenerationCheck(t *testing.T) {
 			intent.Streamed = generation.Streamed
 			// The attempt's first start survives a released one, as the intent's write keeps it.
 			intent.FirstStartRequestedAt = lo.CoalesceOrEmpty(generation.FirstStartRequestedAt, intent.StartRequestedAt)
-
-			// usageOf is the Usage Record of a call answered for an attempt. The test provider reports
-			// no start, so the call is timed from when it was sent.
-			usageOf := func(attempt *dao.Generation, call *connectors.Call) *dao.GenerationUsageInsertRequest {
-				return &dao.GenerationUsageInsertRequest{
-					GenerationID:      attempt.ID,
-					Attempt:           attempt.Attempt,
-					OwnerID:           attempt.OwnerID,
-					Purpose:           attempt.Purpose,
-					Provider:          attempt.Provider,
-					Model:             call.Model,
-					Class:             call.Class,
-					StartedAt:         *attempt.StartRequestedAt,
-					InputTokens:       call.Usage.InputTokens,
-					CachedInputTokens: call.Usage.CachedInputTokens,
-					OutputTokens:      call.Usage.OutputTokens,
-					ReasoningTokens:   call.Usage.ReasoningTokens,
-				}
-			}
+			// The attempt the check acts on: the fresh intent's once it took one.
+			current := lo.Ternary(testCase.expectStart, intent, generation)
 
 			if testCase.expectStart || testCase.beginStartErr != nil {
 				beginStart.EXPECT().
@@ -958,33 +941,32 @@ func TestGenerationCheck(t *testing.T) {
 				connector.EXPECT().Cancel(mock.Anything, testCallID).Return(testCase.stopped, nil)
 			}
 
-			expectSettle := func(expected *settle, err error) {
-				// A settle is fenced on the start it read: the fresh intent's once one was taken here.
-				started := generation.StartRequestedAt
-				if testCase.expectStart {
-					started = intent.StartRequestedAt
+			settles := []struct {
+				settle *settle
+				err    error
+			}{
+				{settle: testCase.expectSettle, err: testCase.settleErr},
+				{settle: testCase.expectNotRecorded},
+			}
+
+			for _, expected := range settles {
+				if expected.settle == nil {
+					continue
 				}
 
 				settleDao.EXPECT().
 					Exec(mock.Anything, &dao.GenerationSettleRequest{
-						ID:               generation.ID,
-						Attempt:          expected.attempt,
-						StartRequestedAt: started,
-						ProviderCallID:   expected.callID,
-						Status:           expected.status,
-						Error:            expected.reason,
+						ID:      generation.ID,
+						Attempt: expected.settle.attempt,
+						// A settle is fenced on the start it read.
+						StartRequestedAt: current.StartRequestedAt,
+						ProviderCallID:   expected.settle.callID,
+						Status:           expected.settle.status,
+						Error:            expected.settle.reason,
 						Retention:        retention,
-						OutcomeUnknown:   expected.outcomeUnknown,
+						OutcomeUnknown:   expected.settle.outcomeUnknown,
 					}).
-					Return(settledGeneration(expected.status), err)
-			}
-
-			if testCase.expectSettle != nil {
-				expectSettle(testCase.expectSettle, testCase.settleErr)
-			}
-
-			if testCase.expectNotRecorded != nil {
-				expectSettle(testCase.expectNotRecorded, nil)
+					Return(settledGeneration(expected.settle.status), expected.err)
 			}
 
 			if testCase.expectRequeue {
@@ -997,27 +979,16 @@ func TestGenerationCheck(t *testing.T) {
 			}
 
 			if testCase.expectAttempt != nil {
-				number := generation.Attempt
-				if testCase.expectStart {
-					number = intent.Attempt
-				}
-
 				attempt.EXPECT().
 					Exec(mock.Anything, &dao.GenerationAttemptInsertRequest{
-						GenerationID: generation.ID, Attempt: number, Response: testCase.expectAttempt,
+						GenerationID: generation.ID, Attempt: current.Attempt, Response: testCase.expectAttempt,
 					}).
 					Return(&dao.GenerationAttempt{}, testCase.attemptErr)
 			}
 
 			if testCase.expectUsage {
-				// A call this check started is metered on the intent's attempt.
-				metered := generation
-				if testCase.expectStart {
-					metered = intent
-				}
-
 				usage.EXPECT().
-					Exec(mock.Anything, usageOf(metered, lo.CoalesceOrEmpty(testCase.stopped, testCase.observe))).
+					Exec(mock.Anything, usageOf(current, lo.CoalesceOrEmpty(testCase.stopped, testCase.observe))).
 					Return(&dao.GenerationUsage{}, testCase.usageErr)
 			}
 
@@ -1062,12 +1033,29 @@ func TestGenerationCheck(t *testing.T) {
 				require.Equal(t, testCase.expectStatus, result.Status)
 			}
 
-			for _, assertable := range []interface{ AssertExpectations(t mock.TestingT) bool }{
+			mock.AssertExpectationsForObjects(t,
 				connector, beginStart, releaseStart, record, settleDao, requeue, attempt, usage, get,
-			} {
-				assertable.AssertExpectations(t)
-			}
+			)
 		})
+	}
+}
+
+// usageOf is the Usage Record of a call answered for an attempt. The test provider reports no start,
+// so the call is timed from when it was sent.
+func usageOf(attempt *dao.Generation, call *connectors.Call) *dao.GenerationUsageInsertRequest {
+	return &dao.GenerationUsageInsertRequest{
+		GenerationID:      attempt.ID,
+		Attempt:           attempt.Attempt,
+		OwnerID:           attempt.OwnerID,
+		Purpose:           attempt.Purpose,
+		Provider:          attempt.Provider,
+		Model:             call.Model,
+		Class:             call.Class,
+		StartedAt:         *attempt.StartRequestedAt,
+		InputTokens:       call.Usage.InputTokens,
+		CachedInputTokens: call.Usage.CachedInputTokens,
+		OutputTokens:      call.Usage.OutputTokens,
+		ReasoningTokens:   call.Usage.ReasoningTokens,
 	}
 }
 

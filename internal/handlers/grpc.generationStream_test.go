@@ -46,25 +46,25 @@ func (stream *eventStream) Send(response *genaiv0.GenerationStreamResponse) erro
 	return nil
 }
 
+// eventsOf yields the given events, then the error when there is one, as the service streams them.
+func eventsOf(err error, sent ...*core.GenerationStreamEvent) iter.Seq2[*core.GenerationStreamEvent, error] {
+	return func(yield func(*core.GenerationStreamEvent, error) bool) {
+		for _, event := range sent {
+			if !yield(event, nil) {
+				return
+			}
+		}
+
+		if err != nil {
+			yield(nil, err)
+		}
+	}
+}
+
 func TestGrpcGenerationStream(t *testing.T) {
 	t.Parallel()
 
 	delta := json.RawMessage(`{"type":"response.output_text.delta","sequence_number":3}`)
-
-	// events yields the given events, then the error when there is one.
-	events := func(err error, sent ...*core.GenerationStreamEvent) iter.Seq2[*core.GenerationStreamEvent, error] {
-		return func(yield func(*core.GenerationStreamEvent, error) bool) {
-			for _, event := range sent {
-				if !yield(event, nil) {
-					return
-				}
-			}
-
-			if err != nil {
-				yield(nil, err)
-			}
-		}
-	}
 
 	type serviceMock struct {
 		resp *core.GenerationStreamResult
@@ -87,7 +87,7 @@ func TestGrpcGenerationStream(t *testing.T) {
 
 			request: &genaiv0.GenerationStreamRequest{Id: testGenerationID, OwnerId: testOwnerID, StartingAfter: new(int64(2))},
 			serviceMock: &serviceMock{resp: &core.GenerationStreamResult{
-				Events: events(nil, &core.GenerationStreamEvent{Sequence: 3, Data: delta}),
+				Events: eventsOf(nil, &core.GenerationStreamEvent{Sequence: 3, Data: delta}),
 			}},
 
 			expect: []*genaiv0.GenerationStreamResponse{{SequenceNumber: 3, Event: delta}},
@@ -98,7 +98,7 @@ func TestGrpcGenerationStream(t *testing.T) {
 
 			request: &genaiv0.GenerationStreamRequest{Id: testGenerationID, OwnerId: testOwnerID},
 			serviceMock: &serviceMock{resp: &core.GenerationStreamResult{
-				Events: events(core.ErrProviderRetryable, &core.GenerationStreamEvent{Sequence: 3, Data: delta}),
+				Events: eventsOf(core.ErrProviderRetryable, &core.GenerationStreamEvent{Sequence: 3, Data: delta}),
 			}},
 
 			expect:       []*genaiv0.GenerationStreamResponse{{SequenceNumber: 3, Event: delta}},
@@ -110,7 +110,7 @@ func TestGrpcGenerationStream(t *testing.T) {
 
 			request: &genaiv0.GenerationStreamRequest{Id: testGenerationID, OwnerId: testOwnerID},
 			serviceMock: &serviceMock{resp: &core.GenerationStreamResult{
-				Events: events(fmt.Errorf("%w: %w", core.ErrProviderRetryable, context.Canceled)),
+				Events: eventsOf(fmt.Errorf("%w: %w", core.ErrProviderRetryable, context.Canceled)),
 			}},
 			callerLeft: true,
 
@@ -122,7 +122,7 @@ func TestGrpcGenerationStream(t *testing.T) {
 
 			request: &genaiv0.GenerationStreamRequest{Id: testGenerationID, OwnerId: testOwnerID},
 			serviceMock: &serviceMock{resp: &core.GenerationStreamResult{
-				Events: events(core.ErrStreamUnavailable),
+				Events: eventsOf(core.ErrStreamUnavailable),
 			}},
 
 			expectStatus: codes.FailedPrecondition,

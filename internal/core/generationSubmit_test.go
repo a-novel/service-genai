@@ -454,24 +454,15 @@ func TestGenerationSubmit(t *testing.T) {
 			created := testCase.daoMock != nil && testCase.daoMock.resp != nil && testCase.daoMock.resp.Created
 
 			// A purpose scope reads the request's purpose; the global one reads every purpose.
-			scope := func(purpose bool) *string {
-				if purpose {
-					return &testCase.request.Purpose
-				}
-
-				return nil
-			}
+			purpose := &testCase.request.Purpose
 
 			for _, live := range testCase.live {
-				// Only the purpose scope counts a generation whose call may still run untracked.
-				var unknownHold time.Duration
-				if live.purpose {
-					unknownHold = 15 * time.Minute
-				}
-
 				liveDao.EXPECT().
 					Exec(mock.Anything, &dao.GenerationCountLiveRequest{
-						OwnerID: testCase.request.OwnerID, Purpose: scope(live.purpose), UnknownOutcomeWindow: unknownHold,
+						OwnerID: testCase.request.OwnerID,
+						Purpose: lo.Ternary(live.purpose, purpose, nil),
+						// Only the purpose scope counts a generation whose call may still run untracked.
+						UnknownOutcomeWindow: lo.Ternary(live.purpose, 15*time.Minute, 0),
 					}).
 					Return(&dao.GenerationLiveCount{Count: live.count}, live.err)
 
@@ -481,7 +472,7 @@ func TestGenerationSubmit(t *testing.T) {
 			for _, usage := range testCase.usage {
 				usageDao.EXPECT().
 					Exec(mock.Anything, &dao.GenerationUsageSumRequest{
-						OwnerID: testCase.request.OwnerID, Purpose: scope(usage.purpose), Window: usage.window,
+						OwnerID: testCase.request.OwnerID, Purpose: lo.Ternary(usage.purpose, purpose, nil), Window: usage.window,
 					}).
 					Return(&usage.used, usage.err)
 

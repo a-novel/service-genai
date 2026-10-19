@@ -39,13 +39,12 @@ func (sub submission) build() *dao.GenerationSubmitRequest {
 		RequestKey:  []byte("the-request-key"),
 		MaxAttempts: 1,
 		Traceparent: new("00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"),
+		Streamed:    sub.streamed,
 	}
 
 	if sub.key != nil {
 		base.RequestKey = sub.key
 	}
-
-	base.Streamed = sub.streamed
 
 	return base
 }
@@ -207,9 +206,8 @@ func TestPgGenerationSubmit(t *testing.T) {
 		})
 	}
 
-	// Kept out of the table above because it asserts a property of a set of concurrent calls rather
-	// than a sequence of outcomes. It is the case that matters most: submit exists so a race cannot
-	// produce two priced calls, so the race is what it is tested against.
+	// Concurrent submissions of one request resolve to a single generation, so a race cannot produce
+	// two priced calls. The case asserts a property of a set of calls, so it runs outside the table.
 	t.Run("Success/Concurrent", func(t *testing.T) {
 		t.Parallel()
 
@@ -227,11 +225,7 @@ func TestPgGenerationSubmit(t *testing.T) {
 			)
 
 			for range concurrency {
-				wg.Add(1)
-
-				go func() {
-					defer wg.Done()
-
+				wg.Go(func() {
 					result, err := daoGenerationSubmit.Exec(ctx, submission{}.build())
 					if err != nil {
 						return
@@ -241,7 +235,7 @@ func TestPgGenerationSubmit(t *testing.T) {
 					defer mu.Unlock()
 
 					results = append(results, result)
-				}()
+				})
 			}
 
 			wg.Wait()

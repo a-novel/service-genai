@@ -33,6 +33,26 @@ func TestMigrationRoundtrip(t *testing.T) {
 func TestPurgeSettledGenerations(t *testing.T) {
 	t.Parallel()
 
+	// A settled generation carries its expiry, a running one its provider call. Each carries what the
+	// purge must take with it, and a Usage Record it must leave.
+	seeds := []string{
+		`INSERT INTO generations (
+			id, owner_id, purpose, provider, request_key, status, attempt, start_requested_at,
+			provider_call_id, settled_at, expires_at
+		) SELECT
+			?0, ?0, 'studio.generation', 'openai', ?0::text::bytea,
+			(CASE WHEN secs IS NULL THEN 'running' ELSE 'succeeded' END)::generation_status, 1,
+			CURRENT_TIMESTAMP, 'resp_1', CASE WHEN secs IS NOT NULL THEN CURRENT_TIMESTAMP END,
+			CURRENT_TIMESTAMP + make_interval(secs => secs)
+		FROM (SELECT ?1::float8 AS secs) AS expiry`,
+		"INSERT INTO generation_payloads (generation_id, payload) VALUES (?0, '{}')",
+		"INSERT INTO generation_attempts (generation_id, attempt, response) VALUES (?0, 1, '{}')",
+		`INSERT INTO generation_usage (
+			generation_id, attempt, owner_id, purpose, provider, model, class, input_tokens,
+			output_tokens, started_at
+		) VALUES (?0, 1, ?0, 'studio.generation', 'openai', 'a-model', 'none', 1, 1, CURRENT_TIMESTAMP)`,
+	}
+
 	testCases := []struct {
 		name string
 
@@ -70,25 +90,7 @@ func TestPurgeSettledGenerations(t *testing.T) {
 
 				id := uuid.Must(uuid.NewV7())
 
-				// A settled generation carries its expiry, a running one its provider call. Each carries
-				// what the purge must take with it, and a Usage Record it must leave.
-				for _, seed := range []string{
-					`INSERT INTO generations (
-						id, owner_id, purpose, provider, request_key, status, attempt, start_requested_at,
-						provider_call_id, settled_at, expires_at
-					) SELECT
-						?0, ?0, 'studio.generation', 'openai', ?0::text::bytea,
-						(CASE WHEN secs IS NULL THEN 'running' ELSE 'succeeded' END)::generation_status, 1,
-						CURRENT_TIMESTAMP, 'resp_1', CASE WHEN secs IS NOT NULL THEN CURRENT_TIMESTAMP END,
-						CURRENT_TIMESTAMP + make_interval(secs => secs)
-					FROM (SELECT ?1::float8 AS secs) AS expiry`,
-					"INSERT INTO generation_payloads (generation_id, payload) VALUES (?0, '{}')",
-					"INSERT INTO generation_attempts (generation_id, attempt, response) VALUES (?0, 1, '{}')",
-					`INSERT INTO generation_usage (
-						generation_id, attempt, owner_id, purpose, provider, model, class, input_tokens,
-						output_tokens, started_at
-					) VALUES (?0, 1, ?0, 'studio.generation', 'openai', 'a-model', 'none', 1, 1, CURRENT_TIMESTAMP)`,
-				} {
+				for _, seed := range seeds {
 					_, err = db.NewRaw(seed, id, testCase.expiresInSecs).Exec(ctx)
 					require.NoError(t, err)
 				}
@@ -100,13 +102,14 @@ func TestPurgeSettledGenerations(t *testing.T) {
 				require.Equal(t, int64(lo.Ternary(testCase.expectPurged, 1, 0)), purged)
 
 				remaining := lo.Ternary(testCase.expectPurged, 0, 1)
-
-				for query, expected := range map[string]int{
+				expectCounts := map[string]int{
 					"SELECT count(*) FROM generations WHERE id = ?0":                    remaining,
 					"SELECT count(*) FROM generation_payloads WHERE generation_id = ?0": remaining,
 					"SELECT count(*) FROM generation_attempts WHERE generation_id = ?0": remaining,
 					"SELECT count(*) FROM generation_usage WHERE generation_id = ?0":    1,
-				} {
+				}
+
+				for query, expected := range expectCounts {
 					var count int
 
 					err = db.NewRaw(query, id).Scan(ctx, &count)
@@ -117,67 +120,76 @@ func TestPurgeSettledGenerations(t *testing.T) {
 		})
 	}
 
-	// A backlog drains one bounded batch a call, so no call holds its locks long.
-	t.Run("Success/Backlog", func(t *testing.T) {
-		t.Parallel()
+	// expiredGenerations inserts ?0 generations whose retention ended a minute ago.
+	expiredGenerations := `INSERT INTO generations (
+		owner_id, purpose, provider, request_key, status, attempt, start_requested_at, provider_call_id,
+		settled_at, expires_at
+	) SELECT
+		gen_random_uuid(), 'studio.generation', 'openai', uuid_send(gen_random_uuid()), 'succeeded', 1,
+		CURRENT_TIMESTAMP, 'resp_1', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP - interval '1 minute'
+	FROM generate_series(1, ?0)`
 
-		postgrestest.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
-			t.Helper()
+	batchCases := []struct {
+		name string
 
-			db, err := postgres.GetContext(ctx)
-			require.NoError(t, err)
+		generations int
+		// content stores what the generations hold.
+		content []string
+		purge   string
 
-			_, err = db.NewRaw(`INSERT INTO generations (
-				owner_id, purpose, provider, request_key, status, attempt, start_requested_at, provider_call_id,
-				settled_at, expires_at
-			) SELECT
-				gen_random_uuid(), 'studio.generation', 'openai', uuid_send(gen_random_uuid()), 'succeeded', 1,
-				CURRENT_TIMESTAMP, 'resp_1', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP - interval '1 minute'
-			FROM generate_series(1, 1001)`).Exec(ctx)
-			require.NoError(t, err)
+		// expectPurged is what each successive call purges.
+		expectPurged []int64
+	}{
+		{
+			// A backlog drains one bounded batch a call, so no call holds its locks long.
+			name: "Success/Backlog",
 
-			for _, expected := range []int64{1000, 1, 0} {
-				var purged int64
+			generations: 1001,
+			purge:       "SELECT purge_settled_generations()",
 
-				err = db.NewRaw("SELECT purge_settled_generations()").Scan(ctx, &purged)
-				require.NoError(t, err)
-				require.Equal(t, expected, purged)
-			}
-		})
-	})
+			expectPurged: []int64{1000, 1, 0},
+		},
+		{
+			// A call stops at its byte budget, but always takes a generation, so large ones still drain.
+			name: "Success/ByteBudget",
 
-	// A call stops at its byte budget, but always takes a generation, so large ones still drain.
-	t.Run("Success/ByteBudget", func(t *testing.T) {
-		t.Parallel()
-
-		postgrestest.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
-			t.Helper()
-
-			db, err := postgres.GetContext(ctx)
-			require.NoError(t, err)
-
-			for _, seed := range []string{
-				`INSERT INTO generations (
-					owner_id, purpose, provider, request_key, status, attempt, start_requested_at, provider_call_id,
-					settled_at, expires_at
-				) SELECT
-					gen_random_uuid(), 'studio.generation', 'openai', uuid_send(gen_random_uuid()), 'succeeded', 1,
-					CURRENT_TIMESTAMP, 'resp_1', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP - interval '1 minute'
-				FROM generate_series(1, 2)`,
+			generations: 2,
+			content: []string{
 				"INSERT INTO generation_payloads (generation_id, payload) SELECT id, '{}' FROM generations",
 				"INSERT INTO generation_attempts (generation_id, attempt, response) SELECT id, 1, '{}' FROM generations",
-			} {
-				_, err = db.NewRaw(seed).Exec(ctx)
-				require.NoError(t, err)
-			}
+			},
+			purge: "SELECT purge_settled_generations(1)",
 
-			for _, expected := range []int64{1, 1, 0} {
-				var purged int64
+			expectPurged: []int64{1, 1, 0},
+		},
+	}
 
-				err = db.NewRaw("SELECT purge_settled_generations(1)").Scan(ctx, &purged)
+	for _, testCase := range batchCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			postgrestest.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
+				t.Helper()
+
+				db, err := postgres.GetContext(ctx)
 				require.NoError(t, err)
-				require.Equal(t, expected, purged)
-			}
+
+				_, err = db.NewRaw(expiredGenerations, testCase.generations).Exec(ctx)
+				require.NoError(t, err)
+
+				for _, statement := range testCase.content {
+					_, err = db.NewRaw(statement).Exec(ctx)
+					require.NoError(t, err)
+				}
+
+				for _, expected := range testCase.expectPurged {
+					var purged int64
+
+					err = db.NewRaw(testCase.purge).Scan(ctx, &purged)
+					require.NoError(t, err)
+					require.Equal(t, expected, purged)
+				}
+			})
 		})
-	})
+	}
 }

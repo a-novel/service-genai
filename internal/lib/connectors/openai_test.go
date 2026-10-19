@@ -41,27 +41,28 @@ type scriptedProvider struct {
 	lastBody  json.RawMessage
 }
 
+func (script *scriptedProvider) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
+	script.lastPath = request.URL.Path
+	script.lastQuery = request.URL.RawQuery
+
+	if request.Body != nil {
+		script.lastBody, _ = io.ReadAll(request.Body)
+	}
+
+	answer := script
+	if script.cancel != nil && strings.HasSuffix(request.URL.Path, "/cancel") {
+		answer = script.cancel
+	}
+
+	writer.Header().Set("Content-Type", lo.Ternary(answer.events, "text/event-stream", "application/json"))
+	writer.WriteHeader(answer.status)
+	_, _ = writer.Write([]byte(answer.body))
+}
+
 func (script *scriptedProvider) serve(t *testing.T) *httptest.Server {
 	t.Helper()
 
-	server := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		script.lastPath = request.URL.Path
-		script.lastQuery = request.URL.RawQuery
-
-		if request.Body != nil {
-			script.lastBody, _ = io.ReadAll(request.Body)
-		}
-
-		answer := script
-		if script.cancel != nil && strings.HasSuffix(request.URL.Path, "/cancel") {
-			answer = script.cancel
-		}
-
-		writer.Header().Set("Content-Type", lo.Ternary(answer.events, "text/event-stream", "application/json"))
-		writer.WriteHeader(answer.status)
-		_, _ = writer.Write([]byte(answer.body))
-	}))
-
+	server := httptest.NewTLSServer(script)
 	t.Cleanup(server.Close)
 
 	return server
@@ -688,43 +689,8 @@ func TestOpenAI(t *testing.T) {
 	t.Run("StartStalledBeforeSending", func(t *testing.T) {
 		t.Parallel()
 
-		listener, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
-		require.NoError(t, err)
-
-		var (
-			mu    sync.Mutex
-			conns []net.Conn
-		)
-
-		t.Cleanup(func() {
-			_ = listener.Close()
-
-			mu.Lock()
-			defer mu.Unlock()
-
-			for _, conn := range conns {
-				_ = conn.Close()
-			}
-		})
-
-		// Accepts connections and never speaks, so the handshake stalls.
-		go func() {
-			for {
-				conn, acceptErr := listener.Accept()
-				if acceptErr != nil {
-					return
-				}
-
-				mu.Lock()
-
-				conns = append(conns, conn)
-
-				mu.Unlock()
-			}
-		}()
-
 		provider, err := connectors.NewOpenAI(
-			testConfig("https://"+listener.Addr().String()), option.WithRequestTimeout(500*time.Millisecond),
+			testConfig("https://"+listenSilently(t)), option.WithRequestTimeout(500*time.Millisecond),
 		)
 		require.NoError(t, err)
 
@@ -934,25 +900,6 @@ func TestOpenAI(t *testing.T) {
 		key := []byte("test-signing-key-of-32-bytes-long")
 		secret := "whsec_" + base64.StdEncoding.EncodeToString(key)
 
-		// sign returns the headers OpenAI sends with a body.
-		sign := func(body string) map[string][]string {
-			id, timestamp := "evt_1", strconv.FormatInt(time.Now().Unix(), 10)
-
-			mac := hmac.New(sha256.New, key)
-			mac.Write([]byte(id + "." + timestamp + "." + body))
-
-			return map[string][]string{
-				"Webhook-Id":        {id},
-				"Webhook-Timestamp": {timestamp},
-				"Webhook-Signature": {"v1," + base64.StdEncoding.EncodeToString(mac.Sum(nil))},
-			}
-		}
-
-		event := func(kind string) string {
-			return `{"id": "evt_1", "object": "event", "created_at": 1760000000, "type": "` + kind +
-				`", "data": {"id": "resp_1"}}`
-		}
-
 		testCases := []struct {
 			name string
 
@@ -967,8 +914,8 @@ func TestOpenAI(t *testing.T) {
 				name: "Success",
 
 				secret: secret,
-				body:   event("response.completed"),
-				header: sign(event("response.completed")),
+				body:   webhookEvent("response.completed"),
+				header: signWebhook(key, webhookEvent("response.completed")),
 
 				expect: &connectors.Notification{CallID: "resp_1"},
 			},
@@ -977,8 +924,8 @@ func TestOpenAI(t *testing.T) {
 				name: "Error/Ignored",
 
 				secret: secret,
-				body:   event("batch.completed"),
-				header: sign(event("batch.completed")),
+				body:   webhookEvent("batch.completed"),
+				header: signWebhook(key, webhookEvent("batch.completed")),
 
 				expectErr: connectors.ErrNotificationIgnored,
 			},
@@ -986,8 +933,8 @@ func TestOpenAI(t *testing.T) {
 				name: "Error/BadSignature",
 
 				secret: secret,
-				body:   event("response.completed"),
-				header: sign(event("response.failed")),
+				body:   webhookEvent("response.completed"),
+				header: signWebhook(key, webhookEvent("response.failed")),
 
 				expectErr: connectors.ErrNotificationInvalid,
 			},
@@ -995,8 +942,8 @@ func TestOpenAI(t *testing.T) {
 				// Without the signing secret, nothing can be verified, so nothing is read.
 				name: "Error/NoSecret",
 
-				body:   event("response.completed"),
-				header: sign(event("response.completed")),
+				body:   webhookEvent("response.completed"),
+				header: signWebhook(key, webhookEvent("response.completed")),
 
 				expectErr: connectors.ErrModeUnsupported,
 			},
@@ -1038,77 +985,18 @@ func TestOpenAI(t *testing.T) {
 		connector, err := registry.Async("openai")
 		require.NoError(t, err)
 
-		// payload is what a caller sends: its own model, effort, schema and privacy fields. The schema
-		// exercises the strict subset callers rely on: nesting, an array, an enum and a nullable field.
-		payload := func(model, effort string) json.RawMessage {
-			return json.RawMessage(`{
-				"model": "` + model + `",
-				"reasoning": {"effort": "` + effort + `"},
-				"max_output_tokens": 4096,
-				"store": false,
-				"instructions": "Outline the scene in the input as two short beats. Leave the note empty.",
-				"input": "{\"scene\": \"a door left ajar at night\"}",
-				"text": {"format": {"type": "json_schema", "name": "outline", "strict": true, "schema": {
-					"type": "object",
-					"properties": {
-						"title": {"type": "string"},
-						"mood": {"type": "string", "enum": ["calm", "tense"]},
-						"beats": {
-							"type": "array",
-							"items": {
-								"type": "object",
-								"properties": {"text": {"type": "string"}},
-								"required": ["text"],
-								"additionalProperties": false
-							}
-						},
-						"note": {"type": ["string", "null"]}
-					},
-					"required": ["title", "mood", "beats", "note"],
-					"additionalProperties": false
-				}}}
-			}`)
-		}
-
-		await := func(t *testing.T, id string) *connectors.Call {
-			t.Helper()
-
-			for {
-				call, err := connector.Get(t.Context(), id)
-				require.NoError(t, err)
-
-				if call.State.Terminal() {
-					return call
-				}
-
-				time.Sleep(2 * time.Second)
-			}
-		}
-
-		// output reads the part of a response that must survive a re-read unchanged.
-		output := func(t *testing.T, response json.RawMessage) string {
-			t.Helper()
-
-			var body struct {
-				Output json.RawMessage `json:"output"`
-			}
-
-			require.NoError(t, json.Unmarshal(response, &body))
-			require.NotEmpty(t, body.Output)
-
-			return string(body.Output)
-		}
-
 		t.Run("Success", func(t *testing.T) {
 			t.Parallel()
 
-			started, err := connector.Start(t.Context(), &connectors.AsyncStartRequest{Payload: payload("gpt-5.6-luna", "low")})
+			started, err := connector.Start(t.Context(), &connectors.AsyncStartRequest{
+				Payload: conformancePayload("gpt-5.6-luna", "low"),
+			})
 			require.NoError(t, err)
 			// Background mode, with the caller's store: false: the id comes back before the model runs.
 			require.NotEmpty(t, started.ID)
 			require.False(t, started.State.Terminal())
 
-			finished := await(t, started.ID)
+			finished := awaitCall(t, connector, started.ID)
 			require.Equal(t, connectors.CallSucceeded, finished.State, finished.Reason)
 			require.True(t, json.Valid(finished.Response))
 
@@ -1124,7 +1012,7 @@ func TestOpenAI(t *testing.T) {
 
 			again, err := connector.Get(t.Context(), started.ID)
 			require.NoError(t, err, "result gone %s after it finished", config.SweepIntervalCeiling)
-			require.JSONEq(t, output(t, finished.Response), output(t, again.Response))
+			require.JSONEq(t, responseOutput(t, finished.Response), responseOutput(t, again.Response))
 		})
 
 		// Streaming mode: the start waits for the provider to begin the call, then a stream reads its
@@ -1138,7 +1026,7 @@ func TestOpenAI(t *testing.T) {
 			var named *connectors.Call
 
 			started, err := connector.Start(t.Context(), &connectors.AsyncStartRequest{
-				Payload: payload("gpt-5.6-luna", "low"), Stream: true,
+				Payload: conformancePayload("gpt-5.6-luna", "low"), Stream: true,
 				Accepted: func(call *connectors.Call) error {
 					named = call
 
@@ -1176,35 +1064,41 @@ func TestOpenAI(t *testing.T) {
 
 			// A cancel that arrives after the call finished must still return the result: the provider
 			// refuses to cancel it, and the connector reads it instead.
-			started, err := connector.Start(t.Context(), &connectors.AsyncStartRequest{Payload: payload("gpt-5.6-luna", "low")})
+			started, err := connector.Start(t.Context(), &connectors.AsyncStartRequest{
+				Payload: conformancePayload("gpt-5.6-luna", "low"),
+			})
 			require.NoError(t, err)
 
-			finished := await(t, started.ID)
+			finished := awaitCall(t, connector, started.ID)
 			require.Equal(t, connectors.CallSucceeded, finished.State, finished.Reason)
 
 			cancelled, err := connector.Cancel(t.Context(), started.ID)
 			require.NoError(t, err)
 			require.Equal(t, connectors.CallSucceeded, cancelled.State)
-			require.JSONEq(t, output(t, finished.Response), output(t, cancelled.Response))
+			require.JSONEq(t, responseOutput(t, finished.Response), responseOutput(t, cancelled.Response))
 		})
 
 		t.Run("Success/Cancel", func(t *testing.T) {
 			t.Parallel()
 
 			// A slow model and effort, so the cancel lands while the call still runs.
-			started, err := connector.Start(t.Context(), &connectors.AsyncStartRequest{Payload: payload("gpt-5.6-sol", "high")})
+			started, err := connector.Start(t.Context(), &connectors.AsyncStartRequest{
+				Payload: conformancePayload("gpt-5.6-sol", "high"),
+			})
 			require.NoError(t, err)
 
 			_, err = connector.Cancel(t.Context(), started.ID)
 			require.NoError(t, err)
-			require.Equal(t, connectors.CallCancelled, await(t, started.ID).State)
+			require.Equal(t, connectors.CallCancelled, awaitCall(t, connector, started.ID).State)
 		})
 
 		t.Run("Error/Rejected", func(t *testing.T) {
 			t.Parallel()
 
 			// A request the provider refuses fails before anything runs, with the provider's reason.
-			_, err := connector.Start(t.Context(), &connectors.AsyncStartRequest{Payload: payload("no-such-model", "low")})
+			_, err := connector.Start(t.Context(), &connectors.AsyncStartRequest{
+				Payload: conformancePayload("no-such-model", "low"),
+			})
 
 			var rejection *connectors.RejectionError
 
@@ -1253,4 +1147,128 @@ func TestOpenAI(t *testing.T) {
 			})
 		}
 	})
+}
+
+// listenSilently accepts connections and never speaks on them, so a TLS handshake stalls. It returns
+// the address it listens on.
+func listenSilently(t *testing.T) string {
+	t.Helper()
+
+	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	var (
+		mu    sync.Mutex
+		conns []net.Conn
+	)
+
+	t.Cleanup(func() {
+		_ = listener.Close()
+
+		mu.Lock()
+		defer mu.Unlock()
+
+		for _, conn := range conns {
+			_ = conn.Close()
+		}
+	})
+
+	go func() {
+		for {
+			conn, acceptErr := listener.Accept()
+			if acceptErr != nil {
+				return
+			}
+
+			mu.Lock()
+
+			conns = append(conns, conn)
+
+			mu.Unlock()
+		}
+	}()
+
+	return listener.Addr().String()
+}
+
+// webhookEvent is an OpenAI webhook event of the given type about the response resp_1.
+func webhookEvent(kind string) string {
+	return `{"id": "evt_1", "object": "event", "created_at": 1760000000, "type": "` + kind +
+		`", "data": {"id": "resp_1"}}`
+}
+
+// signWebhook returns the headers OpenAI sends with a body, signed with the endpoint's key.
+func signWebhook(key []byte, body string) map[string][]string {
+	id, timestamp := "evt_1", strconv.FormatInt(time.Now().Unix(), 10)
+
+	mac := hmac.New(sha256.New, key)
+	mac.Write([]byte(id + "." + timestamp + "." + body))
+
+	return map[string][]string{
+		"Webhook-Id":        {id},
+		"Webhook-Timestamp": {timestamp},
+		"Webhook-Signature": {"v1," + base64.StdEncoding.EncodeToString(mac.Sum(nil))},
+	}
+}
+
+// conformancePayload is what a caller sends: its own model, effort, schema and privacy fields. The
+// schema exercises the strict subset callers rely on: nesting, an array, an enum and a nullable field.
+func conformancePayload(model, effort string) json.RawMessage {
+	return json.RawMessage(`{
+		"model": "` + model + `",
+		"reasoning": {"effort": "` + effort + `"},
+		"max_output_tokens": 4096,
+		"store": false,
+		"instructions": "Outline the scene in the input as two short beats. Leave the note empty.",
+		"input": "{\"scene\": \"a door left ajar at night\"}",
+		"text": {"format": {"type": "json_schema", "name": "outline", "strict": true, "schema": {
+			"type": "object",
+			"properties": {
+				"title": {"type": "string"},
+				"mood": {"type": "string", "enum": ["calm", "tense"]},
+				"beats": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"properties": {"text": {"type": "string"}},
+						"required": ["text"],
+						"additionalProperties": false
+					}
+				},
+				"note": {"type": ["string", "null"]}
+			},
+			"required": ["title", "mood", "beats", "note"],
+			"additionalProperties": false
+		}}}
+	}`)
+}
+
+// awaitCall polls a call until it reaches a terminal state.
+func awaitCall(t *testing.T, connector connectors.Async, id string) *connectors.Call {
+	t.Helper()
+
+	for {
+		call, err := connector.Get(t.Context(), id)
+		require.NoError(t, err)
+
+		if call.State.Terminal() {
+			return call
+		}
+
+		time.Sleep(2 * time.Second)
+	}
+}
+
+// responseOutput reads the part of a response that must survive a re-read unchanged.
+func responseOutput(t *testing.T, response json.RawMessage) string {
+	t.Helper()
+
+	var body struct {
+		Output json.RawMessage `json:"output"`
+	}
+
+	require.NoError(t, json.Unmarshal(response, &body))
+	require.NotEmpty(t, body.Output)
+
+	return string(body.Output)
 }
