@@ -31,10 +31,8 @@ func main() {
 	cfg := config.AppPresetDefault
 	lo.Must0(cfg.Validate())
 
-	processCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-
-	ctx := processCtx
 
 	otel.SetAppName(cfg.App.Name)
 
