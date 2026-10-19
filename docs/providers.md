@@ -1,6 +1,6 @@
 # Providers
 
-A provider is reached through a connector: the code that authenticates against it, owns its endpoints, writes the fields an execution mode needs over the caller's payload, and reads the provider's status and errors. The caller builds the payload in the provider's own format, so a provider is never swapped behind a caller's back: moving to another one is a change in the caller.
+A connector is the code that reaches a provider. It authenticates against the provider, owns its endpoints, writes the fields an execution mode needs over the caller's payload, and reads the provider's status and errors. The caller builds the payload in the provider's own format, so moving to another provider is a change in the caller.
 
 A connector offers a mode by implementing its interface. The OpenAI connector offers the Async and Streaming modes, through the [Responses API](https://developers.openai.com/api/reference/resources/responses), and the Notifications mode once given its webhook signing secret.
 
@@ -20,13 +20,17 @@ The OpenAI connector writes `background: true` and `stream` over the payload's o
 
 ## Streaming mode
 
-A provider offers the Streaming mode by reading an operation's events after a cursor. OpenAI streams only a background call created with `stream: true`, and only for 5 minutes after its creation; past that, the result is read by polling. Leaving a streamed creation before the provider reports `response.in_progress` can leave the call queued for good, an open OpenAI bug: the connector holds the creation stream until then, at most 30 seconds, reporting the call's id as soon as the provider names it so it is recorded before the hold ends, and a check stops a streamed call still queued 5 minutes after its start. A streamed generation is one call: a retryable failure settles it rather than starting a fresh call, whose events would number from zero. The connector issues the stream's GET itself, because openai-go's `GetStreaming` sends a body the API refuses ([openai-go#660](https://github.com/openai/openai-go/issues/660)).
+A provider offers the Streaming mode by reading an operation's events after a cursor. OpenAI streams only a background call created with `stream: true`, and only for 5 minutes after its creation. Past that, the result is read by polling.
+
+An open OpenAI bug can leave a streamed call queued for good when its creation stream is left before the provider reports `response.in_progress`. The connector holds the creation stream until then, for 30 seconds at most. It reports the call's id as soon as the provider names it, so the call is recorded before the hold ends. A check stops a streamed call still queued 5 minutes after its start.
+
+A streamed generation is one call, since a fresh call numbers its events from zero. A retryable failure settles it instead of starting a fresh call. The connector issues the stream's GET itself, because openai-go's `GetStreaming` sends a body the API refuses ([openai-go#660](https://github.com/openai/openai-go/issues/660)).
 
 ## Notifications mode
 
-A provider offers the Notifications mode by posting a signed message when one of its operations ends. The connector verifies the message and names the operation it concerns, or reports it invalid, or irrelevant to the service; the `rest` server then checks the generation carrying that operation. Nothing provider-specific leaves the connector, so the server serves every provider at `/webhooks/{provider}`.
+A provider offers the Notifications mode by posting a signed message when one of its operations ends. The connector verifies the message and names the operation it concerns, or reports it invalid or irrelevant to the service. The `rest` server then checks the generation carrying that operation. Nothing provider-specific leaves the connector, so the server serves every provider at `/webhooks/{provider}`.
 
-OpenAI follows the [Standard Webhooks](https://www.standardwebhooks.com/) specification: each event is signed with the endpoint's secret, delivered at least once, in no guaranteed order, and retried for up to 72 hours until it is answered with a `2xx`. The connector verifies events with openai-go's `Webhooks.Unwrap` and acts on `response.completed`, `response.failed`, `response.cancelled` and `response.incomplete`. An event carries only the response id, so the check retrieves the result as a poll would, and a duplicate or late event finds the generation already settled.
+OpenAI follows the [Standard Webhooks](https://www.standardwebhooks.com/) specification. Each event is signed with the endpoint's secret, delivered at least once, in no guaranteed order, and retried for up to 72 hours until it is answered with a `2xx`. The connector verifies events with openai-go's `Webhooks.Unwrap` and acts on `response.completed`, `response.failed`, `response.cancelled` and `response.incomplete`. An event carries only the response id, so the check retrieves the result as a poll would. A duplicate or late event finds the generation already settled.
 
 ## Who conforms
 
@@ -42,10 +46,12 @@ As of October 2026:
 
 ## Checking a provider
 
-The conformance check builds the connectors from the variables the server reads, all but the webhook secret, and runs the OpenAI connector's Async and Streaming modes against every requirement it can observe. Run it before changing the connector or the account it reaches. It calls the provider and costs a few cents, so it runs only when `PROVIDER_CONFORMANCE` is `true`:
+The conformance check builds the connectors from the variables the server reads, all but the webhook secret. It runs the OpenAI connector's Async and Streaming modes against every requirement it can observe. Run it before changing the connector or the account it reaches. It calls the provider and costs a few cents, so it runs only when `PROVIDER_CONFORMANCE` is `true`. Paste the API key at the prompt:
 
 ```bash
-PROVIDER_CONFORMANCE=true OPENAI_API_KEY="<key>" go test ./internal/lib/connectors -run TestOpenAI/Conformance -v -timeout 30m
+read -rs OPENAI_API_KEY
+export OPENAI_API_KEY
+PROVIDER_CONFORMANCE=true go test ./internal/lib/connectors -run TestOpenAI/Conformance -v -timeout 30m
 ```
 
-The check plays a caller: it sends its own payload, with `store: false` and a strict output schema. It starts a call and expects an id before the model runs, polls it to completion, and reads it again five minutes later. It streams another call, expecting it named while queued and its events in order up to the terminal one. It cancels a running call and a finished one, whose result must come back intact, and expects a request for an unknown model to be rejected with the provider's error body. The whole run takes about six minutes.
+The check plays a caller, with its own payload, `store: false` and a strict output schema. It starts a call and expects an id before the model runs, polls it to completion, and reads it again five minutes later. It streams another call, expecting it named while queued and its events in order up to the terminal one. It cancels a running call and a finished one, whose result must come back intact. It expects a request for an unknown model to be rejected with the provider's error body. The whole run takes about six minutes.
