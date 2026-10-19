@@ -2,9 +2,9 @@
 -- call may already be accepted is only marked: the next check stops the call and settles it with
 -- whatever it consumed.
 --
--- Owner-scoped, and only while the generation can still be stopped: a terminal one is already paid
--- for and a cancel would be a no-op the caller should be told about. One instant serves every
--- timestamp, so the retention between settled_at and expires_at is exact.
+-- Owner-scoped, and only while the generation can still be stopped: a settled one is already paid
+-- for and matches nothing, so the caller reads it as it stands. One instant serves every timestamp,
+-- so the retention between settled_at and expires_at is exact.
 UPDATE generations
 SET
   cancel_requested_at = coalesce(cancel_requested_at, cancel.at),

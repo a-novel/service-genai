@@ -167,55 +167,18 @@ func (provider *OpenAI) Stream(ctx context.Context, request *StreamRequest) iter
 		ctx, span := otel.Tracer().Start(ctx, "connectors.OpenAI.Stream")
 		defer span.End()
 
-		opts := []option.RequestOption{option.WithMaxRetries(0), option.WithQuery("stream", "true")}
-		if request.StartingAfter != nil {
-			opts = append(opts, option.WithQuery("starting_after", strconv.FormatInt(*request.StartingAfter, 10)))
-		}
-
 		var raw *http.Response
 
-		err := provider.client.Get(ctx, callPath(request.ID), nil, &raw, opts...)
+		err := provider.client.Get(ctx, callPath(request.ID), nil, &raw, streamOptions(request)...)
 		if err != nil {
 			yield(nil, otel.ReportError(span, classifyOpenAIStreamError(err)))
 
 			return
 		}
 
-		decoder := ssestream.NewDecoder(raw)
-		defer func() { _ = decoder.Close() }()
-
-		for decoder.Next() {
-			data := decoder.Event().Data
-
-			// Only the head is read: a terminal event carries the whole response.
-			var head struct {
-				Type           string `json:"type"`
-				SequenceNumber int64  `json:"sequence_number"` //nolint:tagliatelle // OpenAI's own field name.
-			}
-
-			err = json.Unmarshal(data, &head)
-			if err != nil {
-				yield(nil, otel.ReportError(span, fmt.Errorf("decode event: %w", err)))
-
-				return
-			}
-
-			event := &StreamEvent{Sequence: head.SequenceNumber, Data: data, Terminal: terminalEvents[head.Type]}
-			if !yield(event, nil) || event.Terminal {
-				return
-			}
-		}
-
-		// A stream cut before its terminal event resumes after the last event the caller received. An
-		// event too large to read would cut every stream resumed before it, so its result is polled.
-		err = decoder.Err()
+		err = yieldEvents(raw, yield)
 		if err != nil {
-			cause := ErrRetryable
-			if errors.Is(err, bufio.ErrTooLong) {
-				cause = ErrStreamUnavailable
-			}
-
-			yield(nil, otel.ReportError(span, fmt.Errorf("%w: %w", cause, err)))
+			yield(nil, otel.ReportError(span, err))
 		}
 	}
 }
@@ -234,6 +197,62 @@ var terminalEvents = map[string]bool{
 	"response.failed":     true,
 	"response.incomplete": true,
 	"error":               true,
+}
+
+// streamOptions asks for the operation's events, after the cursor when there is one.
+func streamOptions(request *StreamRequest) []option.RequestOption {
+	opts := []option.RequestOption{option.WithMaxRetries(0), option.WithQuery("stream", "true")}
+	if request.StartingAfter != nil {
+		opts = append(opts, option.WithQuery("starting_after", strconv.FormatInt(*request.StartingAfter, 10)))
+	}
+
+	return opts
+}
+
+// yieldEvents yields the events of an opened stream until the terminal one or the caller stops, and
+// returns what cut the stream otherwise.
+func yieldEvents(raw *http.Response, yield func(*StreamEvent, error) bool) error {
+	decoder := ssestream.NewDecoder(raw)
+	defer func() { _ = decoder.Close() }()
+
+	for decoder.Next() {
+		event, err := streamEventOf(decoder.Event().Data)
+		if err != nil {
+			return err
+		}
+
+		if !yield(event, nil) || event.Terminal {
+			return nil
+		}
+	}
+
+	// A stream cut before its terminal event resumes after the last event the caller received. An
+	// event too large to read would cut every stream resumed before it, so its result is polled.
+	err := decoder.Err()
+	if err == nil {
+		return nil
+	}
+
+	if errors.Is(err, bufio.ErrTooLong) {
+		return fmt.Errorf("%w: %w", ErrStreamUnavailable, err)
+	}
+
+	return fmt.Errorf("%w: %w", ErrRetryable, err)
+}
+
+// streamEventOf reads an event's head only: a terminal event carries the whole response.
+func streamEventOf(data json.RawMessage) (*StreamEvent, error) {
+	var head struct {
+		Type           string `json:"type"`
+		SequenceNumber int64  `json:"sequence_number"` //nolint:tagliatelle // OpenAI's own field name.
+	}
+
+	err := json.Unmarshal(data, &head)
+	if err != nil {
+		return nil, fmt.Errorf("decode event: %w", err)
+	}
+
+	return &StreamEvent{Sequence: head.SequenceNumber, Data: data, Terminal: terminalEvents[head.Type]}, nil
 }
 
 // classifyOpenAIStreamError tells a stream the provider refuses from one worth opening again.
@@ -497,8 +516,8 @@ func providerCallOf(raw json.RawMessage) (*Call, error) {
 		call.State = CallQueued
 	case responses.ResponseStatusInProgress:
 	default:
-		// An unknown status is treated as still running rather than terminal: polling again is
-		// cheap, and settling on a status we do not understand throws away work already paid for.
+		// An unknown status reads as still running: polling again is cheap, and settling on a status
+		// this service does not understand throws away work already paid for.
 	}
 
 	if !call.State.Terminal() {

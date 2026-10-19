@@ -51,7 +51,9 @@ func TestPgGenerationAttemptList(t *testing.T) {
 				generation := seedGeneration(ctx, t, 3)
 				other := seedGeneration(ctx, t, 1)
 
-				for _, generationID := range []uuid.UUID{generation.ID, other.ID} {
+				generationIDs := []uuid.UUID{generation.ID, other.ID}
+
+				for _, generationID := range generationIDs {
 					for _, attempt := range testCase.attempts {
 						_, err := dao.NewPgGenerationAttemptInsert().Exec(ctx, &dao.GenerationAttemptInsertRequest{
 							GenerationID: generationID, Attempt: attempt, Response: json.RawMessage(`{}`),

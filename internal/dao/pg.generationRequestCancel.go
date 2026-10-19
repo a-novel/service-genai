@@ -18,8 +18,7 @@ import (
 var generationRequestCancelQuery string
 
 // ErrGenerationNotCancellable is returned when the owner has no generation with this id, or it has
-// already settled. The two are deliberately one error: distinguishing them would tell a caller that
-// somebody else's identifier exists.
+// already settled. Both cases share one error, so a caller cannot probe another owner's identifier.
 var ErrGenerationNotCancellable = errors.New("generation cannot be cancelled")
 
 // GenerationRequestCancelRequest is the input to [PgGenerationRequestCancel.Exec].

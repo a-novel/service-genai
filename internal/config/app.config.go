@@ -26,7 +26,8 @@ const MaxAttemptsCeiling = 2
 
 // UnknownOutcomeHold is how long a generation that failed with its call's outcome unknown keeps its
 // purpose's concurrency slot: the provider may still run a call that nothing tracks or meters, so
-// resending cannot multiply untracked spend. The retention outlasts it, or the purge would end the hold early.
+// resending cannot multiply untracked spend. The retention must outlast it, since the purge deletes
+// the generation that holds the slot.
 const UnknownOutcomeHold = 15 * time.Minute
 
 // Main holds the top-level application settings.

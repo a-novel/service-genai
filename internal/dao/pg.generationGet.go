@@ -17,9 +17,8 @@ import (
 var generationGetQuery string
 
 // ErrGenerationGetNotFound is returned by [PgGenerationGet.Exec] when the owner has no generation
-// with the requested ID. It is joined onto sql.ErrNoRows so callers can branch on it with errors.Is.
-//
-// Another owner's generation reports this too: a distinct "forbidden" would confirm the ID exists.
+// with the requested ID. Another owner's generation reports this too, so an identifier cannot be
+// probed for existence.
 var ErrGenerationGetNotFound = errors.New("generation not found")
 
 // GenerationGetRequest is the input to [PgGenerationGet.Exec].

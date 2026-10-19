@@ -262,8 +262,9 @@ func (service *GenerationSubmit) validateRequest(request *GenerationSubmitReques
 		)
 	}
 
-	// I-JSON (RFC 7493) refuses duplicate names, invalid UTF-8 and unpaired surrogates: canonicalizing
-	// any of them would give two different requests one key. A provider request is always an object.
+	// Canonicalizing collapses duplicate names, invalid UTF-8 and unpaired surrogates, so two different
+	// requests holding them could share a key. I-JSON (RFC 7493) refuses all three. A provider request
+	// is always an object.
 	if !request.Payload.IsValid() || request.Payload.Kind() != '{' {
 		return fmt.Errorf("%w: payload is not a valid I-JSON object (RFC 7493)", ErrInvalidRequest)
 	}
@@ -351,6 +352,7 @@ func (service *GenerationSubmit) admit(ctx context.Context, request *GenerationS
 	return nil
 }
 
+// reached reports whether the usage met the limit. A nil limit is never reached.
 func reached(limit *int64, used int64) bool {
 	return limit != nil && used >= *limit
 }
@@ -379,9 +381,7 @@ func requestKey(request *GenerationSubmitRequest) ([]byte, error) {
 		return nil, fmt.Errorf("canonicalize payload: %w", err)
 	}
 
-	digest := sha256.New()
-
-	for _, field := range [][]byte{
+	fields := [][]byte{
 		[]byte(requestKeyTag),
 		request.OwnerID[:],
 		[]byte(request.Purpose),
@@ -389,7 +389,11 @@ func requestKey(request *GenerationSubmitRequest) ([]byte, error) {
 		[]byte(lo.Ternary(request.Stream, streamedMode, asyncMode)),
 		payload,
 		binary.BigEndian.AppendUint32(nil, request.Variant),
-	} {
+	}
+
+	digest := sha256.New()
+
+	for _, field := range fields {
 		digest.Write(binary.BigEndian.AppendUint64(nil, uint64(len(field))))
 		digest.Write(field)
 	}

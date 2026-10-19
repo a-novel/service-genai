@@ -143,9 +143,9 @@ func (service *GenerationCheck) Exec(
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck", options...)
 	defer span.End()
 
-	// A check outlives the call that triggered it. A poll that elected it already stamped the
-	// generation, so a check cut by the caller's deadline would leave it stale; and from a start's
-	// intent on, the provider may hold paid work whose id must be recorded.
+	// A check outlives the call that triggered it. The poll that elected it already stamped the
+	// generation as checked, so nothing else checks it until it goes stale again. From a start's intent
+	// on, the provider may also hold paid work whose id must be recorded.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), checkTimeout)
 	defer cancel()
 
@@ -489,10 +489,10 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 		recorded, err = service.settle(ctx, generation, call)
 	}
 
-	// An answer the database refuses, such as usage that breaks a constraint, would keep the generation
-	// running for as long as the provider holds it. Once a stopped call would have been given up on, the
-	// generation fails without it. Any other failure, such as a lock wait or a lost connection, is
-	// retried by the next check.
+	// The database refuses the same answer on every check, such as usage that breaks a constraint. Once
+	// the call is older than the run ceiling and the stop retry window together, the generation fails
+	// without the answer. Any other failure, such as a lock wait or a lost connection, is retried by the
+	// next check.
 	if errors.Is(err, dao.ErrRefused) &&
 		generation.CheckedAt.Sub(*generation.StartRequestedAt) >= runCeiling+stopRetryWindow {
 		recorded, err = service.settleFailure(ctx, generation, failureNotRecorded, err.Error(), nil)
@@ -636,8 +636,8 @@ func (service *GenerationCheck) settleFailure(
 // commit settles the generation with the provider's answer and what the call consumed, together.
 //
 // One transaction, because a terminal transition without its usage is a billed call nothing counts.
-// The provider call happened before and outside it: a transaction held open across a call would pin
-// a pooled connection for its whole duration.
+// The provider call runs before and outside it, so no pooled connection stays pinned while the
+// provider answers.
 func (service *GenerationCheck) commit(
 	ctx context.Context, generation *dao.Generation, status dao.GenerationStatus, message *string,
 	call *connectors.Call,
@@ -767,6 +767,8 @@ func (service *GenerationCheck) stopOrphan(
 	}
 }
 
+// logFailure records why a generation failed in the server logs, where the provider's own account
+// stays.
 func (service *GenerationCheck) logFailure(ctx context.Context, generation *dao.Generation, reason string) {
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(logFailure)")
 	defer span.End()
@@ -778,8 +780,8 @@ func (service *GenerationCheck) logFailure(ctx context.Context, generation *dao.
 	service.logger.Err(ctx, fmt.Sprintf("generation %s failed: %s", generation.ID, reason))
 }
 
-// retryAfter draws a retry's delay between half and one and a half retryDelay. The calls one burst
-// turned away would otherwise come back together, and be turned away again.
+// retryAfter draws a retry's delay between half and one and a half retryDelay, so the calls one burst
+// turned away come back spread out.
 func retryAfter() time.Duration {
 	return retryDelay/2 + rand.N(retryDelay) //nolint:gosec // Spreading retries needs no secrecy.
 }
@@ -825,9 +827,10 @@ const (
 	// still be in flight for it. A start leaves within startTimeout of its intent, then lasts at most
 	// streamStartTimeout plus its writes, which stays under it.
 	startOutcomeUnknownAfter = time.Minute
-	// checkTimeout bounds a whole check, detached from its caller: a start, as bounded above, then a
-	// stop when its owner cancelled meanwhile; or a read that takes the connector's ten seconds, three
-	// times for a streamed call found stuck queued whose stop finds it finished; plus its commit.
+	// checkTimeout bounds a whole check, detached from its caller. A start takes as long as bounded
+	// above, followed by a stop when its owner cancelled meanwhile. A read takes up to the connector's
+	// ten seconds, three times for a stuck streamed call whose stop finds it finished. The commit comes
+	// on top of either.
 	checkTimeout = time.Minute
 	// retryDelay is how long a fresh call waits on average after a rate limit or a retryable provider
 	// failure.

@@ -1,29 +1,27 @@
 # Contributing to service-genai
 
-The shared architecture, layers, and conventions live in the [service & architecture concepts](https://github.com/a-novel/.github/blob/master/CONTRIBUTING.md); this file covers only what's specific to the GenAI service. Platform setup and day-to-day commands are in the [developer guide](https://a-novel-kit.github.io/stack/).
-
-Read the [README](./README.md) first — it covers what the service does and how operators run it.
+This document is about what is specific to the GenAI service. Read the [README](./README.md) first: it covers what the service does and how operators run it. The [service and architecture concepts](https://github.com/a-novel/.github/blob/master/CONTRIBUTING.md) cover the layers every service shares, and the [developer guide](https://a-novel-kit.github.io/stack/) covers platform setup and the day-to-day commands.
 
 ---
 
 ## Quick local interactions
 
-Once the service is up (`a-novel run start service-genai/grpc`), the gRPC server listens on `${SERVICE_GENAI_GRPC_PORT}`. The port is allocated by the `a-novel` daemon; inject it into your shell with `eval "$(a-novel run env service-genai)"`. The server registers gRPC reflection, so `grpcurl` needs no proto files; the contracts are documented in [`internal/models/proto/anovel/genai/v0/`](./internal/models/proto/anovel/genai/v0/).
+Start the service as the README's [Running locally](./README.md#running-locally) shows. The `a-novel` daemon allocates its gRPC port, and `eval "$(a-novel run env service-genai)"` loads it into your shell as `SERVICE_GENAI_GRPC_PORT`. The server registers gRPC reflection, so `grpcurl` needs no proto files. The contracts are documented in [`internal/models/proto/anovel/genai/v0/`](./internal/models/proto/anovel/genai/v0/).
 
 ### Health
 
 ```bash
 # Liveness
-grpcurl -plaintext localhost:${SERVICE_GENAI_GRPC_PORT} grpc.health.v1.Health/Check
+grpcurl -plaintext "localhost:${SERVICE_GENAI_GRPC_PORT}" grpc.health.v1.Health/Check
 
 # Dependency check (Postgres and queue inspection)
-grpcurl -plaintext localhost:${SERVICE_GENAI_GRPC_PORT} anovel.genai.v0.StatusService/Status
+grpcurl -plaintext "localhost:${SERVICE_GENAI_GRPC_PORT}" anovel.genai.v0.StatusService/Status
 ```
 
-The notification server (`a-novel run start service-genai/rest`) listens on `${SERVICE_GENAI_REST_PORT}`. No provider reaches a local stack and nothing schedules its sweep, so polls settle its generations.
+The notification server, started with `a-novel run start service-genai/rest`, listens on `SERVICE_GENAI_REST_PORT`. No provider reaches a local stack, so it receives no notification.
 
 ```bash
-curl localhost:${SERVICE_GENAI_REST_PORT}/ping
+curl "localhost:${SERVICE_GENAI_REST_PORT}/ping"
 ```
 
 To sweep a local stack by hand, start the sweep server with the stack's environment and post to it:
@@ -36,7 +34,7 @@ curl -X POST localhost:8090/sweep
 
 ### Generations
 
-The payload and each attempt's response are `bytes` fields, so `grpcurl` takes and prints them base64-encoded. The local stack reads `OPENAI_API_KEY` from the environment it starts in, with a placeholder when it is unset (see [`builds/podman-compose.yaml`](./builds/podman-compose.yaml)); with the placeholder, OpenAI refuses every start, which the service retries as a fault of its own configuration: the generation stays pending for ten minutes, then fails with no attempt.
+The payload and each attempt's response are `bytes` fields, so `grpcurl` takes and prints them base64-encoded. The local stack reads `OPENAI_API_KEY` from the environment it starts in, and falls back to a placeholder (see [`builds/podman-compose.yaml`](./builds/podman-compose.yaml)). OpenAI refuses every start made with the placeholder. The service retries it as a fault of its own configuration, so the generation stays pending for ten minutes, then fails with no attempt.
 
 ```bash
 # Any UUID: the calling service supplies the owner, and this service trusts it.
@@ -49,7 +47,7 @@ PAYLOAD=$(printf '%s' '{"model":"<model>","input":"Say hello.","store":false}' |
 GENERATION_ID=$(
   grpcurl -plaintext \
     -d "{\"owner_id\":\"$OWNER_ID\",\"purpose\":\"studio.generation\",\"provider\":\"openai\",\"payload\":\"$PAYLOAD\"}" \
-    localhost:${SERVICE_GENAI_GRPC_PORT} \
+    "localhost:${SERVICE_GENAI_GRPC_PORT}" \
     anovel.genai.v0.GenerationSubmitService/GenerationSubmit |
     jq -r '.generation.id'
 )
@@ -58,18 +56,18 @@ GENERATION_ID=$(
 ```bash
 # Poll until the status settles.
 grpcurl -plaintext -d "{\"id\":\"$GENERATION_ID\",\"owner_id\":\"$OWNER_ID\"}" \
-  localhost:${SERVICE_GENAI_GRPC_PORT} \
+  "localhost:${SERVICE_GENAI_GRPC_PORT}" \
   anovel.genai.v0.GenerationGetService/GenerationGet
 
 # Decode the last attempt's response once it has settled.
 grpcurl -plaintext -d "{\"id\":\"$GENERATION_ID\",\"owner_id\":\"$OWNER_ID\"}" \
-  localhost:${SERVICE_GENAI_GRPC_PORT} \
+  "localhost:${SERVICE_GENAI_GRPC_PORT}" \
   anovel.genai.v0.GenerationGetService/GenerationGet |
   jq -r '.generation.attempts[-1].response' | base64 -d | jq
 
 # Stop it.
 grpcurl -plaintext -d "{\"id\":\"$GENERATION_ID\",\"owner_id\":\"$OWNER_ID\"}" \
-  localhost:${SERVICE_GENAI_GRPC_PORT} \
+  "localhost:${SERVICE_GENAI_GRPC_PORT}" \
   anovel.genai.v0.GenerationCancelService/GenerationCancel
 ```
 
@@ -83,19 +81,19 @@ grpcurl -plaintext -d "{\"id\":\"$GENERATION_ID\",\"owner_id\":\"$OWNER_ID\"}" \
 
 ### Retention purge
 
-The [retention](./README.md#configuration) purge is the `purge_settled_generations()` function, which a migration defines and schedules as a `pg_cron` job wherever the extension is installed, as the `database` image does. Every 10 seconds, it deletes up to 1,000 settled generations whose `expires_at` has passed, and their payloads and attempts with them, stopping once those store 64 MiB, so it keeps up with 100 generations settling a second and a backlog of large ones drains in transactions shorter than a migration's lock wait. `pg_cron` records every run and deletes none, so a second job deletes the service's runs older than a week, once a day. The Usage Records stay: they hold no content and no key to the purged rows. A change to the purge is a migration that replaces the function, and its tests run it.
+The [retention](./README.md#configuration) purge is the `purge_settled_generations()` function. A migration defines it and schedules it as a `pg_cron` job wherever the extension is installed, as the `database` image does. Every 10 seconds, the job deletes up to 1,000 settled generations whose `expires_at` has passed, with their payloads and attempts. It stops once those store 64 MiB. The job keeps up with 100 generations settling a second, and drains a backlog of large ones in transactions shorter than a migration's lock wait. `pg_cron` records every run and deletes none, so a second job deletes the service's runs older than a week, once a day. The Usage Records stay: they hold no content and no key to the purged rows. A change to the purge is a migration that replaces the function, and its tests run it.
 
-The migration skips the schedule where `pg_cron` is missing, as in the databases `postgrestest.RunDBTest` clones. **A bring-your-own-Postgres deployment without it schedules both jobs itself**, once the migrations ran, with the block of the [migration that last scheduled them](./internal/models/migrations/20261014021047_generation_purge_schedule.up.sql). Preload `pg_cron`, point `cron.database_name` at the service's database, and set `cron.use_background_workers = on`, as the image does: under SCRAM authentication, a job that opens its own connection fails without a password.
+The migration skips the schedule where `pg_cron` is missing, as in the databases `postgrestest.RunDBTest` clones. **A bring-your-own-Postgres deployment that ran the migrations without `pg_cron` schedules both jobs itself**, with the block of the [migration that last scheduled them](./internal/models/migrations/20261014021047_generation_purge_schedule.up.sql). Preload `pg_cron`, point `cron.database_name` at the service's database, and set `cron.use_background_workers = on`, as the image does. Under SCRAM authentication, a job that opens its own connection fails without a password.
 
 ### Migrations on live tables
 
-Every check rewrites a row of `generations`, and some of those writes record a call the provider already accepted. A write left waiting for a lock gives up after the server's `lock_timeout`, five seconds, and a call whose id is not recorded settles failed with its outcome unknown, paid for and unread. A migration on `generations` therefore holds no lock that blocks writes for more than a second or two, following [`write-sql`](https://github.com/a-novel-kit/stack/blob/master/.agents/skills/write-sql/SKILL.md#migrations-on-live-tables): an index built concurrently, a constraint added `NOT VALID` then validated, a backfill run in batches outside the migration.
+Every check rewrites a row of `generations`, and some of those writes record a call the provider already accepted. A write left waiting for a lock gives up after the server's `lock_timeout`, five seconds. A call whose id is not recorded settles failed with its outcome unknown, paid for and unread. A migration on `generations` therefore holds no lock that blocks writes for more than a second or two. Follow [`write-sql`](https://github.com/a-novel-kit/stack/blob/master/.agents/skills/write-sql/SKILL.md#migrations-on-live-tables): build an index concurrently, add a constraint `NOT VALID` then validate it, and run a backfill in batches outside the migration.
 
 ### Provider retention
 
-`store` asks the provider to keep the response after the call ends. OpenAI holds a stored response for about thirty days: it can be read back with `GET /v1/responses/{id}`, and a later request can reference it through `previous_response_id` to continue a conversation without resending its history. The field belongs to the caller's payload, [like the rest of the request](./README.md#what-it-does). With `store: false`, the answers a caller needs are kept only here, in `generation_attempts`, for the retention window.
+`store` asks the provider to keep the response after the call ends. OpenAI holds a stored response for about thirty days. It can be read back with `GET /v1/responses/{id}`, and a later request can reference it through `previous_response_id` to continue a conversation without resending its history. The field belongs to the caller's payload, [like the rest of the request](./README.md#what-it-does). With `store: false`, the answers a caller needs are kept only here, in `generation_attempts`, for the retention window.
 
-Re-attaching does not depend on `store`: a finished background response stays retrievable for a while either way (OpenAI documents about ten minutes), and the sweep reaches it well inside that window, as the [provider requirements](./docs/providers.md#async-mode-requirements) detail. A re-attach failing with a not-found on an operation that should still be running means that window has shrunk. A 404 settles the generation as failed, so a wrong bound costs one result.
+Re-attaching does not depend on `store`. A finished background response stays retrievable for a while either way, about ten minutes as OpenAI documents it. The sweep reaches it well inside that window, as the [provider requirements](./docs/providers.md#async-mode-requirements) detail. A re-attach failing with a not-found on an operation that should still be running means that window has shrunk. A 404 settles the generation as failed, so a wrong bound costs one result.
 
 ### Transactions
 
