@@ -113,10 +113,11 @@ func TestGrpcStatus(t *testing.T) {
 				require.Nil(t, response)
 				require.Equal(t, "service dependencies unavailable", result.Message())
 			} else {
-				require.Equal(t, &genaiv0.StatusResponse{
+				expectResponse := &genaiv0.StatusResponse{
 					Postgres: &genaiv0.DependencyHealth{Status: genaiv0.DependencyStatus_DEPENDENCY_STATUS_UP},
 					Queue:    testCase.expectQueue,
-				}, response)
+				}
+				require.Equal(t, expectResponse, response)
 			}
 
 			queueDepth.AssertExpectations(t)

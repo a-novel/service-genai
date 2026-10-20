@@ -179,7 +179,7 @@ func TestPgGenerationSettle(t *testing.T) {
 					require.NoError(t, err)
 				}
 
-				settled, err := daoSettle.Exec(ctx, &dao.GenerationSettleRequest{
+				settleRequest := &dao.GenerationSettleRequest{
 					ID:               generation.ID,
 					Attempt:          testCase.attempt,
 					StartRequestedAt: read.StartRequestedAt,
@@ -188,7 +188,9 @@ func TestPgGenerationSettle(t *testing.T) {
 					Error:            testCase.error,
 					Retention:        testRetention,
 					OutcomeUnknown:   testCase.outcomeUnknown,
-				})
+				}
+
+				settled, err := daoSettle.Exec(ctx, settleRequest)
 				require.ErrorIs(t, err, testCase.expectErr)
 
 				if testCase.expectErr != nil {

@@ -24,14 +24,16 @@ var testOwner = uuid.MustParse("00000000-0000-0000-0000-000000000001")
 func seedGeneration(ctx context.Context, t *testing.T, maxAttempts int16) *dao.Generation {
 	t.Helper()
 
-	result, err := dao.NewPgGenerationSubmit().Exec(ctx, &dao.GenerationSubmitRequest{
+	submitRequest := &dao.GenerationSubmitRequest{
 		ID:          uuid.Must(uuid.NewV7()),
 		OwnerID:     testOwner,
 		Purpose:     "studio.generation",
 		Provider:    "openai",
 		RequestKey:  []byte(uuid.Must(uuid.NewV7()).String()),
 		MaxAttempts: maxAttempts,
-	})
+	}
+
+	result, err := dao.NewPgGenerationSubmit().Exec(ctx, submitRequest)
 	if err != nil {
 		panic(err)
 	}
@@ -130,7 +132,7 @@ func settleGeneration(ctx context.Context, t *testing.T, generation *dao.Generat
 
 	reason := "the provider call failed"
 
-	settled, err := dao.NewPgGenerationSettle().Exec(ctx, &dao.GenerationSettleRequest{
+	settleRequest := &dao.GenerationSettleRequest{
 		ID:               generation.ID,
 		Attempt:          generation.Attempt,
 		StartRequestedAt: generation.StartRequestedAt,
@@ -138,7 +140,9 @@ func settleGeneration(ctx context.Context, t *testing.T, generation *dao.Generat
 		Status:           dao.GenerationStatusFailed,
 		Error:            &reason,
 		Retention:        testRetention,
-	})
+	}
+
+	settled, err := dao.NewPgGenerationSettle().Exec(ctx, settleRequest)
 	if err != nil {
 		panic(err)
 	}

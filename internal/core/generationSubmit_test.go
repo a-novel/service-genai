@@ -457,13 +457,15 @@ func TestGenerationSubmit(t *testing.T) {
 			purpose := &testCase.request.Purpose
 
 			for _, live := range testCase.live {
+				liveRequest := &dao.GenerationCountLiveRequest{
+					OwnerID: testCase.request.OwnerID,
+					Purpose: lo.Ternary(live.purpose, purpose, nil),
+					// Only the purpose scope counts a generation whose call may still run untracked.
+					UnknownOutcomeWindow: lo.Ternary(live.purpose, 15*time.Minute, 0),
+				}
+
 				liveDao.EXPECT().
-					Exec(mock.Anything, &dao.GenerationCountLiveRequest{
-						OwnerID: testCase.request.OwnerID,
-						Purpose: lo.Ternary(live.purpose, purpose, nil),
-						// Only the purpose scope counts a generation whose call may still run untracked.
-						UnknownOutcomeWindow: lo.Ternary(live.purpose, 15*time.Minute, 0),
-					}).
+					Exec(mock.Anything, liveRequest).
 					Return(&dao.GenerationLiveCount{Count: live.count}, live.err)
 
 				admitted = admitted && live.err == nil

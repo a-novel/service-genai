@@ -771,14 +771,16 @@ func TestOpenAI(t *testing.T) {
 
 				var accepted []connectors.CallState
 
-				call, err := provider.Start(t.Context(), &connectors.AsyncStartRequest{
+				startRequest := &connectors.AsyncStartRequest{
 					Payload: json.RawMessage(testPayload), Stream: true,
 					Accepted: func(call *connectors.Call) error {
 						accepted = append(accepted, call.State)
 
 						return testCase.acceptedErr
 					},
-				})
+				}
+
+				call, err := provider.Start(t.Context(), startRequest)
 				require.ErrorIs(t, err, testCase.expectErr)
 				require.Equal(t, testCase.expectAccepted, accepted)
 
@@ -1026,14 +1028,16 @@ func TestOpenAI(t *testing.T) {
 
 			var named *connectors.Call
 
-			started, err := connector.Start(t.Context(), &connectors.AsyncStartRequest{
+			startRequest := &connectors.AsyncStartRequest{
 				Payload: conformancePayload("gpt-5.6-luna", "low"), Stream: true,
 				Accepted: func(call *connectors.Call) error {
 					named = call
 
 					return nil
 				},
-			})
+			}
+
+			started, err := connector.Start(t.Context(), startRequest)
 			require.NoError(t, err)
 			require.NotEmpty(t, started.ID)
 			// Left only once the provider began it: a call left queued can stay queued for good.
