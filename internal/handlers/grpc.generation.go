@@ -29,16 +29,16 @@ func NewGrpcGeneration(generation *core.Generation) *genaiv0.Generation {
 		Error:     lo.FromPtr(generation.Error),
 		Status:    generationStatuses[generation.Status],
 		Attempts:  make([]*genaiv0.GenerationAttempt, len(generation.Attempts)),
-		CreatedAt: generation.CreatedAt.Format(time.RFC3339),
-		UpdatedAt: generation.UpdatedAt.Format(time.RFC3339),
+		CreatedAt: generation.CreatedAt.Format(time.RFC3339Nano),
+		UpdatedAt: generation.UpdatedAt.Format(time.RFC3339Nano),
 	}
 
 	if generation.SettledAt != nil {
-		message.SettledAt = generation.SettledAt.Format(time.RFC3339)
+		message.SettledAt = generation.SettledAt.Format(time.RFC3339Nano)
 	}
 
 	if generation.ExpiresAt != nil {
-		message.ExpiresAt = generation.ExpiresAt.Format(time.RFC3339)
+		message.ExpiresAt = generation.ExpiresAt.Format(time.RFC3339Nano)
 	}
 
 	for index, attempt := range generation.Attempts {

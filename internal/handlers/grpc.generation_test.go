@@ -16,7 +16,8 @@ import (
 func TestNewGrpcGeneration(t *testing.T) {
 	t.Parallel()
 
-	createdAt := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	// A stored timestamp carries microseconds, which the wire form keeps.
+	createdAt := time.Date(2026, 1, 1, 0, 0, 0, 123456000, time.UTC)
 	settledAt := createdAt.Add(time.Minute)
 	expiresAt := settledAt.Add(time.Hour)
 	message := "the provider failed the call"
@@ -43,7 +44,7 @@ func TestNewGrpcGeneration(t *testing.T) {
 				Id: testGenerationID, OwnerId: testOwnerID, Purpose: "studio.generation", Provider: "openai",
 				Status:    genaiv0.GenerationStatus_GENERATION_STATUS_PENDING,
 				Attempts:  []*genaiv0.GenerationAttempt{},
-				CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: "2026-01-01T00:00:00Z",
+				CreatedAt: "2026-01-01T00:00:00.123456Z", UpdatedAt: "2026-01-01T00:00:00.123456Z",
 			},
 		},
 		{
@@ -68,8 +69,8 @@ func TestNewGrpcGeneration(t *testing.T) {
 					{Number: 1, Response: []byte(failedResponse)},
 					{Number: 2, Response: []byte(failedResponse)},
 				},
-				CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: "2026-01-01T00:01:00Z",
-				SettledAt: "2026-01-01T00:01:00Z", ExpiresAt: "2026-01-01T01:01:00Z",
+				CreatedAt: "2026-01-01T00:00:00.123456Z", UpdatedAt: "2026-01-01T00:01:00.123456Z",
+				SettledAt: "2026-01-01T00:01:00.123456Z", ExpiresAt: "2026-01-01T01:01:00.123456Z",
 			},
 		},
 	}
