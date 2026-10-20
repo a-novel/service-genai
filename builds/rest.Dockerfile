@@ -1,6 +1,6 @@
 # Runs the GenAI REST server that providers post their notifications to. Requires a database with
 # migrations already applied.
-FROM docker.io/library/golang:1.27.2-alpine AS builder
+FROM docker.io/library/golang:1.27.3-alpine AS builder
 
 # CGO_ENABLED=0 produces a fully static binary, required to run safely on Alpine's musl libc.
 ENV CGO_ENABLED=0
