@@ -161,6 +161,19 @@ func (service *GenerationSubmit) Exec(
 	carrier := propagation.MapCarrier{}
 	propagation.TraceContext{}.Inject(ctx, carrier)
 
+	submission := &dao.GenerationSubmitRequest{
+		// Minted here so the created and replayed cases can be told apart without a second round-trip.
+		// uuidv7 keeps the table's index locality under insert churn.
+		ID:          uuid.Must(uuid.NewV7()),
+		OwnerID:     request.OwnerID,
+		Purpose:     request.Purpose,
+		Provider:    request.Provider,
+		RequestKey:  key,
+		MaxAttempts: service.generations.MaxAttempts,
+		Traceparent: lo.EmptyableToPtr(carrier.Get("traceparent")),
+		Streamed:    request.Stream,
+	}
+
 	var (
 		result  *dao.GenerationSubmitResult
 		refusal error
@@ -171,18 +184,7 @@ func (service *GenerationSubmit) Exec(
 	err = service.transactor.WithinTx(ctx, func(ctx context.Context) error {
 		var err error
 
-		result, err = service.dao.Exec(ctx, &dao.GenerationSubmitRequest{
-			// Minted here so the created and replayed cases can be told apart without a second
-			// round-trip. uuidv7 keeps the table's index locality under insert churn.
-			ID:          uuid.Must(uuid.NewV7()),
-			OwnerID:     request.OwnerID,
-			Purpose:     request.Purpose,
-			Provider:    request.Provider,
-			RequestKey:  key,
-			MaxAttempts: service.generations.MaxAttempts,
-			Traceparent: lo.EmptyableToPtr(carrier.Get("traceparent")),
-			Streamed:    request.Stream,
-		})
+		result, err = service.dao.Exec(ctx, submission)
 		if err != nil {
 			return fmt.Errorf("submit generation: %w", err)
 		}
