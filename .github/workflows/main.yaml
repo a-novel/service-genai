@@ -99,7 +99,7 @@ jobs:
           # renovate: datasource=github-releases depName=hadolint/hadolint
           version: "2.15.1"
 
-  # Structural conventions golangci-lint cannot express.
+  # The service ruleset checks the structural conventions golangci-lint cannot express.
   lint-semgrep:
     runs-on: ubuntu-latest
     permissions:
