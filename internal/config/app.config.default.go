@@ -81,7 +81,7 @@ var AppPresetDefault = App{
 	Postgres: PostgresPresetServer,
 }
 
-// sweepConcurrencyCeiling bounds the checks a sweep batch runs at once.
+// sweepConcurrencyCeiling bounds the checks the sweep runs at once.
 const sweepConcurrencyCeiling = 8
 
 // sweepConcurrency gives each check a sweep runs at once a connection of its own, so none waits on

@@ -176,13 +176,13 @@ func TestGenerationGet(t *testing.T) {
 			attemptDao := coremocks.NewMockGenerationGetDaoAttemptList(t)
 
 			if testCase.electMock != nil {
-				electDao.EXPECT().
-					Exec(mock.Anything, &dao.GenerationElectCheckRequest{
-						ID:       testCase.request.ID,
-						OwnerID:  testCase.request.OwnerID,
-						Interval: checkInterval,
-					}).
-					Return(testCase.electMock.resp, testCase.electMock.err)
+				electRequest := &dao.GenerationElectCheckRequest{
+					ID:       testCase.request.ID,
+					OwnerID:  testCase.request.OwnerID,
+					Interval: checkInterval,
+				}
+
+				electDao.EXPECT().Exec(mock.Anything, electRequest).Return(testCase.electMock.resp, testCase.electMock.err)
 			}
 
 			if testCase.daoMock != nil {

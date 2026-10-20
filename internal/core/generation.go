@@ -65,6 +65,7 @@ type GenerationAttempt struct {
 	Response json.RawMessage
 }
 
+// newGeneration converts a stored generation and the answers to its attempts to the core form.
 func newGeneration(generation *dao.Generation, attempts []*dao.GenerationAttempt) *Generation {
 	result := &Generation{
 		ID:        generation.ID,

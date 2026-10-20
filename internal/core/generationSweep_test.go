@@ -149,13 +149,15 @@ func TestGenerationSweep(t *testing.T) {
 			sweepDao := coremocks.NewMockGenerationSweepDao(t)
 			check := coremocks.NewMockGenerationSweepServiceCheck(t)
 
+			sweepRequest := &dao.GenerationSweepRequest{
+				// Half the interval: what the previous call checked is due again.
+				Interval: 30 * time.Second,
+				Limit:    sweep.BatchSize,
+			}
+
 			for _, batch := range testCase.batches {
 				sweepDao.EXPECT().
-					Exec(mock.Anything, &dao.GenerationSweepRequest{
-						// Half the interval: what the previous call checked is due again.
-						Interval: 30 * time.Second,
-						Limit:    sweep.BatchSize,
-					}).
+					Exec(mock.Anything, sweepRequest).
 					RunAndReturn(func(context.Context, *dao.GenerationSweepRequest) ([]*dao.Generation, error) {
 						if batch.shutdown {
 							cancel()

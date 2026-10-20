@@ -60,6 +60,8 @@ const maxReceiveBytes = 64 << 20
 // A Client issues the service's gRPC calls, one method per RPC. Construct one
 // with [NewClient] and call Close when finished to release the connection.
 type Client interface {
+	// UnaryEcho answers without touching any dependency, so its success shows only that the process
+	// serves.
 	UnaryEcho(
 		ctx context.Context, req *golibproto.UnaryEchoRequest, opts ...grpc.CallOption,
 	) (*golibproto.UnaryEchoResponse, error)
@@ -124,12 +126,12 @@ func (c *client) Close() {
 // Each call opens a client span and sends the caller's trace context, so the server's
 // spans join the caller's trace.
 func NewClient(addr string, opts ...grpc.DialOption) (Client, error) {
-	opts = append([]grpc.DialOption{
+	defaults := []grpc.DialOption{
 		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(maxReceiveBytes)),
 		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
-	}, opts...)
+	}
 
-	conn, err := grpc.NewClient(addr, opts...)
+	conn, err := grpc.NewClient(addr, append(defaults, opts...)...)
 	if err != nil {
 		return nil, fmt.Errorf("new grpc client: %w", err)
 	}

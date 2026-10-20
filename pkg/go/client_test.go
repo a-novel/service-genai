@@ -111,11 +111,12 @@ func TestClient(t *testing.T) {
 
 		defer client.Close()
 
-		caller := trace.NewSpanContext(trace.SpanContextConfig{
+		callerConfig := trace.SpanContextConfig{
 			TraceID:    trace.TraceID{1},
 			SpanID:     trace.SpanID{1},
 			TraceFlags: trace.FlagsSampled,
-		})
+		}
+		caller := trace.NewSpanContext(callerConfig)
 
 		_, err = client.UnaryEcho(
 			trace.ContextWithSpanContext(t.Context(), caller), &golibproto.UnaryEchoRequest{},

@@ -954,18 +954,20 @@ func TestGenerationCheck(t *testing.T) {
 					continue
 				}
 
+				settleRequest := &dao.GenerationSettleRequest{
+					ID:      generation.ID,
+					Attempt: expected.settle.attempt,
+					// A settle is fenced on the start it read.
+					StartRequestedAt: current.StartRequestedAt,
+					ProviderCallID:   expected.settle.callID,
+					Status:           expected.settle.status,
+					Error:            expected.settle.reason,
+					Retention:        retention,
+					OutcomeUnknown:   expected.settle.outcomeUnknown,
+				}
+
 				settleDao.EXPECT().
-					Exec(mock.Anything, &dao.GenerationSettleRequest{
-						ID:      generation.ID,
-						Attempt: expected.settle.attempt,
-						// A settle is fenced on the start it read.
-						StartRequestedAt: current.StartRequestedAt,
-						ProviderCallID:   expected.settle.callID,
-						Status:           expected.settle.status,
-						Error:            expected.settle.reason,
-						Retention:        retention,
-						OutcomeUnknown:   expected.settle.outcomeUnknown,
-					}).
+					Exec(mock.Anything, settleRequest).
 					Return(settledGeneration(expected.settle.status), expected.err)
 			}
 

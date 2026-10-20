@@ -134,14 +134,14 @@ func TestGenerationCancel(t *testing.T) {
 			attemptDao := coremocks.NewMockGenerationCancelDaoAttemptList(t)
 
 			if testCase.daoMock != nil {
-				cancelDao.EXPECT().
-					Exec(mock.Anything, &dao.GenerationRequestCancelRequest{
-						ID:        testCase.request.ID,
-						OwnerID:   testCase.request.OwnerID,
-						Error:     "generation cancelled",
-						Retention: retention,
-					}).
-					Return(testCase.daoMock.resp, testCase.daoMock.err)
+				cancelRequest := &dao.GenerationRequestCancelRequest{
+					ID:        testCase.request.ID,
+					OwnerID:   testCase.request.OwnerID,
+					Error:     "generation cancelled",
+					Retention: retention,
+				}
+
+				cancelDao.EXPECT().Exec(mock.Anything, cancelRequest).Return(testCase.daoMock.resp, testCase.daoMock.err)
 			}
 
 			if testCase.getMock != nil {

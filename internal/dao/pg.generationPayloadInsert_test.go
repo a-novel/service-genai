@@ -52,10 +52,12 @@ func TestPgGenerationPayloadInsert(t *testing.T) {
 
 				generationID := uuid.Must(uuid.NewV7())
 				if !testCase.unknownGeneration {
-					generation, err := dao.NewPgGenerationSubmit().Exec(ctx, &dao.GenerationSubmitRequest{
+					submitRequest := &dao.GenerationSubmitRequest{
 						ID: generationID, OwnerID: testOwner, Purpose: "studio.generation", Provider: "openai",
 						RequestKey: []byte("the-request-key"), MaxAttempts: 1,
-					})
+					}
+
+					generation, err := dao.NewPgGenerationSubmit().Exec(ctx, submitRequest)
 					require.NoError(t, err)
 					require.Equal(t, generationID, generation.Generation.ID)
 				}

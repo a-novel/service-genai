@@ -151,17 +151,17 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 			service := handlersmocks.NewMockGrpcGenerationSubmitService(t)
 
 			if testCase.serviceMock != nil {
-				service.EXPECT().
-					Exec(mock.Anything, &core.GenerationSubmitRequest{
-						OwnerID:  uuid.MustParse(testCase.request.GetOwnerId()),
-						Purpose:  testCase.request.GetPurpose(),
-						UserTier: testCase.request.GetUserTier(),
-						Provider: testCase.request.GetProvider(),
-						Payload:  json.RawMessage(testCase.request.GetPayload()),
-						Variant:  testCase.request.GetVariant(),
-						Stream:   testCase.request.GetStream(),
-					}).
-					Return(testCase.serviceMock.resp, testCase.serviceMock.err)
+				serviceRequest := &core.GenerationSubmitRequest{
+					OwnerID:  uuid.MustParse(testCase.request.GetOwnerId()),
+					Purpose:  testCase.request.GetPurpose(),
+					UserTier: testCase.request.GetUserTier(),
+					Provider: testCase.request.GetProvider(),
+					Payload:  json.RawMessage(testCase.request.GetPayload()),
+					Variant:  testCase.request.GetVariant(),
+					Stream:   testCase.request.GetStream(),
+				}
+
+				service.EXPECT().Exec(mock.Anything, serviceRequest).Return(testCase.serviceMock.resp, testCase.serviceMock.err)
 			}
 
 			res, err := handlers.NewGrpcGenerationSubmit(service).GenerationSubmit(t.Context(), testCase.request)

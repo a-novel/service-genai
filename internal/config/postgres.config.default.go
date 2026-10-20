@@ -20,24 +20,26 @@ const postgresDialTimeout = 3 * time.Minute
 // it again later. Its statements are not bounded, since building an index can run long.
 var PostgresPresetMigrations = NewPostgresPreset(pgdriver.WithConnParams(map[string]any{"lock_timeout": "3s"}))
 
-// PostgresPresetServer bounds the server's sessions on the database side too: a statement, a lock
+// serverSessionTimeouts bound the server's sessions on the database side too: a statement, a lock
 // wait or an abandoned transaction gives up there, rather than holding a connection the client has
 // already left.
-var PostgresPresetServer = NewPostgresPreset(pgdriver.WithConnParams(map[string]any{
+var serverSessionTimeouts = map[string]any{
 	"statement_timeout":                   "9s",
 	"lock_timeout":                        "5s",
 	"idle_in_transaction_session_timeout": "30s",
-}))
+}
+
+// PostgresPresetServer is the servers' connection, with their session timeouts.
+var PostgresPresetServer = NewPostgresPreset(pgdriver.WithConnParams(serverSessionTimeouts))
 
 // NewPostgresPreset builds the connection config with its pool bounded as it opens. POSTGRES_HOST
 // selects the discrete POSTGRES_* fields; without it, POSTGRES_DSN is used. Extra options apply
 // last: connection parameters replace any a DSN carries.
 //
-// Setting the limits on the handle afterwards stops working once anything has
-// taken a connection, because the handle is cached; past that point they apply to
-// nothing and report nothing.
+// The pool limits are set here because the handle is cached: a limit set on it once a connection is
+// taken applies to nothing and reports nothing.
 func NewPostgresPreset(extra ...pgdriver.Option) *postgrespresets.Default {
-	preset := postgrespresets.NewDefault(append(lo.Must(postgrespresets.Connection{
+	connection := postgrespresets.Connection{
 		DSN:         env.PostgresDsn,
 		Host:        env.PostgresHost,
 		Port:        env.PostgresPort,
@@ -46,7 +48,9 @@ func NewPostgresPreset(extra ...pgdriver.Option) *postgrespresets.Default {
 		Database:    env.PostgresDatabase,
 		TLSEnabled:  env.PostgresTLSEnabled,
 		DialTimeout: postgresDialTimeout,
-	}.Options()), extra...)...)
+	}
+
+	preset := postgrespresets.NewDefault(append(lo.Must(connection.Options()), extra...)...)
 	preset.MaxOpenConns = env.PostgresMaxOpenConns
 	preset.MaxIdleConns = env.PostgresMaxIdleConns
 

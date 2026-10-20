@@ -125,8 +125,8 @@ func (x *DependencyHealth) GetStatus() DependencyStatus {
 }
 
 // QueueDepth reports the queue's own backlog: how many generations still wait for the provider to
-// accept their call, and how long the one waiting longest has waited. The age tells a queue absorbing a burst from
-// a stalled one, which the count alone cannot.
+// accept their call, and how long the one waiting longest has waited. The age tells a queue absorbing
+// a burst from a stalled one, which the count alone cannot.
 type QueueDepth struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// pending is the number of generations waiting for the provider to accept their call: due to

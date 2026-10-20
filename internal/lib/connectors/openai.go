@@ -52,10 +52,12 @@ var ErrNotConfigured = errors.New("provider base URL and API key are required")
 
 // OpenAIConfig is how the connector reaches the Responses API. Any endpoint serving it fits.
 type OpenAIConfig struct {
+	// BaseURL is the Responses API endpoint.
 	BaseURL string
-	APIKey  string
-	// WebhookSecret is the signing secret of the webhook endpoint OpenAI notifies. Empty, the
-	// connector does not read notifications.
+	// APIKey authenticates the connector against the endpoint.
+	APIKey string
+	// WebhookSecret is the signing secret of the webhook endpoint OpenAI notifies. When it is empty,
+	// the connector refuses every notification as [ErrModeUnsupported].
 	WebhookSecret string
 }
 
@@ -161,7 +163,8 @@ func (provider *OpenAI) Start(ctx context.Context, request *AsyncStartRequest) (
 }
 
 // Stream reads the operation's events after the cursor. openai-go's GetStreaming sends a body on
-// the GET, which the API refuses (openai-go#660), so the request is built here.
+// the GET, which the API refuses, so the request is built here. Tracked in
+// https://github.com/openai/openai-go/issues/660
 func (provider *OpenAI) Stream(ctx context.Context, request *StreamRequest) iter.Seq2[*StreamEvent, error] {
 	return func(yield func(*StreamEvent, error) bool) {
 		ctx, span := otel.Tracer().Start(ctx, "connectors.OpenAI.Stream")

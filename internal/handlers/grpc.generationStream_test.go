@@ -191,13 +191,13 @@ func TestGrpcGenerationStream(t *testing.T) {
 			service := handlersmocks.NewMockGrpcGenerationStreamService(t)
 
 			if testCase.serviceMock != nil {
-				service.EXPECT().
-					Exec(mock.Anything, &core.GenerationStreamRequest{
-						ID:            uuid.MustParse(testCase.request.GetId()),
-						OwnerID:       uuid.MustParse(testCase.request.GetOwnerId()),
-						StartingAfter: testCase.request.StartingAfter,
-					}).
-					Return(testCase.serviceMock.resp, testCase.serviceMock.err)
+				serviceRequest := &core.GenerationStreamRequest{
+					ID:            uuid.MustParse(testCase.request.GetId()),
+					OwnerID:       uuid.MustParse(testCase.request.GetOwnerId()),
+					StartingAfter: testCase.request.StartingAfter,
+				}
+
+				service.EXPECT().Exec(mock.Anything, serviceRequest).Return(testCase.serviceMock.resp, testCase.serviceMock.err)
 			}
 
 			stream := &eventStream{left: testCase.callerLeft}

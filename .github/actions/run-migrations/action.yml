@@ -1,4 +1,5 @@
 name: run-migrations
+description: Apply the schema migrations to the database POSTGRES_DSN names.
 
 runs:
   using: "composite"

@@ -46,7 +46,7 @@ type Sweep struct {
 	Interval time.Duration `json:"interval" yaml:"interval"`
 	// BatchSize caps the generations one batch of a sweep takes.
 	BatchSize int `json:"batchSize" yaml:"batchSize"`
-	// Concurrency caps the checks one batch runs at once.
+	// Concurrency caps the checks the sweep runs at once, across every call that overlaps.
 	Concurrency int `json:"concurrency" yaml:"concurrency"`
 }
 
@@ -66,9 +66,9 @@ type Generations struct {
 type OpenAI struct {
 	// BaseURL is the Responses API endpoint.
 	BaseURL string `json:"baseURL" yaml:"baseURL"`
-	// APIKey authenticates against OpenAI. The only credential this service holds.
+	// APIKey authenticates against OpenAI. It is the only credential this service holds.
 	APIKey string `json:"-" yaml:"-"`
-	// WebhookSecret verifies OpenAI's webhook notifications. Empty, none is read.
+	// WebhookSecret verifies OpenAI's webhook notifications. When it is empty, the service reads none.
 	WebhookSecret string `json:"-" yaml:"-"`
 }
 

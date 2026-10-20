@@ -89,12 +89,14 @@ func (service *GenerationCancel) Exec(
 		return nil, otel.ReportError(span, errors.Join(err, ErrInvalidRequest))
 	}
 
-	generation, err := service.dao.Exec(ctx, &dao.GenerationRequestCancelRequest{
+	daoRequest := &dao.GenerationRequestCancelRequest{
 		ID:        request.ID,
 		OwnerID:   request.OwnerID,
 		Error:     generationCancelledReason,
 		Retention: service.generations.Retention,
-	})
+	}
+
+	generation, err := service.dao.Exec(ctx, daoRequest)
 
 	if errors.Is(err, dao.ErrGenerationNotCancellable) {
 		// Settled already, or not this owner's. The read is owner-scoped, so it tells the two apart

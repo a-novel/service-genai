@@ -66,12 +66,14 @@ func settleTo(ctx context.Context, t *testing.T, generation *dao.Generation, sta
 	case dao.GenerationStatusSucceeded:
 		running := runGeneration(ctx, t, generation.ID)
 
-		_, err := dao.NewPgGenerationSettle().Exec(ctx, &dao.GenerationSettleRequest{
+		settleRequest := &dao.GenerationSettleRequest{
 			ID: running.ID, Attempt: running.Attempt, StartRequestedAt: running.StartRequestedAt,
 			ProviderCallID: running.ProviderCallID,
 			Status:         dao.GenerationStatusSucceeded,
 			Retention:      testRetention,
-		})
+		}
+
+		_, err := dao.NewPgGenerationSettle().Exec(ctx, settleRequest)
 		if err != nil {
 			panic(err)
 		}

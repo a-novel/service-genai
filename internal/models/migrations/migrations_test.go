@@ -23,11 +23,12 @@ func TestMigrationRoundtrip(t *testing.T) {
 	_, err := fs.Stat(migrations.Migrations, "testdata")
 	require.ErrorIs(t, err, fs.ErrNotExist)
 
-	postgrestest.RunMigrationRoundtripTest(t, configtest.PostgresPreset, migrations.Migrations,
-		&postgrestest.RoundtripOptions{
-			Fixtures:  os.DirFS("testdata/fixtures"),
-			Snapshots: "testdata/schema",
-		})
+	roundtripOptions := &postgrestest.RoundtripOptions{
+		Fixtures:  os.DirFS("testdata/fixtures"),
+		Snapshots: "testdata/schema",
+	}
+
+	postgrestest.RunMigrationRoundtripTest(t, configtest.PostgresPreset, migrations.Migrations, roundtripOptions)
 }
 
 func TestPurgeSettledGenerations(t *testing.T) {

@@ -46,7 +46,7 @@ func (handler *GrpcGenerationSubmit) GenerationSubmit(
 		return nil, status.Error(codes.InvalidArgument, "invalid owner id")
 	}
 
-	result, err := handler.service.Exec(ctx, &core.GenerationSubmitRequest{
+	serviceRequest := &core.GenerationSubmitRequest{
 		OwnerID:  ownerID,
 		Purpose:  request.GetPurpose(),
 		UserTier: request.GetUserTier(),
@@ -54,7 +54,9 @@ func (handler *GrpcGenerationSubmit) GenerationSubmit(
 		Payload:  request.GetPayload(),
 		Variant:  request.GetVariant(),
 		Stream:   request.GetStream(),
-	})
+	}
+
+	result, err := handler.service.Exec(ctx, serviceRequest)
 
 	// The reason names the caller's own fields and limits, so it tells the caller what to fix.
 	if errors.Is(err, core.ErrInvalidRequest) {

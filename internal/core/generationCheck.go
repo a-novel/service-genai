@@ -560,12 +560,14 @@ func (service *GenerationCheck) requeue(
 	err := service.transactor.WithinTx(ctx, func(ctx context.Context) error {
 		var err error
 
-		requeued, err = service.daoRequeue.Exec(ctx, &dao.GenerationRequeueRequest{
+		daoRequest := &dao.GenerationRequeueRequest{
 			ID:             generation.ID,
 			Attempt:        generation.Attempt,
 			ProviderCallID: *generation.ProviderCallID,
 			Delay:          retryAfter(),
-		})
+		}
+
+		requeued, err = service.daoRequeue.Exec(ctx, daoRequest)
 		if err != nil {
 			return fmt.Errorf("requeue generation: %w", err)
 		}
@@ -650,7 +652,7 @@ func (service *GenerationCheck) commit(
 	err := service.transactor.WithinTx(ctx, func(ctx context.Context) error {
 		var err error
 
-		settled, err = service.daoSettle.Exec(ctx, &dao.GenerationSettleRequest{
+		daoRequest := &dao.GenerationSettleRequest{
 			ID:               generation.ID,
 			Attempt:          generation.Attempt,
 			StartRequestedAt: generation.StartRequestedAt,
@@ -659,7 +661,9 @@ func (service *GenerationCheck) commit(
 			Error:            message,
 			Retention:        service.generations.Retention,
 			OutcomeUnknown:   outcomeUnknown[lo.FromPtr(message)],
-		})
+		}
+
+		settled, err = service.daoSettle.Exec(ctx, daoRequest)
 		if err != nil {
 			return fmt.Errorf("settle generation: %w", err)
 		}
@@ -690,7 +694,7 @@ func (service *GenerationCheck) recordUsage(
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(recordUsage)")
 	defer span.End()
 
-	_, err := service.daoUsage.Exec(ctx, &dao.GenerationUsageInsertRequest{
+	daoRequest := &dao.GenerationUsageInsertRequest{
 		GenerationID:      generation.ID,
 		Attempt:           generation.Attempt,
 		OwnerID:           generation.OwnerID,
@@ -707,7 +711,9 @@ func (service *GenerationCheck) recordUsage(
 		// A provider that reports no start is timed from when this service sent the call.
 		StartedAt:   lo.Ternary(call.StartedAt.IsZero(), lo.FromPtr(generation.StartRequestedAt), call.StartedAt),
 		CompletedAt: call.CompletedAt,
-	})
+	}
+
+	_, err := service.daoUsage.Exec(ctx, daoRequest)
 
 	// The stop of an orphaned call may have recorded this attempt's usage already, which is no failure.
 	if err != nil && !errors.Is(err, dao.ErrGenerationUsageExists) {
@@ -729,11 +735,13 @@ func (service *GenerationCheck) recordAttempt(
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(recordAttempt)")
 	defer span.End()
 
-	_, err := service.daoAttempt.Exec(ctx, &dao.GenerationAttemptInsertRequest{
+	daoRequest := &dao.GenerationAttemptInsertRequest{
 		GenerationID: generation.ID,
 		Attempt:      generation.Attempt,
 		Response:     response,
-	})
+	}
+
+	_, err := service.daoAttempt.Exec(ctx, daoRequest)
 	if err != nil {
 		return otel.ReportError(span, fmt.Errorf("record attempt: %w", err))
 	}
