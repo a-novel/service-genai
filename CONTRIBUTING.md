@@ -24,11 +24,16 @@ The notification server, started with `a-novel run start service-genai/rest`, li
 curl "localhost:${SERVICE_GENAI_REST_PORT}/ping"
 ```
 
-To sweep a local stack by hand, start the sweep server with the stack's environment and post to it:
+To sweep a local stack by hand, start the sweep server with the stack's environment:
 
 ```bash
 eval "$(a-novel run env service-genai)"
-REST_PORT=8090 go run ./cmd/sweep &
+REST_PORT=8090 go run ./cmd/sweep
+```
+
+Once it logs `Starting sweep server on :8090`, post to it from another shell:
+
+```bash
 curl -X POST localhost:8090/sweep
 ```
 

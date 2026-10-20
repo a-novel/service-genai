@@ -30,7 +30,7 @@ Five rules shape the contract.
 
 **A crash re-attaches instead of paying again.** The service records the provider's identifier for a call the moment the call starts, and every later check reads it back. No process holds a generation, so a restart or a deploy loses nothing. The next poll or sweep picks up the call already paid for. Every accepted call is followed until it settles, whether anyone polls it or not.
 
-**The provider's answers come back as sent.** Each generation lists every attempt that reached an answer, retried and cancelled ones included, with the provider's raw response. That response holds the output and the usage. The service also keeps a permanent Usage Record of every answered attempt, with no content. It records who and what the call was for, its token counts, the model, reasoning effort and service tier that ran, and when it started and finished. The purge deletes a generation and its responses after `RETENTION`, and the usage stays. A generation that holds no finished response says why in the service's own words. A request the provider rejected comes back with the provider's error body.
+**The provider's answers come back as sent.** Each generation lists every attempt that reached an answer, retried and cancelled ones included, with the provider's raw response. That response holds the output and the usage. A request the provider rejected comes back with the provider's error body. A generation that holds no finished response says why in the service's own words. The purge deletes a generation and its responses after `RETENTION`. A permanent Usage Record of every answered attempt stays: who it ran for, what ran, what it consumed and when, with no content.
 
 **Usage is capped per purpose and user tier.** The [caps file](./internal/config/caps.config.yaml) is built into the image, so every change to it is reviewed. It declares each purpose a caller may submit, the token limits of each user tier over rolling windows, and how many generations a user may run at once, per purpose and across all of them. Its comments explain every key. Once a user reaches a limit, a submit that would start a new generation answers `RESOURCE_EXHAUSTED`, naming the limit. An admitted call always finishes, even past its cap, and a resend of a running generation always attaches to it.
 
@@ -48,12 +48,14 @@ The service runs as published OCI images plus a PostgreSQL database. All state l
 | `service-genai/sweep`           | Checks the generations nobody polled when a scheduler calls it. Private.    |
 | `service-genai/rest`            | Receives the provider's notifications that a call ended. Public.            |
 | `service-genai/jobs/migrations` | One-shot schema migration job; runs to completion before the server starts. |
-| `service-genai/database`        | PostgreSQL with `pg_cron` and pgBackRest — or bring your own Postgres.      |
+| `service-genai/database`        | PostgreSQL with `pg_cron` and pgBackRest, or bring your own Postgres.       |
 | `service-genai/standalone-grpc` | Server plus migrations in one image. Local development only.                |
 
 Pin every image to the same release tag, from the [latest release](https://github.com/a-novel/service-genai/releases/latest). A production deployment starts `database` and runs the migrations job to completion. It then runs any number of `grpc` replicas, the `sweep` server, and optionally `rest` replicas. Provide the required [configuration](#configuration) through the orchestrator.
 
 A caller controls the whole payload, including the model and the provider's built-in tools. Grant invocation to calling services only, and restrict the OpenAI key to the Responses endpoints.
+
+Every server does its work inside a request, so none needs CPU outside of one. Each needs outbound access to the provider's API. A check its caller abandons resumes only with the server's next request, and a streamed start waits for the provider to begin the call. Give a streamed generation's submit and polls a deadline of at least 35 seconds.
 
 ```yaml
 services:
@@ -139,8 +141,6 @@ Each poll checks its generation with the provider. The `sweep` server checks the
 
 Run it privately, and have a scheduler `POST /sweep` every `SWEEP_INTERVAL`. On Google Cloud, use Cloud Scheduler with an OIDC token for the only identity allowed to invoke it. A call checks batch after batch and answers within two minutes. The server checks as many generations at once as its connection pool has connections, eight at most, however many calls overlap.
 
-Every server does its work inside a request, so none needs CPU outside of one. Each needs outbound access to the provider's API. A check its caller abandons resumes only with the server's next request, and a streamed start waits for the provider to begin the call. Give a streamed generation's submit and polls a deadline of at least 35 seconds.
-
 ### Provider notifications
 
 The `rest` image checks a generation the moment its provider reports the call ended, instead of on the next poll or sweep. It serves `POST /webhooks/{provider}`, `/ping` and `/healthcheck`. It reuses the database and the migrations, and needs the same variables as `grpc` plus `OPENAI_WEBHOOK_SECRET`.
@@ -157,13 +157,11 @@ Polls and the sweep keep working for a notification that never comes. Once notif
 
 The database image packages PostgreSQL, `pg_cron` and pgBackRest on Wolfi. apko assembles its [package manifest](./builds/database.apko.yaml) during the container build, pinned by its [lock file](./builds/database.apko.lock.json), so an unchanged image rebuilds to the same digest. Docker and Podman users need no additional host tools. PostgreSQL keeps its standard `POSTGRES_*` initialization variables and its volume at `/var/lib/postgresql`. On first start, it installs `pg_cron` in the `POSTGRES_DB` database, where the migrations job schedules the [retention purge](./CONTRIBUTING.md#retention-purge). Backup scheduling and repository credentials remain the operator's responsibility.
 
-Start the image on a fresh volume. A data directory written by the earlier Debian-based image is not portable, since its libc, collation and extension environment differ. To keep its data, take a logical dump and restore it into the new database.
-
 Wolfi's package repository rolls forward, so an old package manifest may stop rebuilding. Keep the published service images for recovery.
 
 ### Configuration
 
-Every variable is read from the process environment. `SERVICE_GENAI_ENV_PREFIX` prefixes every name, which avoids collisions when another project embeds this service. `POSTGRES_HOST` selects the discrete connection fields. Without it, the service reads `POSTGRES_DSN`.
+Every variable is read from the process environment. `SERVICE_GENAI_ENV_PREFIX` prefixes every name, which avoids collisions when another project embeds this service.
 
 | Name                    | Description                                                                                                                           | Images      |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
@@ -236,7 +234,7 @@ Planned downtime (server images):
 | ---------------- | -------------------------------------------- | ------- |
 | `DOWNTIME_START` | When a planned downtime starts, in RFC 3339. |         |
 
-From `DOWNTIME_START` until the variable is removed, even past the announced end, the servers answer `503` / `UNAVAILABLE` except for ping, gRPC health and echo, and start without the database. A request already running still finishes, a sweep up to `REST_TIMEOUT_REQUEST` later, so stop the database only once that has passed. The provider delivers the notifications it could not send once the downtime ends. Calls already sent keep running at the provider. OpenAI keeps a finished background response it does not store for about 10 minutes, so a call that finishes longer than that before the downtime ends settles failed, its result lost. Keep a downtime short while generations run.
+From `DOWNTIME_START` until the variable is removed, even past the announced end, the servers answer `503` / `UNAVAILABLE`. Ping, gRPC health and echo still answer, and the servers start without the database. A request already running still finishes, a sweep up to `REST_TIMEOUT_REQUEST` later, so stop the database only once that has passed. The provider delivers the notifications it could not send once the downtime ends. Calls already sent keep running at the provider. OpenAI keeps a finished background response it does not store for about 10 minutes, so a call that finishes longer than that before the downtime ends settles failed, its result lost. Keep a downtime short while generations run.
 
 Logs and tracing (all server images). OpenTelemetry exports to stdout or to Google Cloud.
 
@@ -301,7 +299,7 @@ The `standalone-grpc` image bundles the migration job with the server, so a sing
 a-novel run start service-genai/grpc
 eval "$(a-novel run env service-genai)"
 
-grpcurl --plaintext localhost:${SERVICE_GENAI_GRPC_PORT} list
+grpcurl --plaintext "localhost:${SERVICE_GENAI_GRPC_PORT}" list
 ```
 
 Without the CLI, the repository's compose file runs a target on its own. Enable the target's profile and set the host ports it publishes. The `sweep` target serves `POST /sweep` on `SWEEP_PORT`.
