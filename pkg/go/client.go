@@ -124,12 +124,12 @@ func (c *client) Close() {
 // Each call opens a client span and sends the caller's trace context, so the server's
 // spans join the caller's trace.
 func NewClient(addr string, opts ...grpc.DialOption) (Client, error) {
-	opts = append([]grpc.DialOption{
+	defaults := []grpc.DialOption{
 		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(maxReceiveBytes)),
 		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
-	}, opts...)
+	}
 
-	conn, err := grpc.NewClient(addr, opts...)
+	conn, err := grpc.NewClient(addr, append(defaults, opts...)...)
 	if err != nil {
 		return nil, fmt.Errorf("new grpc client: %w", err)
 	}

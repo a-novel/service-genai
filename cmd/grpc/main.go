@@ -32,6 +32,13 @@ import (
 	"github.com/a-novel/service-genai/internal/lib/connectors"
 )
 
+// serverOptions admit a submit at its payload ceiling, and make a stopping server wait for its
+// handlers, so none still runs once the database closes.
+var serverOptions = []grpc.ServerOption{
+	grpc.MaxRecvMsgSize(handlers.GrpcMaxReceiveBytes),
+	grpc.WaitForHandlers(true),
+}
+
 func main() {
 	cfg := config.AppPresetDefault
 	lo.Must0(cfg.Validate())
@@ -134,11 +141,7 @@ func main() {
 		return postgres.TransferContext(ctx, rpCtx)
 	}
 
-	// A stopping server waits for its handlers, so none still runs once the database closes.
-	server := grpcf.NewServer(
-		ctx, cfg.Otel, cfg.GrpcLogger, cfg.App.DowntimeStart, ctxInterceptor,
-		grpc.WaitForHandlers(true), grpc.MaxRecvMsgSize(handlers.GrpcMaxReceiveBytes),
-	)
+	server := grpcf.NewServer(ctx, cfg.Otel, cfg.GrpcLogger, cfg.App.DowntimeStart, ctxInterceptor, serverOptions...)
 
 	healthcheck := grpcf.RegisterEchoServers(server)
 	healthcheck.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)

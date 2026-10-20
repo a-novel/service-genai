@@ -19,6 +19,15 @@ type RestGenerationNotifyService interface {
 	Exec(ctx context.Context, request *core.GenerationNotifyRequest) (*core.GenerationNotifyResult, error)
 }
 
+// generationNotifyErrors maps a refused notification to its status. A provider without the
+// Notifications mode answers 404, as an unknown one does.
+var generationNotifyErrors = httpf.ErrMap{
+	core.ErrNotificationInvalid: http.StatusBadRequest,
+	core.ErrInvalidRequest:      http.StatusBadRequest,
+	core.ErrProviderUnknown:     http.StatusNotFound,
+	core.ErrModeUnsupported:     http.StatusNotFound,
+}
+
 // RestGenerationNotify is the HTTP handler a provider posts its notifications to, at
 // /webhooks/{provider}.
 //
@@ -50,12 +59,7 @@ func (handler *RestGenerationNotify) ServeHTTP(w http.ResponseWriter, r *http.Re
 		Provider: chi.URLParam(r, "provider"), Body: body, Header: r.Header,
 	})
 	if err != nil {
-		httpf.HandleError(ctx, handler.logger, w, span, httpf.ErrMap{
-			core.ErrNotificationInvalid: http.StatusBadRequest,
-			core.ErrInvalidRequest:      http.StatusBadRequest,
-			core.ErrProviderUnknown:     http.StatusNotFound,
-			core.ErrModeUnsupported:     http.StatusNotFound,
-		}, err)
+		httpf.HandleError(ctx, handler.logger, w, span, generationNotifyErrors, err)
 
 		return
 	}
