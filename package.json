@@ -30,9 +30,9 @@
     "prepublish:doc:readme": "a-novel publish stamp 'a-novel/service-genai/[a-z0-9/-]+:' README.md"
   },
   "devDependencies": {
-    "@a-novel-kit/nodelib-browser": "^1.3.18",
-    "@a-novel-kit/nodelib-config": "^1.3.18",
-    "@a-novel-kit/nodelib-test": "^1.3.18",
+    "@a-novel-kit/nodelib-browser": "^2.0.0",
+    "@a-novel-kit/nodelib-config": "^2.0.0",
+    "@a-novel-kit/nodelib-test": "^2.0.0",
     "@eslint/js": "^10.0.1",
     "@trivago/prettier-plugin-sort-imports": "^6.0.2",
     "@types/node": "^24.10.1",
