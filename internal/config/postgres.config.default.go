@@ -36,9 +36,8 @@ var PostgresPresetServer = NewPostgresPreset(pgdriver.WithConnParams(serverSessi
 // selects the discrete POSTGRES_* fields; without it, POSTGRES_DSN is used. Extra options apply
 // last: connection parameters replace any a DSN carries.
 //
-// Setting the limits on the handle afterwards stops working once anything has
-// taken a connection, because the handle is cached; past that point they apply to
-// nothing and report nothing.
+// The pool limits are set here because the handle is cached: a limit set on it once a connection is
+// taken applies to nothing and reports nothing.
 func NewPostgresPreset(extra ...pgdriver.Option) *postgrespresets.Default {
 	connection := postgrespresets.Connection{
 		DSN:         env.PostgresDsn,

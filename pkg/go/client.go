@@ -60,6 +60,8 @@ const maxReceiveBytes = 64 << 20
 // A Client issues the service's gRPC calls, one method per RPC. Construct one
 // with [NewClient] and call Close when finished to release the connection.
 type Client interface {
+	// UnaryEcho answers without touching any dependency, so its success shows only that the process
+	// serves.
 	UnaryEcho(
 		ctx context.Context, req *golibproto.UnaryEchoRequest, opts ...grpc.CallOption,
 	) (*golibproto.UnaryEchoResponse, error)

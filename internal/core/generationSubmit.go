@@ -82,6 +82,7 @@ type GenerationSubmitRequest struct {
 
 // GenerationSubmitResult reports the stored generation and how it got there.
 type GenerationSubmitResult struct {
+	// Generation is the recorded generation: the new one, or the existing one on a replay.
 	Generation *Generation
 	// Created is false on a replay, so a resending caller attaches to work already paid for.
 	Created bool

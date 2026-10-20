@@ -109,6 +109,7 @@ func storedPayload(ctx context.Context, t *testing.T, id uuid.UUID) string {
 	return payload
 }
 
+// execute runs a statement on the test's database handle.
 func execute(ctx context.Context, t *testing.T, query string, args ...any) {
 	t.Helper()
 

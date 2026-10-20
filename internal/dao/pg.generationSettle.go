@@ -20,11 +20,14 @@ var generationSettleQuery string
 // GenerationSettleRequest is the input to [PgGenerationSettle.Exec].
 type GenerationSettleRequest struct {
 	ID uuid.UUID
-	// Attempt, StartRequestedAt and ProviderCallID are what the caller observed. A generation that
-	// has since moved on is not settled.
-	Attempt          int16
+	// Attempt is the attempt the caller observed. The settle applies only while the generation still
+	// carries it.
+	Attempt int16
+	// StartRequestedAt is the start the caller observed. A start released and taken again keeps the
+	// attempt and the empty call, so only the start tells the two apart.
 	StartRequestedAt *time.Time
-	ProviderCallID   *string
+	// ProviderCallID is the call the caller observed, nil when it observed none.
+	ProviderCallID *string
 	// Status is the terminal state to land in. The terminal-fields constraint rejects any other.
 	Status GenerationStatus
 	// Error names the cause of a failure or cancellation. Empty on success.

@@ -44,7 +44,7 @@ type GenerationGetRequest struct {
 
 // A GenerationGet reads one of an owner's generations, checking it first when it is stale.
 //
-// A caller's polls are what keep its generation fresh: there is no worker following it.
+// A caller's polls keep its generation fresh, and the sweep checks the generations nobody polls.
 type GenerationGet struct {
 	dao            GenerationGetDao
 	daoElectCheck  GenerationGetDaoElectCheck

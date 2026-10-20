@@ -25,8 +25,9 @@ var ErrGenerationNotCancellable = errors.New("generation cannot be cancelled")
 type GenerationRequestCancelRequest struct {
 	ID      uuid.UUID
 	OwnerID uuid.UUID
-	// Error and Retention settle a generation that never started.
-	Error     string
+	// Error names the cancellation of a generation that never started, which the cancel settles.
+	Error string
+	// Retention is how long such a settled generation survives before the purge.
 	Retention time.Duration
 }
 

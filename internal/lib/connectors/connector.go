@@ -61,7 +61,8 @@ type RejectionError struct {
 	// Response is the provider's error body, which tells the caller who built the request what to
 	// fix. Empty when the provider sent none.
 	Response json.RawMessage
-	Err      error
+	// Err is the refusal as the provider's client reported it.
+	Err error
 }
 
 func (rejection *RejectionError) Error() string {
@@ -72,37 +73,42 @@ func (rejection *RejectionError) Unwrap() error {
 	return rejection.Err
 }
 
-// Usage is what one operation consumed, as the provider counts it: input includes cached
-// input, and output includes reasoning.
+// Usage is what one operation consumed, as the provider counts it.
 type Usage struct {
-	InputTokens       int64
+	// InputTokens counts every input token, cached ones included.
+	InputTokens int64
+	// CachedInputTokens are input tokens read from the provider's prompt cache.
 	CachedInputTokens int64
 	// CacheWriteTokens are input tokens written to the provider's prompt cache.
 	CacheWriteTokens int64
-	OutputTokens     int64
-	ReasoningTokens  int64
+	// OutputTokens counts every output token, reasoning ones included.
+	OutputTokens int64
+	// ReasoningTokens are output tokens the model spent reasoning.
+	ReasoningTokens int64
 }
 
 // Call is one operation as the provider describes it.
 type Call struct {
 	// ID is the provider's own identifier. Recording it is what makes a generation resumable.
-	ID    string
+	ID string
+	// State is where the operation sits in the provider's lifecycle.
 	State CallState
 	// Response is the provider's answer as it sent it, once the state is terminal.
 	Response json.RawMessage
 	// Usage is what the operation consumed, read off a terminal response. Absent when the provider
 	// reports none, as for an operation that never reached the model.
 	Usage *Usage
-	// Model, Class and Tier are what actually ran, read off a terminal response: the model snapshot,
-	// the reasoning effort (none when the call did not reason), and the provider's service tier,
-	// which sets the unit price. A terminal call always carries a Model and a Class; Tier is empty
-	// when the provider reports none.
+	// Model is the model snapshot that ran, read off a terminal response, which always carries one.
 	Model string
+	// Class is the reasoning effort that ran, read off a terminal response, which always carries one.
+	// It is none when the call did not reason.
 	Class string
-	Tier  string
-	// StartedAt and CompletedAt are when the provider started and finished the call, by its own
-	// clock. StartedAt is zero, and CompletedAt nil, when the provider reports none.
-	StartedAt   time.Time
+	// Tier is the provider's service tier, which sets the unit price. Empty when the provider reports
+	// none.
+	Tier string
+	// StartedAt is when the provider started the call, by its own clock. Zero when it reports none.
+	StartedAt time.Time
+	// CompletedAt is when the provider finished the call, by its own clock. Nil when it reports none.
 	CompletedAt *time.Time
 	// Reason is the provider's own account of a failure, for server-side logs only.
 	Reason string

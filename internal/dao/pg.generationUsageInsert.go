@@ -30,10 +30,12 @@ type GenerationUsageInsertRequest struct {
 	OwnerID      uuid.UUID
 	Purpose      string
 	Provider     string
-	// Model, Class and Tier as the provider's response reports them; Tier is nil when it reports none.
+	// Model is the model snapshot the provider's response reports.
 	Model string
+	// Class is the reasoning effort the provider's response reports.
 	Class string
-	Tier  *string
+	// Tier is the service tier the provider's response reports, nil when it reports none.
+	Tier *string
 
 	InputTokens       int64
 	CachedInputTokens int64
