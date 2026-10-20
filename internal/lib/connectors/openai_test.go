@@ -457,7 +457,7 @@ func TestOpenAI(t *testing.T) {
 				var sent map[string]any
 				require.NoError(t, json.Unmarshal(script.lastBody, &sent))
 
-				require.Equal(t, map[string]any{
+				expectSent := map[string]any{
 					"model":      "gpt-5.6-terra",
 					"input":      "a & b",
 					"background": true,
@@ -468,7 +468,8 @@ func TestOpenAI(t *testing.T) {
 							"properties": map[string]any{"z": map[string]any{}, "a": map[string]any{}},
 						},
 					}},
-				}, sent)
+				}
+				require.Equal(t, expectSent, sent)
 
 				// Nested values reach the provider as written: unescaped, and in the caller's order.
 				require.Contains(t, string(script.lastBody), `"input":"a & b"`)
