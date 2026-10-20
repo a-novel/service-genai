@@ -114,8 +114,6 @@ jobs:
           # renovate: datasource=docker depName=semgrep/semgrep
           version: "1.181.0"
 
-  # Replaces GitGuardian, which gated on a hosted service: when it saturated,
-  # every PR in the fleet became unmergeable. This runs offline.
   scan-secrets:
     runs-on: ubuntu-latest
     permissions:
@@ -129,8 +127,6 @@ jobs:
           # renovate: datasource=github-releases depName=gitleaks/gitleaks
           version: "8.30.1"
 
-  # Replaces CodeQL's actions analysis: excessive-permissions is the class it
-  # reported as actions/missing-workflow-permissions.
   lint-workflows:
     runs-on: ubuntu-latest
     permissions:
@@ -356,9 +352,8 @@ jobs:
       id-token: write
     outputs:
       digest: ${{ steps.build.outputs.digest }}
-    # This image is booted and exercised by test-pkg (a full
-    # integration run), so this job only builds + pushes it. skip_healthcheck
-    # drops the redundant smoke run and the container constellation it needed.
+    # test-pkg boots this image and runs the client suite against it, so the job only builds and
+    # pushes it, without a smoke run.
     steps:
       - uses: a-novel-kit/workflows/build-actions/docker@v1.66.0
         id: build
