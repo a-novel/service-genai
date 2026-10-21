@@ -3,6 +3,7 @@ package connectors
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -529,16 +530,12 @@ func providerCallOf(raw json.RawMessage) (*Call, error) {
 
 	call.Response = raw
 	call.Model = response.Model
-	call.Class = string(response.Reasoning.Effort)
+	// A model that does not reason reports no effort.
+	call.Class = cmp.Or(string(response.Reasoning.Effort), string(shared.ReasoningEffortNone))
 	call.Tier = string(response.ServiceTier)
 
 	if response.CreatedAt > 0 {
 		call.StartedAt = unixTime(response.CreatedAt)
-	}
-
-	// A model that does not reason reports no effort.
-	if call.Class == "" {
-		call.Class = string(shared.ReasoningEffortNone)
 	}
 
 	if response.CompletedAt != nil && *response.CompletedAt > 0 {
