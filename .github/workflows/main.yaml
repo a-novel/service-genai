@@ -159,7 +159,7 @@ jobs:
       - uses: a-novel-kit/workflows/go-actions/test-go@v1.69.0
         id: test
         with:
-          filter_extra_patterns: "| grep /internal | grep -v /protogen"
+          include: /internal
           skip_setup: true
           test_artifact: gotest
           coverage_artifact: gocover
@@ -189,7 +189,7 @@ jobs:
       - uses: a-novel-kit/workflows/go-actions/test-go@v1.69.0
         id: test
         with:
-          filter_extra_patterns: "| grep /pkg"
+          include: /pkg
           skip_setup: true
           test_artifact: gotestpkg
           coverage_artifact: gocoverpkg
