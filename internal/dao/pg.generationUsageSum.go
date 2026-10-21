@@ -44,14 +44,14 @@ func (dao *PgGenerationUsageSum) Exec(
 	ctx, span := otel.Tracer().Start(ctx, "dao.PgGenerationUsageSum")
 	defer span.End()
 
-	tx, err := postgres.GetContext(ctx)
+	db, err := postgres.GetContext(ctx)
 	if err != nil {
-		return nil, otel.ReportError(span, fmt.Errorf("get transaction: %w", err))
+		return nil, otel.ReportError(span, fmt.Errorf("get postgres context: %w", err))
 	}
 
 	totals := &GenerationUsageTotals{}
 
-	err = tx.NewRaw(
+	err = db.NewRaw(
 		generationUsageSumQuery, request.OwnerID, request.Purpose, request.Window.Seconds(),
 	).Scan(ctx, totals)
 	if err != nil {

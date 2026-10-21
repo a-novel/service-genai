@@ -37,14 +37,14 @@ func (dao *PgGenerationPayloadInsert) Exec(
 	ctx, span := otel.Tracer().Start(ctx, "dao.PgGenerationPayloadInsert")
 	defer span.End()
 
-	tx, err := postgres.GetContext(ctx)
+	db, err := postgres.GetContext(ctx)
 	if err != nil {
-		return nil, otel.ReportError(span, fmt.Errorf("get transaction: %w", err))
+		return nil, otel.ReportError(span, fmt.Errorf("get postgres context: %w", err))
 	}
 
 	entity := &GenerationPayload{}
 
-	err = tx.NewRaw(generationPayloadInsertQuery, request.GenerationID, request.Payload).Scan(ctx, entity)
+	err = db.NewRaw(generationPayloadInsertQuery, request.GenerationID, request.Payload).Scan(ctx, entity)
 	if err != nil {
 		return nil, otel.ReportError(span, fmt.Errorf("execute query: %w", err))
 	}

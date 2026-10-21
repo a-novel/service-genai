@@ -36,14 +36,14 @@ func (dao *PgGenerationSweep) Exec(ctx context.Context, request *GenerationSweep
 	ctx, span := otel.Tracer().Start(ctx, "dao.PgGenerationSweep")
 	defer span.End()
 
-	tx, err := postgres.GetContext(ctx)
+	db, err := postgres.GetContext(ctx)
 	if err != nil {
-		return nil, otel.ReportError(span, fmt.Errorf("get transaction: %w", err))
+		return nil, otel.ReportError(span, fmt.Errorf("get postgres context: %w", err))
 	}
 
 	entities := make([]*Generation, 0)
 
-	err = tx.NewRaw(
+	err = db.NewRaw(
 		generationSweepQuery, request.Interval.Seconds(), request.Limit,
 	).Scan(ctx, &entities)
 	if err != nil {

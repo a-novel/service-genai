@@ -41,21 +41,21 @@ func (dao *PgGenerationRecordProviderCall) Exec(
 	ctx, span := otel.Tracer().Start(ctx, "dao.PgGenerationRecordProviderCall")
 	defer span.End()
 
-	tx, err := postgres.GetContext(ctx)
+	db, err := postgres.GetContext(ctx)
 	if err != nil {
-		return nil, otel.ReportError(span, fmt.Errorf("get transaction: %w", err))
+		return nil, otel.ReportError(span, fmt.Errorf("get postgres context: %w", err))
 	}
 
 	entity := &Generation{}
 
-	err = tx.NewRaw(
+	err = db.NewRaw(
 		generationRecordProviderCallQuery, request.ID, request.Attempt, request.ProviderCallID,
 	).Scan(ctx, entity)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			err = errors.Join(err, ErrGenerationChanged)
-		}
+	if errors.Is(err, sql.ErrNoRows) {
+		err = errors.Join(err, ErrGenerationChanged)
+	}
 
+	if err != nil {
 		return nil, otel.ReportError(span, fmt.Errorf("execute query: %w", err))
 	}
 

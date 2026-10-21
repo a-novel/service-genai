@@ -71,14 +71,14 @@ func (dao *PgGenerationUsageInsert) Exec(
 		attribute.Int64("usage.output_tokens", request.OutputTokens),
 	)
 
-	tx, err := postgres.GetContext(ctx)
+	db, err := postgres.GetContext(ctx)
 	if err != nil {
-		return nil, otel.ReportError(span, fmt.Errorf("get transaction: %w", err))
+		return nil, otel.ReportError(span, fmt.Errorf("get postgres context: %w", err))
 	}
 
 	entity := &GenerationUsage{}
 
-	err = tx.NewRaw(
+	err = db.NewRaw(
 		generationUsageInsertQuery,
 		request.GenerationID,
 		request.Attempt,
@@ -96,11 +96,11 @@ func (dao *PgGenerationUsageInsert) Exec(
 		request.StartedAt,
 		request.CompletedAt,
 	).Scan(ctx, entity)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			err = errors.Join(err, ErrGenerationUsageExists)
-		}
+	if errors.Is(err, sql.ErrNoRows) {
+		err = errors.Join(err, ErrGenerationUsageExists)
+	}
 
+	if err != nil {
 		return nil, otel.ReportError(span, fmt.Errorf("execute query: %w", refused(err)))
 	}
 

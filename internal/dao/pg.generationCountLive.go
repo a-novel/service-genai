@@ -45,14 +45,14 @@ func (dao *PgGenerationCountLive) Exec(
 	ctx, span := otel.Tracer().Start(ctx, "dao.PgGenerationCountLive")
 	defer span.End()
 
-	tx, err := postgres.GetContext(ctx)
+	db, err := postgres.GetContext(ctx)
 	if err != nil {
-		return nil, otel.ReportError(span, fmt.Errorf("get transaction: %w", err))
+		return nil, otel.ReportError(span, fmt.Errorf("get postgres context: %w", err))
 	}
 
 	live := &GenerationLiveCount{}
 
-	err = tx.NewRaw(
+	err = db.NewRaw(
 		generationCountLiveQuery, request.OwnerID, request.Purpose, request.UnknownOutcomeWindow.Seconds(),
 	).Scan(ctx, live)
 	if err != nil {

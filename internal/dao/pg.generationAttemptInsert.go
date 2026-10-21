@@ -45,14 +45,14 @@ func (dao *PgGenerationAttemptInsert) Exec(
 		attribute.Int("generation.attempt", int(request.Attempt)),
 	)
 
-	tx, err := postgres.GetContext(ctx)
+	db, err := postgres.GetContext(ctx)
 	if err != nil {
-		return nil, otel.ReportError(span, fmt.Errorf("get transaction: %w", err))
+		return nil, otel.ReportError(span, fmt.Errorf("get postgres context: %w", err))
 	}
 
 	entity := &GenerationAttempt{}
 
-	err = tx.NewRaw(
+	err = db.NewRaw(
 		generationAttemptInsertQuery,
 		request.GenerationID,
 		request.Attempt,
