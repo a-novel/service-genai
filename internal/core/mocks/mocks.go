@@ -2433,23 +2433,23 @@ func (_m *MockGenerationSubmitDaoUsageSum) EXPECT() *MockGenerationSubmitDaoUsag
 }
 
 // Exec provides a mock function for the type MockGenerationSubmitDaoUsageSum
-func (_mock *MockGenerationSubmitDaoUsageSum) Exec(ctx context.Context, request *dao.GenerationUsageSumRequest) (*dao.GenerationUsageTotals, error) {
+func (_mock *MockGenerationSubmitDaoUsageSum) Exec(ctx context.Context, request *dao.GenerationUsageSumRequest) ([]*dao.GenerationUsageTotals, error) {
 	ret := _mock.Called(ctx, request)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Exec")
 	}
 
-	var r0 *dao.GenerationUsageTotals
+	var r0 []*dao.GenerationUsageTotals
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, *dao.GenerationUsageSumRequest) (*dao.GenerationUsageTotals, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *dao.GenerationUsageSumRequest) ([]*dao.GenerationUsageTotals, error)); ok {
 		return returnFunc(ctx, request)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, *dao.GenerationUsageSumRequest) *dao.GenerationUsageTotals); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *dao.GenerationUsageSumRequest) []*dao.GenerationUsageTotals); ok {
 		r0 = returnFunc(ctx, request)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*dao.GenerationUsageTotals)
+			r0 = ret.Get(0).([]*dao.GenerationUsageTotals)
 		}
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, *dao.GenerationUsageSumRequest) error); ok {
@@ -2490,12 +2490,12 @@ func (_c *MockGenerationSubmitDaoUsageSum_Exec_Call) Run(run func(ctx context.Co
 	return _c
 }
 
-func (_c *MockGenerationSubmitDaoUsageSum_Exec_Call) Return(generationUsageTotals *dao.GenerationUsageTotals, err error) *MockGenerationSubmitDaoUsageSum_Exec_Call {
-	_c.Call.Return(generationUsageTotals, err)
+func (_c *MockGenerationSubmitDaoUsageSum_Exec_Call) Return(generationUsageTotalss []*dao.GenerationUsageTotals, err error) *MockGenerationSubmitDaoUsageSum_Exec_Call {
+	_c.Call.Return(generationUsageTotalss, err)
 	return _c
 }
 
-func (_c *MockGenerationSubmitDaoUsageSum_Exec_Call) RunAndReturn(run func(ctx context.Context, request *dao.GenerationUsageSumRequest) (*dao.GenerationUsageTotals, error)) *MockGenerationSubmitDaoUsageSum_Exec_Call {
+func (_c *MockGenerationSubmitDaoUsageSum_Exec_Call) RunAndReturn(run func(ctx context.Context, request *dao.GenerationUsageSumRequest) ([]*dao.GenerationUsageTotals, error)) *MockGenerationSubmitDaoUsageSum_Exec_Call {
 	_c.Call.Return(run)
 	return _c
 }

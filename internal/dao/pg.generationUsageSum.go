@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/samber/lo"
+	"github.com/uptrace/bun"
 
 	"github.com/a-novel-kit/golib/otel"
 	"github.com/a-novel-kit/golib/postgres"
@@ -15,13 +17,13 @@ import (
 //go:embed pg.generationUsageSum.sql
 var generationUsageSumQuery string
 
-// GenerationUsageSumRequest bounds one sum.
+// GenerationUsageSumRequest bounds the sums of one cap.
 type GenerationUsageSumRequest struct {
 	OwnerID uuid.UUID
-	// Purpose restricts the sum to one purpose; nil sums every purpose.
+	// Purpose restricts the sums to one purpose; nil sums every purpose.
 	Purpose *string
-	// Window is how far back the sum reaches, from now, by the database clock.
-	Window time.Duration
+	// Windows are how far back each sum reaches, from now, by the database clock. At least one.
+	Windows []time.Duration
 }
 
 // GenerationUsageTotals is what an owner consumed over a window.
@@ -30,7 +32,8 @@ type GenerationUsageTotals struct {
 	OutputTokens int64 `bun:"output_tokens"`
 }
 
-// PgGenerationUsageSum adds up an owner's Usage Records over a rolling window.
+// PgGenerationUsageSum adds up an owner's Usage Records over rolling windows, in one query. It
+// returns one total per window, in the order of the windows.
 type PgGenerationUsageSum struct{}
 
 // NewPgGenerationUsageSum returns a new PgGenerationUsageSum dao.
@@ -40,7 +43,7 @@ func NewPgGenerationUsageSum() *PgGenerationUsageSum {
 
 func (dao *PgGenerationUsageSum) Exec(
 	ctx context.Context, request *GenerationUsageSumRequest,
-) (*GenerationUsageTotals, error) {
+) ([]*GenerationUsageTotals, error) {
 	ctx, span := otel.Tracer().Start(ctx, "dao.PgGenerationUsageSum")
 	defer span.End()
 
@@ -49,11 +52,12 @@ func (dao *PgGenerationUsageSum) Exec(
 		return nil, otel.ReportError(span, fmt.Errorf("get postgres context: %w", err))
 	}
 
-	totals := &GenerationUsageTotals{}
+	windows := lo.Map(request.Windows, func(window time.Duration, _ int) float64 { return window.Seconds() })
+	totals := make([]*GenerationUsageTotals, 0, len(windows))
 
 	err = db.NewRaw(
-		generationUsageSumQuery, request.OwnerID, request.Purpose, request.Window.Seconds(),
-	).Scan(ctx, totals)
+		generationUsageSumQuery, request.OwnerID, request.Purpose, bun.List(windows), len(windows),
+	).Scan(ctx, &totals)
 	if err != nil {
 		return nil, otel.ReportError(span, fmt.Errorf("execute query: %w", err))
 	}

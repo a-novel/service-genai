@@ -39,9 +39,9 @@ type GenerationSubmitDaoAttemptList interface {
 	Exec(ctx context.Context, request *dao.GenerationAttemptListRequest) ([]*dao.GenerationAttempt, error)
 }
 
-// GenerationSubmitDaoUsageSum adds up a user's usage over a window.
+// GenerationSubmitDaoUsageSum adds up a user's usage over each window of a cap.
 type GenerationSubmitDaoUsageSum interface {
-	Exec(ctx context.Context, request *dao.GenerationUsageSumRequest) (*dao.GenerationUsageTotals, error)
+	Exec(ctx context.Context, request *dao.GenerationUsageSumRequest) ([]*dao.GenerationUsageTotals, error)
 }
 
 // GenerationSubmitDaoCountLive counts a user's generations in flight.
@@ -336,17 +336,22 @@ func (service *GenerationSubmit) admit(ctx context.Context, request *GenerationS
 			}
 		}
 
-		for _, window := range slices.Sorted(maps.Keys(scope.capOfTier.Windows)) {
-			limit := scope.capOfTier.Windows[window]
+		windows := slices.Sorted(maps.Keys(scope.capOfTier.Windows))
+		if len(windows) == 0 {
+			continue
+		}
 
-			used, err := service.daoUsageSum.Exec(ctx, &dao.GenerationUsageSumRequest{
-				OwnerID: request.OwnerID, Purpose: scope.purpose, Window: window,
-			})
-			if err != nil {
-				return otel.ReportError(span, fmt.Errorf("sum usage: %w", err))
-			}
+		used, err := service.daoUsageSum.Exec(ctx, &dao.GenerationUsageSumRequest{
+			OwnerID: request.OwnerID, Purpose: scope.purpose, Windows: windows,
+		})
+		if err != nil {
+			return otel.ReportError(span, fmt.Errorf("sum usage: %w", err))
+		}
 
-			if reached(limit.InputTokens, used.InputTokens) || reached(limit.OutputTokens, used.OutputTokens) {
+		for index, window := range windows {
+			limit, totals := scope.capOfTier.Windows[window], used[index]
+
+			if reached(limit.InputTokens, totals.InputTokens) || reached(limit.OutputTokens, totals.OutputTokens) {
 				return otel.ReportError(span, fmt.Errorf("%w: %s over %s", ErrUsageCapReached, scope.name, window))
 			}
 		}

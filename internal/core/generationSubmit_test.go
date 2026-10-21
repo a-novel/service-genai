@@ -77,6 +77,12 @@ var testCaps = config.Caps{
 			},
 			"unlimited": {Concurrency: new(-1)},
 			"forbidden": {Forbidden: true},
+			"windowed": {
+				Windows: map[time.Duration]config.Limit{
+					5 * time.Hour:   {InputTokens: new(int64(1000))},
+					720 * time.Hour: {OutputTokens: new(int64(500))},
+				},
+			},
 		},
 		"studio.analysis": {config.DefaultTier: {Concurrency: new(-1)}},
 	},
@@ -106,11 +112,12 @@ func TestGenerationSubmit(t *testing.T) {
 		err     error
 	}
 
-	// usageMock is one window sum admission reads, and what it finds.
+	// usageMock is the window sums of one scope admission reads, and what it finds: one total per
+	// window, in the order of the windows.
 	type usageMock struct {
 		purpose bool
-		window  time.Duration
-		used    dao.GenerationUsageTotals
+		windows []time.Duration
+		used    []*dao.GenerationUsageTotals
 		err     error
 	}
 
@@ -118,7 +125,10 @@ func TestGenerationSubmit(t *testing.T) {
 	alone := []liveMock{{purpose: true, count: 1}, {count: 1}}
 
 	// underCaps is the admission of a default-tier user with room left under every cap.
-	underCaps := []usageMock{{purpose: true, window: 5 * time.Hour}, {window: 720 * time.Hour}}
+	underCaps := []usageMock{
+		{purpose: true, windows: []time.Duration{5 * time.Hour}, used: []*dao.GenerationUsageTotals{{}}},
+		{windows: []time.Duration{720 * time.Hour}, used: []*dao.GenerationUsageTotals{{}}},
+	}
 
 	testCases := []struct {
 		name string
@@ -129,7 +139,8 @@ func TestGenerationSubmit(t *testing.T) {
 		// live lists the counts of live generations admission reads. Only a created generation is
 		// admitted.
 		live []liveMock
-		// usage lists the window sums admission reads, in order. Only a created generation is admitted.
+		// usage lists the scopes whose window sums admission reads, in order. Only a created generation
+		// is admitted.
 		usage []usageMock
 		// expectRefusal refuses the created generation for a reached limit: its transaction rolls it
 		// back, so nothing ever starts it.
@@ -177,7 +188,7 @@ func TestGenerationSubmit(t *testing.T) {
 			request: submitRequest(func(request *core.GenerationSubmitRequest) { request.UserTier = "unlimited" }),
 			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration(), Created: true}},
 			live:    []liveMock{{count: 1}},
-			usage:   []usageMock{{window: 720 * time.Hour}},
+			usage:   []usageMock{underCaps[1]},
 
 			expectCreated: true,
 		},
@@ -222,7 +233,7 @@ func TestGenerationSubmit(t *testing.T) {
 			request:       submitRequest(nil),
 			daoMock:       &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration(), Created: true}},
 			live:          []liveMock{{purpose: true, count: 1}, {count: 4}},
-			usage:         []usageMock{{purpose: true, window: 5 * time.Hour}},
+			usage:         []usageMock{underCaps[0]},
 			expectRefusal: true,
 
 			expectErr: core.ErrUsageCapReached,
@@ -242,9 +253,11 @@ func TestGenerationSubmit(t *testing.T) {
 			request: submitRequest(nil),
 			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration(), Created: true}},
 			live:    []liveMock{{purpose: true, count: 1}},
-			usage: []usageMock{
-				{purpose: true, window: 5 * time.Hour, used: dao.GenerationUsageTotals{InputTokens: 1000}},
-			},
+			usage: []usageMock{{
+				purpose: true,
+				windows: []time.Duration{5 * time.Hour},
+				used:    []*dao.GenerationUsageTotals{{InputTokens: 1000}},
+			}},
 			expectRefusal: true,
 
 			expectErr: core.ErrUsageCapReached,
@@ -256,9 +269,46 @@ func TestGenerationSubmit(t *testing.T) {
 			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration(), Created: true}},
 			live:    alone,
 			usage: []usageMock{
-				{purpose: true, window: 5 * time.Hour, used: dao.GenerationUsageTotals{InputTokens: 999}},
-				{window: 720 * time.Hour, used: dao.GenerationUsageTotals{OutputTokens: 500}},
+				{
+					purpose: true,
+					windows: []time.Duration{5 * time.Hour},
+					used:    []*dao.GenerationUsageTotals{{InputTokens: 999}},
+				},
+				{windows: []time.Duration{720 * time.Hour}, used: []*dao.GenerationUsageTotals{{OutputTokens: 500}}},
 			},
+			expectRefusal: true,
+
+			expectErr: core.ErrUsageCapReached,
+		},
+		{
+			// One read sums every window of the purpose, shortest first.
+			name: "Success/SeveralWindows",
+
+			request: submitRequest(func(request *core.GenerationSubmitRequest) { request.UserTier = "windowed" }),
+			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration(), Created: true}},
+			live:    []liveMock{{count: 1}},
+			usage: []usageMock{
+				{
+					purpose: true,
+					windows: []time.Duration{5 * time.Hour, 720 * time.Hour},
+					used:    []*dao.GenerationUsageTotals{{InputTokens: 999}, {OutputTokens: 499}},
+				},
+				underCaps[1],
+			},
+
+			expectCreated: true,
+		},
+		{
+			// A window past the first can refuse the generation too.
+			name: "Error/LaterWindowReached",
+
+			request: submitRequest(func(request *core.GenerationSubmitRequest) { request.UserTier = "windowed" }),
+			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration(), Created: true}},
+			usage: []usageMock{{
+				purpose: true,
+				windows: []time.Duration{5 * time.Hour, 720 * time.Hour},
+				used:    []*dao.GenerationUsageTotals{{InputTokens: 999}, {OutputTokens: 500}},
+			}},
 			expectRefusal: true,
 
 			expectErr: core.ErrUsageCapReached,
@@ -286,7 +336,7 @@ func TestGenerationSubmit(t *testing.T) {
 			request: submitRequest(nil),
 			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: pendingGeneration(), Created: true}},
 			live:    []liveMock{{purpose: true, count: 1}},
-			usage:   []usageMock{{purpose: true, window: 5 * time.Hour, err: errFoo}},
+			usage:   []usageMock{{purpose: true, windows: []time.Duration{5 * time.Hour}, err: errFoo}},
 
 			expectErr: errFoo,
 		},
@@ -474,9 +524,9 @@ func TestGenerationSubmit(t *testing.T) {
 			for _, usage := range testCase.usage {
 				usageDao.EXPECT().
 					Exec(mock.Anything, &dao.GenerationUsageSumRequest{
-						OwnerID: testCase.request.OwnerID, Purpose: lo.Ternary(usage.purpose, purpose, nil), Window: usage.window,
+						OwnerID: testCase.request.OwnerID, Purpose: lo.Ternary(usage.purpose, purpose, nil), Windows: usage.windows,
 					}).
-					Return(&usage.used, usage.err)
+					Return(usage.used, usage.err)
 
 				admitted = admitted && usage.err == nil
 			}

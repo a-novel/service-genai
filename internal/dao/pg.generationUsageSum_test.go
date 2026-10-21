@@ -25,43 +25,55 @@ func TestPgGenerationUsageSum(t *testing.T) {
 		name string
 
 		purpose *string
-		window  time.Duration
+		windows []time.Duration
 
-		expect dao.GenerationUsageTotals
+		expect []*dao.GenerationUsageTotals
 	}{
 		{
 			// Within the hour: the recent generation and the recent analysis, not the old one.
 			name: "Success/AllPurposes",
 
-			window: time.Hour,
+			windows: []time.Duration{time.Hour},
 
-			expect: dao.GenerationUsageTotals{InputTokens: 300, OutputTokens: 30},
+			expect: []*dao.GenerationUsageTotals{{InputTokens: 300, OutputTokens: 30}},
 		},
 		{
 			name: "Success/OnePurpose",
 
 			purpose: &generation,
-			window:  time.Hour,
+			windows: []time.Duration{time.Hour},
 
-			expect: dao.GenerationUsageTotals{InputTokens: 100, OutputTokens: 10},
+			expect: []*dao.GenerationUsageTotals{{InputTokens: 100, OutputTokens: 10}},
 		},
 		{
 			// The day reaches the old record too.
 			name: "Success/LongerWindow",
 
 			purpose: &generation,
-			window:  24 * time.Hour,
+			windows: []time.Duration{24 * time.Hour},
 
-			expect: dao.GenerationUsageTotals{InputTokens: 1100, OutputTokens: 110},
+			expect: []*dao.GenerationUsageTotals{{InputTokens: 1100, OutputTokens: 110}},
 		},
 		{
 			// The analysis is twenty minutes old.
 			name: "Success/Nothing",
 
 			purpose: &analysis,
-			window:  time.Minute,
+			windows: []time.Duration{time.Minute},
 
-			expect: dao.GenerationUsageTotals{},
+			expect: []*dao.GenerationUsageTotals{{}},
+		},
+		{
+			// One query sums every window, each in the order given, an empty one included.
+			name: "Success/SeveralWindows",
+
+			windows: []time.Duration{24 * time.Hour, time.Minute, time.Hour},
+
+			expect: []*dao.GenerationUsageTotals{
+				{InputTokens: 1300, OutputTokens: 130},
+				{},
+				{InputTokens: 300, OutputTokens: 30},
+			},
 		},
 	}
 
@@ -82,10 +94,10 @@ func TestPgGenerationUsageSum(t *testing.T) {
 				seedUsage(ctx, t, otherOwner, generation, 5000, 500, -10*time.Minute)
 
 				totals, err := daoUsageSum.Exec(ctx, &dao.GenerationUsageSumRequest{
-					OwnerID: testOwner, Purpose: testCase.purpose, Window: testCase.window,
+					OwnerID: testOwner, Purpose: testCase.purpose, Windows: testCase.windows,
 				})
 				require.NoError(t, err)
-				require.Equal(t, testCase.expect, *totals)
+				require.Equal(t, testCase.expect, totals)
 			})
 		})
 	}

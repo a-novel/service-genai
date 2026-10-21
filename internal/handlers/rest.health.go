@@ -50,10 +50,13 @@ func (handler *RestHealth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx, span := otel.Tracer().Start(r.Context(), "rest.Health")
 	defer span.End()
 
-	// reportPostgres records a failure on its own span; this one only sets the status.
-	err := handler.reportPostgres(ctx)
+	statusCode := http.StatusOK
 
-	statusCode := lo.Ternary(err == nil, http.StatusOK, http.StatusServiceUnavailable)
+	err := handler.reportPostgres(ctx)
+	if err != nil {
+		_ = otel.ReportError(span, err)
+		statusCode = http.StatusServiceUnavailable
+	}
 
 	httpf.SendJSONStatus(w, span, statusCode, map[string]any{
 		"client:postgres": NewRestHealthStatus(err),
