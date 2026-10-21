@@ -17,8 +17,8 @@ var generationSubmitQuery string
 
 // GenerationSubmitRequest is the input to [PgGenerationSubmit.Exec].
 type GenerationSubmitRequest struct {
-	// ID the generation takes if this submission creates it. Minted by the caller, so created and
-	// replayed can be told apart without a second round-trip.
+	// ID is the identifier the generation takes if this submission creates it. The caller mints it, so
+	// a created and a replayed generation can be told apart without a second round-trip.
 	ID uuid.UUID
 	// OwnerID is the user the generation acts for.
 	OwnerID uuid.UUID
@@ -81,8 +81,8 @@ func (dao *PgGenerationSubmit) Exec(
 		return nil, otel.ReportError(span, fmt.Errorf("execute query: %w", err))
 	}
 
-	// Comparing identifiers is what distinguishes the cases: bun discards unknown columns, so a
-	// RETURNING expression such as (xmax = 0) is dropped before it can be read.
+	// The identifiers tell the two cases apart. bun discards columns the model lacks, so a RETURNING
+	// expression such as (xmax = 0) never reaches this code.
 	created := entity.ID == request.ID
 
 	span.SetAttributes(attribute.Bool("generation.created", created))

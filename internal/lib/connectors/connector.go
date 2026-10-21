@@ -124,15 +124,15 @@ type AsyncStartRequest struct {
 	// Stream creates the operation in streaming mode, so [Streaming] can read its events while it
 	// runs.
 	Stream bool
-	// Accepted, when set, receives the operation the moment the provider names it, when that comes
-	// before Start returns, as for a streamed start held until the provider begins it. Its error ends
-	// the start, and Start returns it.
+	// Accepted, when set, receives the operation as soon as the provider names it, if that happens
+	// before Start returns. A streamed start does: it holds until the provider begins the operation.
+	// An error from Accepted ends the start, and Start returns that error.
 	Accepted func(call *Call) error
 }
 
-// An Async runs calls in the Async mode: the provider accepts a call and runs it on its side,
-// and the service reads it back by id. Three operations are all a check needs, which is what lets
-// any provider with an asynchronous API offer the mode.
+// An Async runs calls in the Async mode. The provider accepts a call and runs it on its side, and
+// the service reads it back by id. A check needs only these three operations, so any provider with
+// an asynchronous API can offer the mode.
 type Async interface {
 	// Start begins an operation and returns as soon as the provider accepts it, without waiting for
 	// the model. The operation's ID must be recorded before anything else happens, through
@@ -174,8 +174,8 @@ type StreamEvent struct {
 }
 
 // A Notifications reads the provider's notifications that its operations ended, so the service
-// checks them without waiting for a poll. Verifying them is the connector's: only a notification
-// that comes from the provider names an operation.
+// checks them without waiting for a poll. The connector verifies each notification: only one that
+// comes from the provider names an operation.
 type Notifications interface {
 	// Notification verifies a notification and names the operation it concerns. [ErrModeUnsupported]
 	// means the connector has no means to verify one.

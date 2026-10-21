@@ -795,8 +795,8 @@ func TestGenerationCheck(t *testing.T) {
 			expectErr:     errFoo,
 		},
 		{
-			// An answer the database refuses must not hold the generation running for as long as the
-			// provider keeps it: once a stop would have been given up on, it fails without the answer.
+			// An answer the database refuses cannot hold the generation running for as long as the
+			// provider keeps it. It fails without the answer at the age a failing stop is given up on.
 			name: "Success/AnswerNotRecorded",
 
 			generation: startedAgo(runningGeneration(1), 3*time.Hour),

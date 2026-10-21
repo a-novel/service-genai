@@ -222,9 +222,9 @@ func (service *GenerationSubmit) Exec(
 
 	generation := result.Generation
 
-	// The generation is admitted and recorded, so a start that failed, such as on a lock a migration
-	// holds, is redone by the next poll or the sweep: the caller gets the generation to follow either
-	// way. The check's own span holds the failure.
+	// The generation is admitted and recorded. A start that failed, such as on a lock a migration
+	// holds, is redone by the next poll or the sweep, so the caller gets the generation to follow
+	// either way. The check's own span holds the failure.
 	if result.Created {
 		checked, checkErr := service.serviceCheck.Exec(ctx, &GenerationCheckRequest{Generation: generation})
 		if checkErr == nil {
@@ -288,9 +288,9 @@ func (service *GenerationSubmit) validateRequest(request *GenerationSubmitReques
 	return nil
 }
 
-// admit refuses a newly created generation whose user already reached a limit it answers to: its
-// purpose's, then the global one, each counting live generations before summing usage. Nothing is
-// reserved, so a call admitted under a cap runs to the end past it; the concurrency limits bound how
+// admit refuses a newly created generation whose user already reached one of its limits. It checks
+// the purpose's caps, then the global ones, and counts live generations before it sums usage. Nothing
+// is reserved: a call admitted under a cap runs to the end past it. The concurrency limits bound how
 // many can.
 //
 // A generation whose call may still run untracked counts toward its purpose's concurrency only, so
@@ -375,9 +375,9 @@ const (
 // requestKey identifies a request among an owner's generations. The same content always yields the
 // same key, which is what lets a caller recover by resending: it holds no key of its own.
 //
-// Each field is length-prefixed, so no two different requests can concatenate to the same bytes, and
-// the payload is canonicalized as it is sent, so formatting cannot split one request into two. The
-// key never leaves the generation row: it fingerprints user content, and is purged with it.
+// Each field is length-prefixed, so no two different requests can concatenate to the same bytes. The
+// payload is canonicalized as it is sent, so formatting cannot split one request into two. The key
+// never leaves the generation row: it fingerprints user content, and is purged with it.
 func requestKey(request *GenerationSubmitRequest) ([]byte, error) {
 	payload, err := canonicalPayload(request.Payload)
 	if err != nil {
@@ -404,10 +404,10 @@ func requestKey(request *GenerationSubmitRequest) ([]byte, error) {
 	return digest.Sum(nil), nil
 }
 
-// canonicalPayload writes a payload as the provider reads it: its top-level members sorted, as the
-// connector sends them, and nested members in the caller's order, which a provider can read meaning
-// into, such as a schema's property order. Insignificant whitespace goes and strings are written one
-// way; numbers keep their literal form.
+// canonicalPayload writes a payload as the provider reads it. Top-level members are sorted, as the
+// connector sends them. Nested members keep the caller's order, since a provider can read meaning
+// into it, such as a schema's property order. Insignificant whitespace goes, strings are written one
+// way, and numbers keep their literal form.
 func canonicalPayload(payload json.RawMessage) ([]byte, error) {
 	var members map[string]jsontext.Value
 
