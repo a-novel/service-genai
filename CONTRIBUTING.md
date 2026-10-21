@@ -82,7 +82,7 @@ grpcurl -plaintext -d "{\"id\":\"$GENERATION_ID\",\"owner_id\":\"$OWNER_ID\"}" \
 
 ### The boundary
 
-**This service never learns a caller's domain.** It executes an opaque provider payload for an owner, a purpose and a user tier, and keeps the provider's raw answers and the usage read off them. Building the request and reading the output belong to the caller. A concept like a story, a step or an engine appearing anywhere in this repository means the boundary has moved.
+**This service never learns a caller's domain.** It executes an opaque provider payload for an owner, a purpose and a user tier. It keeps the provider's raw answers and the usage read off them. Building the request and reading the output belong to the caller. A concept like a story, a step or an engine appearing anywhere in this repository means the boundary has moved.
 
 ### Retention purge
 
