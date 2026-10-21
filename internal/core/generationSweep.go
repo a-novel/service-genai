@@ -134,7 +134,7 @@ dispatch:
 		if ctx.Err() != nil || !mayStart(lastStart) {
 			<-service.slots
 
-			break
+			break dispatch
 		}
 
 		checks.Go(func() {
