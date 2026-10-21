@@ -274,8 +274,8 @@ func (service *GenerationCheck) start(ctx context.Context, generation *dao.Gener
 }
 
 // recordCall attaches an accepted call to its attempt. The generation may have settled while the
-// start was in flight, or the write may have failed without landing: a call the generation does not
-// carry belongs to nothing, so it is stopped.
+// start was in flight, or the write may have failed without landing. A call the generation does not
+// carry then belongs to nothing, so it is stopped.
 func (service *GenerationCheck) recordCall(
 	ctx context.Context, connector connectors.Async, intent *dao.Generation, callID string,
 ) (*dao.Generation, error) {
@@ -305,9 +305,9 @@ func (service *GenerationCheck) recordCall(
 		return recorded, nil
 	}
 
-	// Either write may have landed after all, the second then finding the generation moved on. Should
-	// both time out, the read may still miss a write about to land: the call is then stopped, and the
-	// generation fails once the write lands.
+	// Either write may have landed after all, and the second one then finds the generation moved on.
+	// When both time out, the read may still miss a write about to land. The call is then stopped, and
+	// the generation fails once that write lands.
 	if !movedOn {
 		getCtx, cancel := context.WithTimeout(ctx, persistenceTimeout)
 		current, getErr := service.daoGet.Exec(getCtx, &dao.GenerationGetRequest{ID: intent.ID, OwnerID: intent.OwnerID})
@@ -464,18 +464,18 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 		return settled, nil
 	}
 
-	// Another check stopped the call, maybe on its owner's request after this one read the generation:
-	// the outcome is labelled from the request as it stands. Only the request is taken from the fresh
-	// read, so the settle stays fenced on the call this check observed.
+	// Another check stopped the call, maybe because its owner asked after this check read the
+	// generation. The outcome is labeled from the cancel request as it stands now. Only that request
+	// comes from the fresh read, so the settle stays fenced on the call this check observed.
 	if call.State == connectors.CallCancelled && generation.CancelRequestedAt == nil && stopSince == nil {
 		current, getErr := service.daoGet.Exec(ctx, &dao.GenerationGetRequest{ID: generation.ID, OwnerID: generation.OwnerID})
 		if getErr != nil {
 			return nil, otel.ReportError(span, fmt.Errorf("re-read generation: %w", getErr))
 		}
 
-		labelled := *generation
-		labelled.CancelRequestedAt = current.CancelRequestedAt
-		generation = &labelled
+		labeled := *generation
+		labeled.CancelRequestedAt = current.CancelRequestedAt
+		generation = &labeled
 	}
 
 	var recorded *dao.Generation
@@ -505,9 +505,12 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 	return recorded, nil
 }
 
-// ask reads the call, or stops it, and reports since when the stop was wanted, nil when it only read.
-// The call is stopped on its owner's request, or past the run ceiling whether they asked or not: one
-// the provider never finishes, or a key it no longer accepts, must not hold the owner's slot forever.
+// ask reads the call or stops it. It also returns when the stop was first wanted, or nil when it only
+// read.
+//
+// A call is stopped when its owner asks, and past the run ceiling whether they asked or not. A call
+// the provider never finishes, or a key it no longer accepts, then cannot hold the owner's slot
+// forever.
 func (service *GenerationCheck) ask(
 	ctx context.Context, connector connectors.Async, generation *dao.Generation,
 ) (*connectors.Call, *time.Time, error) {
@@ -819,8 +822,8 @@ func settleOutcomeOf(generation *dao.Generation, call *connectors.Call) (dao.Gen
 
 const (
 	// startTimeout bounds a start call. Background mode answers once the provider queues the work,
-	// usually within a second, but a start cut after its request left is ambiguous and may run unread,
-	// so a slow provider gets time to answer. A deploy that stops a start in flight loses it either way.
+	// usually within a second. A start cut after its request left is ambiguous and may run unread, so a
+	// slow provider gets time to answer. A deploy that stops a start in flight loses it either way.
 	startTimeout = 20 * time.Second
 	// persistenceTimeout bounds a write that runs detached from a cancelled caller. The wait for a
 	// pooled connection counts against it, which a burst of large submits stretches to seconds. It

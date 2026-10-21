@@ -20,7 +20,7 @@ Executes the platform's AI provider calls durably, pays for each once, and retur
 
 A provider call can take minutes, costs real money, and must be paid for once. The caller decides what a call executes, and this service decides how it executes. The service never reads the requests it runs or the answers it returns.
 
-The caller holds no connection while the provider works. It submits the call, then polls for the result, so the call outlives the caller's request, a restart of either side, and a deploy.
+The caller holds no connection while the provider works. It submits the call, then polls for the result. The call outlives the caller's request, a restart of either side, and a deploy.
 
 Five rules shape the contract.
 
@@ -32,7 +32,7 @@ Five rules shape the contract.
 
 **The provider's answers come back as sent.** Each generation lists every attempt that reached an answer, retried and cancelled ones included, with the provider's raw response. That response holds the output and the usage. A request the provider rejected comes back with the provider's error body. A generation that holds no finished response says why in the service's own words. The purge deletes a generation and its responses after `RETENTION`. A permanent Usage Record of every answered attempt stays: who it ran for, what ran, what it consumed and when, with no content.
 
-**Usage is capped per purpose and user tier.** The [caps file](./internal/config/caps.config.yaml) is built into the image, so every change to it is reviewed. It declares each purpose a caller may submit, the token limits of each user tier over rolling windows, and how many generations a user may run at once, per purpose and across all of them. Its comments explain every key. Once a user reaches a limit, a submit that would start a new generation answers `RESOURCE_EXHAUSTED`, naming the limit. An admitted call always finishes, even past its cap, and a resend of a running generation always attaches to it.
+**Usage is capped per purpose and user tier.** The [caps file](./internal/config/caps.config.yaml) is built into the image, so every change to it is reviewed. It declares each purpose a caller may submit and the token limits of each user tier over rolling windows. It also caps how many generations a user may run at once, per purpose and across all of them. Its comments explain every key. Once a user reaches a limit, a submit that would start a new generation answers `RESOURCE_EXHAUSTED`, naming the limit. An admitted call always finishes, even past its cap, and a resend of a running generation always attaches to it.
 
 Callers are other services, which reach the generation API over **gRPC** on the internal network. The optional `rest` server is public and serves no generation. It only receives the providers' notifications that their calls ended.
 
@@ -234,7 +234,7 @@ Planned downtime (server images):
 | ---------------- | -------------------------------------------- | ------- |
 | `DOWNTIME_START` | When a planned downtime starts, in RFC 3339. |         |
 
-From `DOWNTIME_START` until the variable is removed, even past the announced end, the servers answer `503` / `UNAVAILABLE`. Ping, gRPC health and echo still answer, and the servers start without the database. A request already running still finishes, a sweep up to `REST_TIMEOUT_REQUEST` later, so stop the database only once that has passed. The provider delivers the notifications it could not send once the downtime ends. Calls already sent keep running at the provider. OpenAI keeps a finished background response it does not store for about 10 minutes, so a call that finishes longer than that before the downtime ends settles failed, its result lost. Keep a downtime short while generations run.
+From `DOWNTIME_START` until the variable is removed, even past the announced end, the servers answer `503` / `UNAVAILABLE`. Ping, gRPC health and echo still answer, and the servers start without the database. A request already running still finishes, a sweep up to `REST_TIMEOUT_REQUEST` later, so stop the database only once that has passed. The provider delivers the notifications it could not send once the downtime ends. Calls already sent keep running at the provider. OpenAI keeps a finished background response it does not store for about 10 minutes. A call that finishes more than 10 minutes before the downtime ends therefore settles failed, its result lost. Keep a downtime short while generations run.
 
 Logs and tracing (all server images). OpenTelemetry exports to stdout or to Google Cloud.
 

@@ -3,6 +3,7 @@ package connectors
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -36,9 +37,9 @@ const readTimeout = 10 * time.Second
 // the ping may go unanswered.
 const healthCheckTimeout = 5 * time.Second
 
-// ResponseSizeCeiling bounds a provider response read whole, as a check reads a call. It holds twice
-// the largest output OpenAI writes, along with the instructions a response echoes from a payload at
-// its ceiling, and two attempts' responses fit the client's 64 MiB message.
+// ResponseSizeCeiling bounds a provider response that a check reads whole. It holds twice the largest
+// output OpenAI writes, plus the instructions a response echoes from a payload at its ceiling. Two
+// attempts' responses still fit the client's 64 MiB message.
 const ResponseSizeCeiling = 24 << 20
 
 // readOptions make a read a single bounded attempt: the next check is the retry. A response past
@@ -112,9 +113,9 @@ func healthCheckedClient() *http.Client {
 
 // Start posts the caller's payload in the Async mode.
 //
-// background makes crash-safety possible: the call returns an identifier immediately, so a restarted
-// check resumes an operation already paid for. A streamed start holds the creation stream until the
-// provider begins the operation.
+// The background flag makes crash safety possible. The call returns an identifier at once, so a
+// restarted check resumes an operation already paid for. A streamed start holds the creation stream
+// until the provider begins the operation.
 func (provider *OpenAI) Start(ctx context.Context, request *AsyncStartRequest) (*Call, error) {
 	ctx, span := otel.Tracer().Start(ctx, "connectors.OpenAI.Start")
 	defer span.End()
@@ -362,9 +363,11 @@ func (provider *OpenAI) Notification(ctx context.Context, request *NotificationR
 }
 
 // holdStream creates the operation in streaming mode and reads its stream until the provider begins
-// it: leaving while it is still queued can leave it queued for good. The operation goes to accepted
-// as soon as the provider names it, so it is recorded before the hold ends. A deadline cut short after
-// the operation's id came returns the call still queued, for checks to follow.
+// it. Leaving while the operation is still queued can leave it queued for good.
+//
+// The operation goes to accepted as soon as the provider names it, so it is recorded before the hold
+// ends. When the deadline ends the hold after the provider named the operation, holdStream returns the
+// call still queued, and later checks follow it.
 func (provider *OpenAI) holdStream(
 	ctx context.Context, body json.RawMessage, accepted func(*Call) error, sent func() bool,
 ) (*Call, error) {
@@ -529,16 +532,12 @@ func providerCallOf(raw json.RawMessage) (*Call, error) {
 
 	call.Response = raw
 	call.Model = response.Model
-	call.Class = string(response.Reasoning.Effort)
+	// A model that does not reason reports no effort.
+	call.Class = cmp.Or(string(response.Reasoning.Effort), string(shared.ReasoningEffortNone))
 	call.Tier = string(response.ServiceTier)
 
 	if response.CreatedAt > 0 {
 		call.StartedAt = unixTime(response.CreatedAt)
-	}
-
-	// A model that does not reason reports no effort.
-	if call.Class == "" {
-		call.Class = string(shared.ReasoningEffortNone)
 	}
 
 	if response.CompletedAt != nil && *response.CompletedAt > 0 {
@@ -603,8 +602,8 @@ func classifyOpenAIStartError(err error, sent bool) error {
 		return &RejectionError{Response: errorBody(apiErr), Err: err}
 	case status == http.StatusTooManyRequests, status == http.StatusUnauthorized, status == http.StatusConflict:
 		// Nothing ran, so the start is retried. Refused credentials are this service's configuration,
-		// not the caller's request, and their error body can echo part of the key; a conflict is a lock
-		// the provider releases.
+		// not a fault in the caller's request, and their error body can echo part of the key. A
+		// conflict is a lock the provider releases.
 		return fmt.Errorf("%w: %w", ErrRetryable, err)
 	case status == http.StatusRequestTimeout, status >= http.StatusInternalServerError:
 		return fmt.Errorf("%w: %w", ErrStartAmbiguous, err)
@@ -632,9 +631,9 @@ func errorBody(apiErr *openai.Error) json.RawMessage {
 
 // classifyOpenAIError decides whether reading an operation again is worth it.
 //
-// Retryable: transport failures, rate limits, provider-side faults, and refused credentials, which
-// are this service's configuration and say nothing about the operation. Anything else, a not-found
-// above all, means the operation cannot be read.
+// Transport failures, rate limits, provider-side faults and refused credentials are retryable.
+// Refused credentials are this service's configuration and say nothing about the operation. Anything
+// else, a not-found above all, means the operation cannot be read.
 func classifyOpenAIError(err error) error {
 	var (
 		apiErr       *openai.Error

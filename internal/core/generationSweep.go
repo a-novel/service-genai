@@ -17,9 +17,9 @@ import (
 // so the sweep could check nothing.
 var ErrSweepDeadlineTooShort = errors.New("deadline too short for a sweep")
 
-// sweepFreshness divides the interval into how long a check spares a generation from the sweep. A
-// call marks what it takes a moment after it starts, so half the interval lets the next call, one
-// interval later, take those generations again.
+// sweepFreshness divides the sweep interval. The result is how long a check spares a generation from
+// the sweep. A sweep call marks the generations it takes a moment after it starts. Half the interval
+// lets the next call, one interval later, take those generations again.
 const sweepFreshness = 2
 
 // GenerationSweepDao takes the generations nobody checked within the interval.
@@ -63,9 +63,9 @@ func NewGenerationSweep(
 	}
 }
 
-// Exec checks one batch after another while each comes back full, so a backlog drains in one call.
-// It starts no check its caller's deadline could not wait out, and none once its context ends, as
-// when the server stops: it answers once the checks it started finish.
+// Exec checks batch after batch while each comes back full, so one call drains a backlog. It starts
+// no check that could outlast its caller's deadline, and none once its context ends, as when the
+// server stops. It answers once the checks it started finish.
 func (service *GenerationSweep) Exec(
 	ctx context.Context, _ *GenerationSweepRequest,
 ) (*GenerationSweepResult, error) {
@@ -101,8 +101,8 @@ func (service *GenerationSweep) Exec(
 }
 
 // sweepBatch takes one batch and checks it. Checks of different generations are independent, so
-// several run at once, and a slow provider stretches a batch by its latency alone. A generation taken
-// but left unchecked waits for a later call.
+// several run at once. A slow provider then stretches a batch by its latency alone. A generation
+// taken but left unchecked waits for a later call.
 func (service *GenerationSweep) sweepBatch(ctx context.Context, lastStart time.Time) (int, error) {
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationSweep(sweepBatch)")
 	defer span.End()
@@ -134,7 +134,7 @@ dispatch:
 		if ctx.Err() != nil || !mayStart(lastStart) {
 			<-service.slots
 
-			break
+			break dispatch
 		}
 
 		checks.Go(func() {

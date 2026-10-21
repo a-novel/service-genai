@@ -184,7 +184,7 @@ func TestPgGenerationSubmit(t *testing.T) {
 						require.Zero(t, result.Generation.Attempt)
 						require.Equal(t, request.Purpose, result.Generation.Purpose)
 						require.Equal(t, request.Provider, result.Generation.Provider)
-						// Stored as sent: key order and characters reach the provider unchanged.
+						// The trace context and the mode are stored as sent.
 						require.Equal(t, request.Traceparent, result.Generation.Traceparent)
 						require.Equal(t, request.Streamed, result.Generation.Streamed)
 
