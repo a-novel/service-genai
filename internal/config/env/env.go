@@ -54,10 +54,9 @@ const (
 	// SweepBatchSizeDefault is how many generations one batch of a sweep takes.
 	SweepBatchSizeDefault = 50
 
-	// PostgresMaxOpenConnsDefault keeps the pool well under a stock PostgreSQL max_connections of 100
-	// once multiplied by a service's replica count, leaving room for the migration job and a psql
-	// session. Go's own default is unlimited, which turns a spike into connection refusals for
-	// everything on that database. The limit queues the spike inside this process instead.
+	// PostgresMaxOpenConnsDefault caps the connections one instance opens. Multiplied by the replica
+	// count, the cap stays well under PostgreSQL's default max_connections of 100. That leaves room
+	// for the migration job and a psql session. A spike waits inside the process for a free connection.
 	PostgresMaxOpenConnsDefault = 20
 	// PostgresMaxIdleConnsDefault matches the open limit, so a burst keeps the connections it is about
 	// to reuse.
@@ -68,111 +67,72 @@ const (
 	PostgresTLSEnabledDefault = true
 )
 
-// Raw values for environment variables.
 var (
-	postgresDsn          = getEnv("POSTGRES_DSN")
-	postgresHost         = getEnv("POSTGRES_HOST")
-	postgresPort         = getEnv("POSTGRES_PORT")
-	postgresUser         = getEnv("POSTGRES_USER")
-	postgresPassword     = getEnv("POSTGRES_PASSWORD")
-	postgresDatabase     = getEnv("POSTGRES_DATABASE")
-	postgresTLSEnabled   = getEnv("POSTGRES_TLS_ENABLED")
-	postgresMaxOpenConns = getEnv("POSTGRES_MAX_OPEN_CONNS")
-	postgresMaxIdleConns = getEnv("POSTGRES_MAX_IDLE_CONNS")
-
-	appName = getEnv("APP_NAME")
-	otel    = getEnv("OTEL")
-
-	grpcUrl = getEnv("GRPC_URL")
-
-	openAIWebhookSecret = getEnv("OPENAI_WEBHOOK_SECRET")
-
-	openAIAPIKey  = getEnv("OPENAI_API_KEY")
-	openAIBaseURL = getEnv("OPENAI_BASE_URL")
-
-	checkInterval = getEnv("CHECK_INTERVAL")
-	maxAttempts   = getEnv("MAX_ATTEMPTS")
-
-	retention = getEnv("RETENTION")
-
-	sweepInterval  = getEnv("SWEEP_INTERVAL")
-	sweepBatchSize = getEnv("SWEEP_BATCH_SIZE")
-
-	gcloudProjectId = getEnv("GCLOUD_PROJECT_ID")
-
-	downtimeStart = getEnv("DOWNTIME_START")
-)
-
-var (
-	// PostgresDsn is the connection URL, read only when PostgresHost is empty.
-	// Typically formatted as:
+	// PostgresDSN is the legacy URL used when PostgresHost is empty, formatted as
 	//	postgres://<user>:<password>@<host>:<port>/<database>
-	PostgresDsn = postgresDsn
-	// PostgresHost is the PostgreSQL server hostname or IP address. Setting it selects the
-	// discrete connection fields below, so a deployment injects the password as a secret
-	// without assembling a URL.
-	PostgresHost = postgresHost
+	//
+	// Configure the discrete PostgreSQL fields for new deployments.
+	PostgresDSN = getEnv("POSTGRES_DSN")
+	// PostgresHost is the PostgreSQL server hostname or IP address.
+	PostgresHost = getEnv("POSTGRES_HOST")
 	// PostgresPort is the PostgreSQL server port.
-	PostgresPort = config.LoadEnv(postgresPort, PostgresPortDefault, config.IntParser)
+	PostgresPort = config.LoadEnv(getEnv("POSTGRES_PORT"), PostgresPortDefault, config.IntParser)
 	// PostgresUser is the PostgreSQL login role.
-	PostgresUser = postgresUser
+	PostgresUser = getEnv("POSTGRES_USER")
 	// PostgresPassword is the PostgreSQL login credential.
-	PostgresPassword = postgresPassword
+	PostgresPassword = getEnv("POSTGRES_PASSWORD")
 	// PostgresDatabase is the PostgreSQL database name.
-	PostgresDatabase = postgresDatabase
+	PostgresDatabase = getEnv("POSTGRES_DATABASE")
 	// PostgresTLSEnabled controls transport encryption for the PostgreSQL connection.
-	PostgresTLSEnabled = config.LoadEnv(postgresTLSEnabled, PostgresTLSEnabledDefault, config.BoolParser)
+	PostgresTLSEnabled = config.LoadEnv(getEnv("POSTGRES_TLS_ENABLED"), PostgresTLSEnabledDefault, config.BoolParser)
 
 	// PostgresMaxOpenConns is the maximum number of open connections to the database.
-	PostgresMaxOpenConns = config.LoadEnv(postgresMaxOpenConns, PostgresMaxOpenConnsDefault, config.IntParser)
+	PostgresMaxOpenConns = config.LoadEnv(getEnv("POSTGRES_MAX_OPEN_CONNS"), PostgresMaxOpenConnsDefault, config.IntParser)
 	// PostgresMaxIdleConns is the maximum number of connections kept open while idle.
-	PostgresMaxIdleConns = config.LoadEnv(postgresMaxIdleConns, PostgresMaxIdleConnsDefault, config.IntParser)
+	PostgresMaxIdleConns = config.LoadEnv(getEnv("POSTGRES_MAX_IDLE_CONNS"), PostgresMaxIdleConnsDefault, config.IntParser)
 
 	// AppName is the name of the application, as it appears in logs and tracing.
-	AppName = config.LoadEnv(appName, AppNameDefault, config.StringParser)
-	// Otel enables OpenTelemetry instrumentation.
-	//
-	// See: https://opentelemetry.io/
-	Otel = config.LoadEnv(otel, false, config.BoolParser)
+	AppName = config.LoadEnv(getEnv("APP_NAME"), AppNameDefault, config.StringParser)
+	// Otel enables OpenTelemetry tracing.
+	Otel = config.LoadEnv(getEnv("OTEL"), false, config.BoolParser)
 
-	// GrpcUrl is the URL of the gRPC service, typically <host>:<port>.
-	GrpcUrl = grpcUrl
+	// GrpcURL is the address of the gRPC service, in the form <host>:<port>. The Go client tests
+	// dial it.
+	GrpcURL = getEnv("GRPC_URL")
 	// Rest configures the REST server from the REST_* variables.
 	Rest = httpf.LoadServerConfig(getEnv, restDefaults())
 	// Grpc configures the gRPC server from the GRPC_* variables.
 	Grpc = grpcf.LoadServerConfig(getEnv, grpcDefaults())
 
-	// OpenAIAPIKey authenticates the OpenAI connector. The only credential this service holds, and the
-	// reason no caller holds one.
-	OpenAIAPIKey = openAIAPIKey
+	// OpenAIAPIKey authenticates the OpenAI connector. It is the only credential this service holds,
+	// so no caller holds one.
+	OpenAIAPIKey = getEnv("OPENAI_API_KEY")
 	// OpenAIWebhookSecret is the signing secret of the webhook endpoint OpenAI notifies. Inject it as a
 	// secret; unset, the service reads no notification.
-	OpenAIWebhookSecret = openAIWebhookSecret
+	OpenAIWebhookSecret = getEnv("OPENAI_WEBHOOK_SECRET")
 	// OpenAIBaseURL is the Responses API endpoint the OpenAI connector calls.
-	OpenAIBaseURL = config.LoadEnv(openAIBaseURL, OpenAIBaseURLDefault, config.StringParser)
+	OpenAIBaseURL = config.LoadEnv(getEnv("OPENAI_BASE_URL"), OpenAIBaseURLDefault, config.StringParser)
 
 	// CheckInterval is how long a check stays fresh.
-	CheckInterval = config.LoadEnv(checkInterval, CheckIntervalDefault, config.DurationParser)
+	CheckInterval = config.LoadEnv(getEnv("CHECK_INTERVAL"), CheckIntervalDefault, config.DurationParser)
 	// MaxAttempts caps the provider calls a generation gets when a call fails retryably.
-	MaxAttempts = config.LoadEnv(maxAttempts, MaxAttemptsDefault, config.Int16Parser)
+	MaxAttempts = config.LoadEnv(getEnv("MAX_ATTEMPTS"), MaxAttemptsDefault, config.Int16Parser)
 
 	// Retention is how long a settled generation's user content survives before the purge.
-	Retention = config.LoadEnv(retention, RetentionDefault, config.DurationParser)
+	Retention = config.LoadEnv(getEnv("RETENTION"), RetentionDefault, config.DurationParser)
 
 	// SweepInterval is how often the scheduler calls the sweep.
-	SweepInterval = config.LoadEnv(sweepInterval, SweepIntervalDefault, config.DurationParser)
+	SweepInterval = config.LoadEnv(getEnv("SWEEP_INTERVAL"), SweepIntervalDefault, config.DurationParser)
 	// SweepBatchSize caps the generations one batch of a sweep takes.
-	SweepBatchSize = config.LoadEnv(sweepBatchSize, SweepBatchSizeDefault, config.IntParser)
+	SweepBatchSize = config.LoadEnv(getEnv("SWEEP_BATCH_SIZE"), SweepBatchSizeDefault, config.IntParser)
 
-	// GcloudProjectId names the Google Cloud project the service runs in. Setting
-	// it switches logging and tracing from the local console to Google Cloud.
-	//
-	// See: https://docs.cloud.google.com/resource-manager/docs/creating-managing-projects
-	GcloudProjectId = gcloudProjectId
+	// GcloudProjectID is the Google Cloud project the service runs in. When set, logs and traces
+	// go to Google Cloud. When empty, they go to standard output.
+	GcloudProjectID = getEnv("GCLOUD_PROJECT_ID")
 
 	// DowntimeStart is when a planned downtime of this service starts, in RFC 3339. From then
 	// until it is removed, the service refuses work. Nil when none is planned.
-	DowntimeStart = config.LoadEnv(downtimeStart, nil, downtime.ParseStart)
+	DowntimeStart = config.LoadEnv(getEnv("DOWNTIME_START"), nil, downtime.ParseStart)
 )
 
 // restDefaults keeps golib's REST defaults but for a few. The drain fits Cloud Run's kill window, and a

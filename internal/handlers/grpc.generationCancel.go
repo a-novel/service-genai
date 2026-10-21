@@ -31,6 +31,7 @@ func NewGrpcGenerationCancel(service GrpcGenerationCancelService) *GrpcGeneratio
 	return &GrpcGenerationCancel{service: service}
 }
 
+// GenerationCancel stops one of an owner's generations and returns it as the stop left it.
 func (handler *GrpcGenerationCancel) GenerationCancel(
 	ctx context.Context, request *genaiv0.GenerationCancelRequest,
 ) (*genaiv0.GenerationCancelResponse, error) {

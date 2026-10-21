@@ -39,14 +39,14 @@ func (dao *PgGenerationQueueDepth) Exec(
 	ctx, span := otel.Tracer().Start(ctx, "dao.PgGenerationQueueDepth")
 	defer span.End()
 
-	tx, err := postgres.GetContext(ctx)
+	db, err := postgres.GetContext(ctx)
 	if err != nil {
-		return nil, otel.ReportError(span, fmt.Errorf("get transaction: %w", err))
+		return nil, otel.ReportError(span, fmt.Errorf("get postgres context: %w", err))
 	}
 
 	entity := &GenerationQueueDepth{}
 
-	err = tx.NewRaw(generationQueueDepthQuery).Scan(ctx, entity)
+	err = db.NewRaw(generationQueueDepthQuery).Scan(ctx, entity)
 	if err != nil {
 		return nil, otel.ReportError(span, fmt.Errorf("execute query: %w", err))
 	}

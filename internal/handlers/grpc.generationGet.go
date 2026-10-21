@@ -31,6 +31,7 @@ func NewGrpcGenerationGet(service GrpcGenerationGetService) *GrpcGenerationGet {
 	return &GrpcGenerationGet{service: service}
 }
 
+// GenerationGet returns one of an owner's generations, checked with the provider first when stale.
 func (handler *GrpcGenerationGet) GenerationGet(
 	ctx context.Context, request *genaiv0.GenerationGetRequest,
 ) (*genaiv0.GenerationGetResponse, error) {

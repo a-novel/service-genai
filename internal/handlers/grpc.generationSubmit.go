@@ -35,6 +35,8 @@ func NewGrpcGenerationSubmit(service GrpcGenerationSubmitService) *GrpcGeneratio
 	return &GrpcGenerationSubmit{service: service}
 }
 
+// GenerationSubmit records a generation, or finds the one the same request already recorded, and
+// returns it.
 func (handler *GrpcGenerationSubmit) GenerationSubmit(
 	ctx context.Context, request *genaiv0.GenerationSubmitRequest,
 ) (*genaiv0.GenerationSubmitResponse, error) {

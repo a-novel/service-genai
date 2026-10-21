@@ -38,19 +38,19 @@ func (dao *PgGenerationGetByCall) Exec(ctx context.Context, request *GenerationG
 	ctx, span := otel.Tracer().Start(ctx, "dao.PgGenerationGetByCall")
 	defer span.End()
 
-	tx, err := postgres.GetContext(ctx)
+	db, err := postgres.GetContext(ctx)
 	if err != nil {
-		return nil, otel.ReportError(span, fmt.Errorf("get transaction: %w", err))
+		return nil, otel.ReportError(span, fmt.Errorf("get postgres context: %w", err))
 	}
 
 	entity := &Generation{}
 
-	err = tx.NewRaw(generationGetByCallQuery, request.Provider, request.CallID).Scan(ctx, entity)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			err = errors.Join(err, ErrGenerationGetByCallNotFound)
-		}
+	err = db.NewRaw(generationGetByCallQuery, request.Provider, request.CallID).Scan(ctx, entity)
+	if errors.Is(err, sql.ErrNoRows) {
+		err = errors.Join(err, ErrGenerationGetByCallNotFound)
+	}
 
+	if err != nil {
 		return nil, otel.ReportError(span, fmt.Errorf("execute query: %w", err))
 	}
 

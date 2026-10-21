@@ -31,7 +31,7 @@ import (
 func newClient(t *testing.T) servicegenai.Client {
 	t.Helper()
 
-	client, err := servicegenai.NewClient(env.GrpcUrl, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	client, err := servicegenai.NewClient(env.GrpcURL, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		panic(err)
 	}

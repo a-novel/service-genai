@@ -41,19 +41,19 @@ func (dao *PgGenerationReleaseStart) Exec(
 	ctx, span := otel.Tracer().Start(ctx, "dao.PgGenerationReleaseStart")
 	defer span.End()
 
-	tx, err := postgres.GetContext(ctx)
+	db, err := postgres.GetContext(ctx)
 	if err != nil {
-		return nil, otel.ReportError(span, fmt.Errorf("get transaction: %w", err))
+		return nil, otel.ReportError(span, fmt.Errorf("get postgres context: %w", err))
 	}
 
 	entity := &Generation{}
 
-	err = tx.NewRaw(generationReleaseStartQuery, request.ID, request.Attempt, request.Delay.Seconds()).Scan(ctx, entity)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			err = errors.Join(err, ErrGenerationChanged)
-		}
+	err = db.NewRaw(generationReleaseStartQuery, request.ID, request.Attempt, request.Delay.Seconds()).Scan(ctx, entity)
+	if errors.Is(err, sql.ErrNoRows) {
+		err = errors.Join(err, ErrGenerationChanged)
+	}
 
+	if err != nil {
 		return nil, otel.ReportError(span, fmt.Errorf("execute query: %w", err))
 	}
 

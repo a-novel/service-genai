@@ -33,14 +33,14 @@ func (dao *PgGenerationAttemptList) Exec(
 	ctx, span := otel.Tracer().Start(ctx, "dao.PgGenerationAttemptList")
 	defer span.End()
 
-	tx, err := postgres.GetContext(ctx)
+	db, err := postgres.GetContext(ctx)
 	if err != nil {
-		return nil, otel.ReportError(span, fmt.Errorf("get transaction: %w", err))
+		return nil, otel.ReportError(span, fmt.Errorf("get postgres context: %w", err))
 	}
 
 	entities := make([]*GenerationAttempt, 0)
 
-	err = tx.NewRaw(generationAttemptListQuery, request.GenerationID).Scan(ctx, &entities)
+	err = db.NewRaw(generationAttemptListQuery, request.GenerationID).Scan(ctx, &entities)
 	if err != nil {
 		return nil, otel.ReportError(span, fmt.Errorf("execute query: %w", err))
 	}
