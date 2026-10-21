@@ -1,6 +1,7 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -556,7 +557,7 @@ func (service *GenerationCheck) requeue(
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(requeue)")
 	defer span.End()
 
-	service.logFailure(ctx, generation, call.Reason)
+	service.logger.Err(ctx, failureLog(generation, call.Reason))
 
 	var requeued *dao.Generation
 
@@ -603,7 +604,8 @@ func (service *GenerationCheck) settle(
 	// Only a failed call carries the provider's reason. One this service stopped is explained by the
 	// outcome.
 	if status == dao.GenerationStatusFailed {
-		service.logFailure(ctx, generation, lo.Ternary(call.State == connectors.CallFailed, call.Reason, *message))
+		reason := lo.Ternary(call.State == connectors.CallFailed, call.Reason, *message)
+		service.logger.Err(ctx, failureLog(generation, reason))
 	}
 
 	settled, err := service.commit(ctx, generation, status, message, call)
@@ -623,7 +625,7 @@ func (service *GenerationCheck) settleFailure(
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(settleFailure)")
 	defer span.End()
 
-	service.logFailure(ctx, generation, cause)
+	service.logger.Err(ctx, failureLog(generation, cause))
 
 	settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), persistenceTimeout)
 	defer cancel()
@@ -778,17 +780,10 @@ func (service *GenerationCheck) stopOrphan(
 	}
 }
 
-// logFailure records why a generation failed in the server logs, where the provider's own account
-// stays.
-func (service *GenerationCheck) logFailure(ctx context.Context, generation *dao.Generation, reason string) {
-	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(logFailure)")
-	defer span.End()
-
-	if reason == "" {
-		reason = "provider returned no failure reason"
-	}
-
-	service.logger.Err(ctx, fmt.Sprintf("generation %s failed: %s", generation.ID, reason))
+// failureLog is the server log line recording why a generation failed. The provider's own account of
+// a failure stays in these logs.
+func failureLog(generation *dao.Generation, reason string) string {
+	return fmt.Sprintf("generation %s failed: %s", generation.ID, cmp.Or(reason, "provider returned no failure reason"))
 }
 
 // retryAfter draws a retry's delay between half and one and a half retryDelay, so the calls one burst
