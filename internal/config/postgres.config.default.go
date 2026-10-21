@@ -40,7 +40,7 @@ var PostgresPresetServer = NewPostgresPreset(pgdriver.WithConnParams(serverSessi
 // taken applies to nothing and reports nothing.
 func NewPostgresPreset(extra ...pgdriver.Option) *postgrespresets.Default {
 	connection := postgrespresets.Connection{
-		DSN:         env.PostgresDsn,
+		DSN:         env.PostgresDSN,
 		Host:        env.PostgresHost,
 		Port:        env.PostgresPort,
 		User:        env.PostgresUser,
