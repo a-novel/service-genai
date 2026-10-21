@@ -8,7 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/samber/lo"
-	"github.com/uptrace/bun/dialect/pgdialect"
+	"github.com/uptrace/bun"
 
 	"github.com/a-novel-kit/golib/otel"
 	"github.com/a-novel-kit/golib/postgres"
@@ -56,7 +56,7 @@ func (dao *PgGenerationUsageSum) Exec(
 	totals := make([]*GenerationUsageTotals, 0, len(windows))
 
 	err = db.NewRaw(
-		generationUsageSumQuery, request.OwnerID, request.Purpose, pgdialect.Array(windows), len(windows),
+		generationUsageSumQuery, request.OwnerID, request.Purpose, bun.List(windows), len(windows),
 	).Scan(ctx, &totals)
 	if err != nil {
 		return nil, otel.ReportError(span, fmt.Errorf("execute query: %w", err))

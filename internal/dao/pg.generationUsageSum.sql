@@ -7,7 +7,7 @@ SELECT
   coalesce(sum(generation_usage.input_tokens), 0)::bigint AS input_tokens,
   coalesce(sum(generation_usage.output_tokens), 0)::bigint AS output_tokens
 FROM
-  unnest(?2::double precision[]) WITH ORDINALITY AS windows (seconds, position)
+  unnest(ARRAY[?2]::double precision[]) WITH ORDINALITY AS windows (seconds, position)
   LEFT JOIN generation_usage ON generation_usage.owner_id = ?0
   AND (
     ?1::text IS NULL
