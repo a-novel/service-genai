@@ -38,8 +38,8 @@ func NewGrpcStatus(service GrpcStatusService) *GrpcStatus {
 	return &GrpcStatus{service: service}
 }
 
-// Status returns the backlog only after PostgreSQL and queue inspection succeed.
-// Failed or unassessable dependencies return Unavailable without private error details.
+// Status probes PostgreSQL and returns its health with the queue's backlog, or Unavailable when a
+// probe fails.
 func (handler *GrpcStatus) Status(ctx context.Context, _ *genaiv0.StatusRequest) (*genaiv0.StatusResponse, error) {
 	ctx, span := otel.Tracer().Start(ctx, "grpc.Status")
 	defer span.End()

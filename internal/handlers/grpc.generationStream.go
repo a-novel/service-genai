@@ -33,6 +33,8 @@ func NewGrpcGenerationStream(service GrpcGenerationStreamService) *GrpcGeneratio
 	return &GrpcGenerationStream{service: service}
 }
 
+// GenerationStream sends the provider's events of a streamed generation after the cursor, up to the
+// terminal one.
 func (handler *GrpcGenerationStream) GenerationStream(
 	request *genaiv0.GenerationStreamRequest, stream grpc.ServerStreamingServer[genaiv0.GenerationStreamResponse],
 ) error {
