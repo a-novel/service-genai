@@ -40,5 +40,5 @@ func (handler *RestGenerationSweep) ServeHTTP(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	httpf.SendJSONStatus(ctx, w, span, http.StatusOK, map[string]int{"checked": result.Checked})
+	httpf.SendJSONStatus(w, span, http.StatusOK, map[string]int{"checked": result.Checked})
 }

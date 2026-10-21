@@ -55,7 +55,7 @@ func (handler *RestHealth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	statusCode := lo.Ternary(err == nil, http.StatusOK, http.StatusServiceUnavailable)
 
-	httpf.SendJSONStatus(ctx, w, span, statusCode, map[string]any{
+	httpf.SendJSONStatus(w, span, statusCode, map[string]any{
 		"client:postgres": NewRestHealthStatus(err),
 	})
 }

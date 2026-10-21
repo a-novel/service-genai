@@ -23,7 +23,7 @@ const (
 // LoggerProdGrpc sends gRPC request logs to Google Cloud Logging, linked to their trace.
 var LoggerProdGrpc = loggingpresets.GRPCGcloud{
 	Component: env.AppName,
-	ProjectId: env.GcloudProjectId,
+	ProjectID: env.GcloudProjectId,
 }
 
 // LoggerDevGrpc prints gRPC request logs to the console in a human-readable format.
@@ -33,7 +33,7 @@ var LoggerDevGrpc = loggingpresets.GRPCLocal{}
 var LoggerDev = &loggingpresets.LogLocal{Out: os.Stdout}
 
 // LoggerProd sends application logs to Google Cloud Logging.
-var LoggerProd = &loggingpresets.LogGcloud{ProjectId: env.GcloudProjectId}
+var LoggerProd = &loggingpresets.LogGcloud{ProjectID: env.GcloudProjectId}
 
 // AppPresetDefault is the configuration the service starts with. It reads every
 // value from the environment, and picks the Google Cloud logging and tracing
