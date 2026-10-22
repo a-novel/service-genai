@@ -24,13 +24,13 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Check schema snapshots
-        uses: a-novel-kit/workflows/generic-actions/check-append-only@v1.72.0
+        uses: a-novel-kit/workflows/generic-actions/check-append-only@v1.73.0
         with:
           path: internal/models/migrations/testdata/schema
           base: ${{ github.event.pull_request.base.sha }}
           github_token: ${{ github.token }}
       - name: Check migration SQL
-        uses: a-novel-kit/workflows/generic-actions/check-append-only@v1.72.0
+        uses: a-novel-kit/workflows/generic-actions/check-append-only@v1.73.0
         with:
           path: ":(glob)internal/models/migrations/*.sql"
           base: ${{ github.event.pull_request.base.sha }}
@@ -54,14 +54,14 @@ jobs:
           services: postgres
           database_image: ghcr.io/a-novel/service-genai/database@${{ needs.build-database.outputs.digest }}
           registry_login: "true"
-      - uses: a-novel-kit/workflows/go-actions/generate-go@v1.72.0
+      - uses: a-novel-kit/workflows/go-actions/generate-go@v1.73.0
 
   lint-go:
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
-      - uses: a-novel-kit/workflows/go-actions/lint-go@v1.72.0
+      - uses: a-novel-kit/workflows/go-actions/lint-go@v1.73.0
 
   lint-proto:
     runs-on: ubuntu-latest
@@ -81,10 +81,25 @@ jobs:
       contents: read
       packages: read
     steps:
-      - uses: a-novel-kit/workflows/node-actions/lint-node@v1.72.0
+      - uses: a-novel-kit/workflows/node-actions/lint-node@v1.73.0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           lint_action: "lint:ci"
+
+  lint-shell:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: a-novel-kit/workflows/generic-actions/lint-shell@v1.73.0
+        with:
+          # renovate: datasource=custom.shellcheck depName=koalaman/shellcheck
+          version: "0.11.0"
+          sha256: "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198"
+          run_steps: .github/actions/*/action.yml .github/workflows/*.yaml
 
   lint-dockerfile:
     runs-on: ubuntu-latest
@@ -94,10 +109,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: a-novel-kit/workflows/generic-actions/lint-dockerfile@v1.72.0
+      - uses: a-novel-kit/workflows/generic-actions/lint-dockerfile@v1.73.0
         with:
-          # renovate: datasource=github-releases depName=hadolint/hadolint
+          # renovate: datasource=custom.hadolint depName=hadolint/hadolint
           version: "2.15.1"
+          sha256: "c7187db94eeeeca956519a6af171adc31453941a1e777961f6e680f697c8c507"
 
   # The service ruleset checks the structural conventions golangci-lint cannot express.
   lint-semgrep:
@@ -108,7 +124,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: a-novel-kit/workflows/security-actions/lint-semgrep@v1.72.0
+      - uses: a-novel-kit/workflows/security-actions/lint-semgrep@v1.73.0
         with:
           ruleset: service
           # renovate: datasource=docker depName=semgrep/semgrep
@@ -122,7 +138,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: a-novel-kit/workflows/security-actions/scan-secrets@v1.72.0
+      - uses: a-novel-kit/workflows/security-actions/scan-secrets@v1.73.0
         with:
           # renovate: datasource=github-releases depName=gitleaks/gitleaks
           version: "8.30.1"
@@ -135,7 +151,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: a-novel-kit/workflows/security-actions/lint-workflows@v1.72.0
+      - uses: a-novel-kit/workflows/security-actions/lint-workflows@v1.73.0
         with:
           # renovate: datasource=docker depName=ghcr.io/zizmorcore/zizmor
           version: "1.31.1"
@@ -156,7 +172,7 @@ jobs:
           persist-credentials: false
       - *start-local-database
       - uses: $/.github/actions/run-migrations
-      - uses: a-novel-kit/workflows/go-actions/test-go@v1.72.0
+      - uses: a-novel-kit/workflows/go-actions/test-go@v1.73.0
         id: test
         with:
           include: /internal
@@ -187,7 +203,7 @@ jobs:
           database_image: ghcr.io/a-novel/service-genai/database@${{ needs.build-database.outputs.digest }}
           standalone_grpc_image: ghcr.io/a-novel/service-genai/standalone-grpc@${{ needs.build-standalone-grpc.outputs.digest }}
           registry_login: "true"
-      - uses: a-novel-kit/workflows/go-actions/test-go@v1.72.0
+      - uses: a-novel-kit/workflows/go-actions/test-go@v1.73.0
         id: test
         with:
           include: /pkg
@@ -208,7 +224,7 @@ jobs:
     outputs:
       digest: ${{ steps.build.outputs.digest }}
     steps:
-      - uses: a-novel-kit/workflows/build-actions/docker@v1.72.0
+      - uses: a-novel-kit/workflows/build-actions/docker@v1.73.0
         id: build
         with:
           file: builds/database.Dockerfile
@@ -266,7 +282,7 @@ jobs:
         with:
           persist-credentials: false
       - *start-local-database
-      - uses: a-novel-kit/workflows/build-actions/docker-job@v1.72.0
+      - uses: a-novel-kit/workflows/build-actions/docker-job@v1.73.0
         with:
           file: builds/migrations.Dockerfile
           image_name: ${{ github.repository }}/jobs/migrations
@@ -289,7 +305,7 @@ jobs:
           persist-credentials: false
       - *start-local-database
       - uses: $/.github/actions/run-migrations
-      - uses: a-novel-kit/workflows/build-actions/docker@v1.72.0
+      - uses: a-novel-kit/workflows/build-actions/docker@v1.73.0
         with:
           file: builds/grpc.Dockerfile
           image_name: ${{ github.repository }}/grpc
@@ -313,7 +329,7 @@ jobs:
           persist-credentials: false
       - *start-local-database
       - uses: $/.github/actions/run-migrations
-      - uses: a-novel-kit/workflows/build-actions/docker@v1.72.0
+      - uses: a-novel-kit/workflows/build-actions/docker@v1.73.0
         with:
           file: builds/rest.Dockerfile
           image_name: ${{ github.repository }}/rest
@@ -337,7 +353,7 @@ jobs:
           persist-credentials: false
       - *start-local-database
       - uses: $/.github/actions/run-migrations
-      - uses: a-novel-kit/workflows/build-actions/docker@v1.72.0
+      - uses: a-novel-kit/workflows/build-actions/docker@v1.73.0
         with:
           file: builds/sweep.Dockerfile
           image_name: ${{ github.repository }}/sweep
@@ -357,7 +373,7 @@ jobs:
     # test-pkg boots this image and runs the client suite against it, so the job only builds and
     # pushes it, without a smoke run.
     steps:
-      - uses: a-novel-kit/workflows/build-actions/docker@v1.72.0
+      - uses: a-novel-kit/workflows/build-actions/docker@v1.73.0
         id: build
         with:
           file: builds/standalone.grpc.Dockerfile
@@ -371,7 +387,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: a-novel-kit/workflows/generic-actions/codecov@v1.72.0
+      - uses: a-novel-kit/workflows/generic-actions/codecov@v1.73.0
         with:
           codecov_token: ${{ secrets.CODECOV_TOKEN }}
           coverage_files: coverage.txt,coverage_pkg.txt
