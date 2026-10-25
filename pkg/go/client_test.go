@@ -75,7 +75,7 @@ func TestClient(t *testing.T) {
 		response, err := client.Status(t.Context(), &servicegenai.StatusRequest{})
 		require.NoError(t, err)
 		require.NotNil(t, response.GetPostgres())
-		require.NotNil(t, response.GetQueue())
+		require.NotNil(t, response.GetQueue().GetOldestPendingAge())
 	})
 
 	t.Run("Success/PropagatesTraceContext", func(t *testing.T) {
@@ -236,6 +236,7 @@ func TestClient(t *testing.T) {
 		})
 		require.NoError(t, err)
 		require.Equal(t, servicegenai.GenerationStatusCancelled, cancelled.GetGeneration().GetStatus())
+		require.NotNil(t, cancelled.GetGeneration().GetSettledAt())
 
 		// A retry after a lost answer succeeds, with the generation as it stands.
 		again, err := client.GenerationCancel(t.Context(), &servicegenai.GenerationCancelRequest{
@@ -243,6 +244,7 @@ func TestClient(t *testing.T) {
 		})
 		require.NoError(t, err)
 		require.Equal(t, servicegenai.GenerationStatusCancelled, again.GetGeneration().GetStatus())
+		require.Equal(t, cancelled.GetGeneration().GetSettledAt().AsTime(), again.GetGeneration().GetSettledAt().AsTime())
 
 		// Another owner cannot stop it, and is told the same thing as if it did not exist.
 		_, err = client.GenerationCancel(t.Context(), &servicegenai.GenerationCancelRequest{

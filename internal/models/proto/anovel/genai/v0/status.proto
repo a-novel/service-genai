@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package anovel.genai.v0;
 
+import "google/protobuf/duration.proto";
+
 // StatusService reports dependency readiness and the queue's own backlog.
 // Process-only liveness is provided separately by UnaryEcho.
 service StatusService {
@@ -42,9 +44,13 @@ message QueueDepth {
   // pending is the number of generations waiting for the provider to accept their call: due to
   // start, retrying a refused start, or with a start in flight.
   int64 pending = 1;
-  // oldest_pending_age_seconds is how long the one waiting longest has waited, from its submission or
+  // oldest_pending_age is how long the one waiting longest has waited, from its submission or
   // requeue, or from its attempt's first start when it retries one. Zero when nothing is pending.
-  double oldest_pending_age_seconds = 2;
+  google.protobuf.Duration oldest_pending_age = 3;
+
+  // Reserved so the retired float form of the age in seconds is never reused.
+  reserved 2;
+  reserved "oldest_pending_age_seconds";
 }
 
 // StatusRequest takes no parameters.

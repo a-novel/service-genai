@@ -9,6 +9,7 @@ package v0
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -107,14 +108,14 @@ type Generation struct {
 	// Error names why the generation failed or was cancelled, in this service's own words. Empty
 	// otherwise.
 	Error string `protobuf:"bytes,8,opt,name=error,proto3" json:"error,omitempty"`
-	// Creation timestamp, formatted as RFC 3339.
-	CreatedAt string `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	// Timestamp of the most recent update, formatted as RFC 3339.
-	UpdatedAt string `protobuf:"bytes,10,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	// Timestamp the generation reached a terminal status, formatted as RFC 3339. Empty until then.
-	SettledAt string `protobuf:"bytes,11,opt,name=settled_at,json=settledAt,proto3" json:"settled_at,omitempty"`
-	// Timestamp the settled generation and its attempts may be purged, formatted as RFC 3339.
-	ExpiresAt string `protobuf:"bytes,12,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	// CreatedAt is when the generation was submitted.
+	CreatedAt *timestamppb.Timestamp `protobuf:"bytes,18,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	// UpdatedAt is when the generation last changed.
+	UpdatedAt *timestamppb.Timestamp `protobuf:"bytes,19,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	// SettledAt is when the generation reached a terminal status. Unset until then.
+	SettledAt *timestamppb.Timestamp `protobuf:"bytes,20,opt,name=settled_at,json=settledAt,proto3" json:"settled_at,omitempty"`
+	// ExpiresAt is when the settled generation and its attempts may be purged. Set with settled_at.
+	ExpiresAt *timestamppb.Timestamp `protobuf:"bytes,21,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
 	// Provider names the service the generation runs on, as submitted.
 	Provider string `protobuf:"bytes,16,opt,name=provider,proto3" json:"provider,omitempty"`
 	// Attempts lists every provider call that reached an answer, in order: retried and cancelled ones
@@ -189,32 +190,32 @@ func (x *Generation) GetError() string {
 	return ""
 }
 
-func (x *Generation) GetCreatedAt() string {
+func (x *Generation) GetCreatedAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.CreatedAt
 	}
-	return ""
+	return nil
 }
 
-func (x *Generation) GetUpdatedAt() string {
+func (x *Generation) GetUpdatedAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.UpdatedAt
 	}
-	return ""
+	return nil
 }
 
-func (x *Generation) GetSettledAt() string {
+func (x *Generation) GetSettledAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.SettledAt
 	}
-	return ""
+	return nil
 }
 
-func (x *Generation) GetExpiresAt() string {
+func (x *Generation) GetExpiresAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.ExpiresAt
 	}
-	return ""
+	return nil
 }
 
 func (x *Generation) GetProvider() string {
@@ -291,25 +292,24 @@ var File_anovel_genai_v0_generation_proto protoreflect.FileDescriptor
 
 const file_anovel_genai_v0_generation_proto_rawDesc = "" +
 	"\n" +
-	" anovel/genai/v0/generation.proto\x12\x0fanovel.genai.v0\"\xdf\x03\n" +
+	" anovel/genai/v0/generation.proto\x12\x0fanovel.genai.v0\x1a\x1fgoogle/protobuf/timestamp.proto\"\xd5\x04\n" +
 	"\n" +
 	"Generation\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x19\n" +
 	"\bowner_id\x18\x02 \x01(\tR\aownerId\x12\x18\n" +
 	"\apurpose\x18\x03 \x01(\tR\apurpose\x129\n" +
 	"\x06status\x18\x04 \x01(\x0e2!.anovel.genai.v0.GenerationStatusR\x06status\x12\x14\n" +
-	"\x05error\x18\b \x01(\tR\x05error\x12\x1d\n" +
+	"\x05error\x18\b \x01(\tR\x05error\x129\n" +
 	"\n" +
-	"created_at\x18\t \x01(\tR\tcreatedAt\x12\x1d\n" +
+	"created_at\x18\x12 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x18\n" +
-	" \x01(\tR\tupdatedAt\x12\x1d\n" +
+	"updated_at\x18\x13 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x129\n" +
 	"\n" +
-	"settled_at\x18\v \x01(\tR\tsettledAt\x12\x1d\n" +
+	"settled_at\x18\x14 \x01(\v2\x1a.google.protobuf.TimestampR\tsettledAt\x129\n" +
 	"\n" +
-	"expires_at\x18\f \x01(\tR\texpiresAt\x12\x1a\n" +
+	"expires_at\x18\x15 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12\x1a\n" +
 	"\bprovider\x18\x10 \x01(\tR\bprovider\x12>\n" +
-	"\battempts\x18\x11 \x03(\v2\".anovel.genai.v0.GenerationAttemptR\battemptsJ\x04\b\a\x10\bJ\x04\b\x0e\x10\x0fJ\x04\b\x0f\x10\x10J\x04\b\x05\x10\x06J\x04\b\x06\x10\aJ\x04\b\r\x10\x0eR\x06outputR\afailureR\x05usageR\aattemptR\fmax_attemptsR\x10provider_call_id\"G\n" +
+	"\battempts\x18\x11 \x03(\v2\".anovel.genai.v0.GenerationAttemptR\battemptsJ\x04\b\a\x10\bJ\x04\b\x0e\x10\x0fJ\x04\b\x0f\x10\x10J\x04\b\x05\x10\x06J\x04\b\x06\x10\aJ\x04\b\r\x10\x0eJ\x04\b\t\x10\rR\x06outputR\afailureR\x05usageR\aattemptR\fmax_attemptsR\x10provider_call_id\"G\n" +
 	"\x11GenerationAttempt\x12\x16\n" +
 	"\x06number\x18\x01 \x01(\x05R\x06number\x12\x1a\n" +
 	"\bresponse\x18\x02 \x01(\fR\bresponse*\xf6\x01\n" +
@@ -337,18 +337,23 @@ func file_anovel_genai_v0_generation_proto_rawDescGZIP() []byte {
 var file_anovel_genai_v0_generation_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_anovel_genai_v0_generation_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
 var file_anovel_genai_v0_generation_proto_goTypes = []any{
-	(GenerationStatus)(0),     // 0: anovel.genai.v0.GenerationStatus
-	(*Generation)(nil),        // 1: anovel.genai.v0.Generation
-	(*GenerationAttempt)(nil), // 2: anovel.genai.v0.GenerationAttempt
+	(GenerationStatus)(0),         // 0: anovel.genai.v0.GenerationStatus
+	(*Generation)(nil),            // 1: anovel.genai.v0.Generation
+	(*GenerationAttempt)(nil),     // 2: anovel.genai.v0.GenerationAttempt
+	(*timestamppb.Timestamp)(nil), // 3: google.protobuf.Timestamp
 }
 var file_anovel_genai_v0_generation_proto_depIdxs = []int32{
 	0, // 0: anovel.genai.v0.Generation.status:type_name -> anovel.genai.v0.GenerationStatus
-	2, // 1: anovel.genai.v0.Generation.attempts:type_name -> anovel.genai.v0.GenerationAttempt
-	2, // [2:2] is the sub-list for method output_type
-	2, // [2:2] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	3, // 1: anovel.genai.v0.Generation.created_at:type_name -> google.protobuf.Timestamp
+	3, // 2: anovel.genai.v0.Generation.updated_at:type_name -> google.protobuf.Timestamp
+	3, // 3: anovel.genai.v0.Generation.settled_at:type_name -> google.protobuf.Timestamp
+	3, // 4: anovel.genai.v0.Generation.expires_at:type_name -> google.protobuf.Timestamp
+	2, // 5: anovel.genai.v0.Generation.attempts:type_name -> anovel.genai.v0.GenerationAttempt
+	6, // [6:6] is the sub-list for method output_type
+	6, // [6:6] is the sub-list for method input_type
+	6, // [6:6] is the sub-list for extension type_name
+	6, // [6:6] is the sub-list for extension extendee
+	0, // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_anovel_genai_v0_generation_proto_init() }

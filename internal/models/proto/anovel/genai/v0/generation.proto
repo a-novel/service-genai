@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package anovel.genai.v0;
 
+import "google/protobuf/timestamp.proto";
+
 // A Generation is one provider call as this service records it.
 //
 // The caller builds the provider's own request; this service executes it durably, never pays for it
@@ -18,14 +20,14 @@ message Generation {
   // Error names why the generation failed or was cancelled, in this service's own words. Empty
   // otherwise.
   string error = 8;
-  // Creation timestamp, formatted as RFC 3339.
-  string created_at = 9;
-  // Timestamp of the most recent update, formatted as RFC 3339.
-  string updated_at = 10;
-  // Timestamp the generation reached a terminal status, formatted as RFC 3339. Empty until then.
-  string settled_at = 11;
-  // Timestamp the settled generation and its attempts may be purged, formatted as RFC 3339.
-  string expires_at = 12;
+  // CreatedAt is when the generation was submitted.
+  google.protobuf.Timestamp created_at = 18;
+  // UpdatedAt is when the generation last changed.
+  google.protobuf.Timestamp updated_at = 19;
+  // SettledAt is when the generation reached a terminal status. Unset until then.
+  google.protobuf.Timestamp settled_at = 20;
+  // ExpiresAt is when the settled generation and its attempts may be purged. Set with settled_at.
+  google.protobuf.Timestamp expires_at = 21;
   // Provider names the service the generation runs on, as submitted.
   string provider = 16;
   // Attempts lists every provider call that reached an answer, in order: retried and cancelled ones
@@ -42,6 +44,8 @@ message Generation {
   // recovery mechanism.
   reserved 13;
   reserved "provider_call_id";
+  // Reserved so the numbers of the timestamps' retired RFC 3339 string form are never reused.
+  reserved 9 to 12;
 }
 
 // GenerationAttempt is one provider call that reached an answer.

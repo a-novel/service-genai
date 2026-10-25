@@ -9,6 +9,7 @@ package v0
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	durationpb "google.golang.org/protobuf/types/known/durationpb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -132,11 +133,11 @@ type QueueDepth struct {
 	// pending is the number of generations waiting for the provider to accept their call: due to
 	// start, retrying a refused start, or with a start in flight.
 	Pending int64 `protobuf:"varint,1,opt,name=pending,proto3" json:"pending,omitempty"`
-	// oldest_pending_age_seconds is how long the one waiting longest has waited, from its submission or
+	// oldest_pending_age is how long the one waiting longest has waited, from its submission or
 	// requeue, or from its attempt's first start when it retries one. Zero when nothing is pending.
-	OldestPendingAgeSeconds float64 `protobuf:"fixed64,2,opt,name=oldest_pending_age_seconds,json=oldestPendingAgeSeconds,proto3" json:"oldest_pending_age_seconds,omitempty"`
-	unknownFields           protoimpl.UnknownFields
-	sizeCache               protoimpl.SizeCache
+	OldestPendingAge *durationpb.Duration `protobuf:"bytes,3,opt,name=oldest_pending_age,json=oldestPendingAge,proto3" json:"oldest_pending_age,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *QueueDepth) Reset() {
@@ -176,11 +177,11 @@ func (x *QueueDepth) GetPending() int64 {
 	return 0
 }
 
-func (x *QueueDepth) GetOldestPendingAgeSeconds() float64 {
+func (x *QueueDepth) GetOldestPendingAge() *durationpb.Duration {
 	if x != nil {
-		return x.OldestPendingAgeSeconds
+		return x.OldestPendingAge
 	}
-	return 0
+	return nil
 }
 
 // StatusRequest takes no parameters.
@@ -279,13 +280,13 @@ var File_anovel_genai_v0_status_proto protoreflect.FileDescriptor
 
 const file_anovel_genai_v0_status_proto_rawDesc = "" +
 	"\n" +
-	"\x1canovel/genai/v0/status.proto\x12\x0fanovel.genai.v0\"X\n" +
+	"\x1canovel/genai/v0/status.proto\x12\x0fanovel.genai.v0\x1a\x1egoogle/protobuf/duration.proto\"X\n" +
 	"\x10DependencyHealth\x129\n" +
-	"\x06status\x18\x01 \x01(\x0e2!.anovel.genai.v0.DependencyStatusR\x06statusJ\x04\b\x02\x10\x03R\x03err\"c\n" +
+	"\x06status\x18\x01 \x01(\x0e2!.anovel.genai.v0.DependencyStatusR\x06statusJ\x04\b\x02\x10\x03R\x03err\"\x91\x01\n" +
 	"\n" +
 	"QueueDepth\x12\x18\n" +
-	"\apending\x18\x01 \x01(\x03R\apending\x12;\n" +
-	"\x1aoldest_pending_age_seconds\x18\x02 \x01(\x01R\x17oldestPendingAgeSeconds\"\x0f\n" +
+	"\apending\x18\x01 \x01(\x03R\apending\x12G\n" +
+	"\x12oldest_pending_age\x18\x03 \x01(\v2\x19.google.protobuf.DurationR\x10oldestPendingAgeJ\x04\b\x02\x10\x03R\x1aoldest_pending_age_seconds\"\x0f\n" +
 	"\rStatusRequest\"\x82\x01\n" +
 	"\x0eStatusResponse\x12=\n" +
 	"\bpostgres\x18\x01 \x01(\v2!.anovel.genai.v0.DependencyHealthR\bpostgres\x121\n" +
@@ -313,23 +314,25 @@ func file_anovel_genai_v0_status_proto_rawDescGZIP() []byte {
 var file_anovel_genai_v0_status_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_anovel_genai_v0_status_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_anovel_genai_v0_status_proto_goTypes = []any{
-	(DependencyStatus)(0),    // 0: anovel.genai.v0.DependencyStatus
-	(*DependencyHealth)(nil), // 1: anovel.genai.v0.DependencyHealth
-	(*QueueDepth)(nil),       // 2: anovel.genai.v0.QueueDepth
-	(*StatusRequest)(nil),    // 3: anovel.genai.v0.StatusRequest
-	(*StatusResponse)(nil),   // 4: anovel.genai.v0.StatusResponse
+	(DependencyStatus)(0),       // 0: anovel.genai.v0.DependencyStatus
+	(*DependencyHealth)(nil),    // 1: anovel.genai.v0.DependencyHealth
+	(*QueueDepth)(nil),          // 2: anovel.genai.v0.QueueDepth
+	(*StatusRequest)(nil),       // 3: anovel.genai.v0.StatusRequest
+	(*StatusResponse)(nil),      // 4: anovel.genai.v0.StatusResponse
+	(*durationpb.Duration)(nil), // 5: google.protobuf.Duration
 }
 var file_anovel_genai_v0_status_proto_depIdxs = []int32{
 	0, // 0: anovel.genai.v0.DependencyHealth.status:type_name -> anovel.genai.v0.DependencyStatus
-	1, // 1: anovel.genai.v0.StatusResponse.postgres:type_name -> anovel.genai.v0.DependencyHealth
-	2, // 2: anovel.genai.v0.StatusResponse.queue:type_name -> anovel.genai.v0.QueueDepth
-	3, // 3: anovel.genai.v0.StatusService.Status:input_type -> anovel.genai.v0.StatusRequest
-	4, // 4: anovel.genai.v0.StatusService.Status:output_type -> anovel.genai.v0.StatusResponse
-	4, // [4:5] is the sub-list for method output_type
-	3, // [3:4] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	5, // 1: anovel.genai.v0.QueueDepth.oldest_pending_age:type_name -> google.protobuf.Duration
+	1, // 2: anovel.genai.v0.StatusResponse.postgres:type_name -> anovel.genai.v0.DependencyHealth
+	2, // 3: anovel.genai.v0.StatusResponse.queue:type_name -> anovel.genai.v0.QueueDepth
+	3, // 4: anovel.genai.v0.StatusService.Status:input_type -> anovel.genai.v0.StatusRequest
+	4, // 5: anovel.genai.v0.StatusService.Status:output_type -> anovel.genai.v0.StatusResponse
+	5, // [5:6] is the sub-list for method output_type
+	4, // [4:5] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_anovel_genai_v0_status_proto_init() }

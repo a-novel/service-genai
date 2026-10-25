@@ -1,9 +1,8 @@
 package handlers
 
 import (
-	"time"
-
 	"github.com/samber/lo"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/a-novel/service-genai/internal/core"
 	genaiv0 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v0"
@@ -29,16 +28,16 @@ func NewGrpcGeneration(generation *core.Generation) *genaiv0.Generation {
 		Error:     lo.FromPtr(generation.Error),
 		Status:    generationStatuses[generation.Status],
 		Attempts:  make([]*genaiv0.GenerationAttempt, len(generation.Attempts)),
-		CreatedAt: generation.CreatedAt.Format(time.RFC3339Nano),
-		UpdatedAt: generation.UpdatedAt.Format(time.RFC3339Nano),
+		CreatedAt: timestamppb.New(generation.CreatedAt),
+		UpdatedAt: timestamppb.New(generation.UpdatedAt),
 	}
 
 	if generation.SettledAt != nil {
-		message.SettledAt = generation.SettledAt.Format(time.RFC3339Nano)
+		message.SettledAt = timestamppb.New(*generation.SettledAt)
 	}
 
 	if generation.ExpiresAt != nil {
-		message.ExpiresAt = generation.ExpiresAt.Format(time.RFC3339Nano)
+		message.ExpiresAt = timestamppb.New(*generation.ExpiresAt)
 	}
 
 	for index, attempt := range generation.Attempts {
