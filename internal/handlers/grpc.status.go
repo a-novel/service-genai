@@ -5,6 +5,7 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	"github.com/a-novel-kit/golib/otel"
 	"github.com/a-novel-kit/golib/postgres"
@@ -61,8 +62,8 @@ func (handler *GrpcStatus) Status(ctx context.Context, _ *genaiv0.StatusRequest)
 	return &genaiv0.StatusResponse{
 		Postgres: NewGrpcHealthStatus(),
 		Queue: &genaiv0.QueueDepth{
-			Pending:                 depth.Pending,
-			OldestPendingAgeSeconds: depth.OldestPendingAge.Seconds(),
+			Pending:          depth.Pending,
+			OldestPendingAge: durationpb.New(depth.OldestPendingAge),
 		},
 	}, nil
 }

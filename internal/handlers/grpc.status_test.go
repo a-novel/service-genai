@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	"github.com/a-novel-kit/golib/postgres"
 	postgrespresets "github.com/a-novel-kit/golib/postgres/presets"
@@ -41,9 +42,13 @@ func TestGrpcStatus(t *testing.T) {
 		expectStatus  codes.Code
 	}{
 		{
-			name:         "Success",
-			queueDepth:   &core.GenerationQueueDepthResult{Pending: 2, OldestPendingAge: 90 * time.Second},
-			expectQueue:  &genaiv0.QueueDepth{Pending: 2, OldestPendingAgeSeconds: 90},
+			name: "Success",
+			queueDepth: &core.GenerationQueueDepthResult{
+				Pending: 2, OldestPendingAge: 90*time.Second + 250*time.Millisecond,
+			},
+			expectQueue: &genaiv0.QueueDepth{
+				Pending: 2, OldestPendingAge: &durationpb.Duration{Seconds: 90, Nanos: 250000000},
+			},
 			expectStatus: codes.OK,
 		},
 		{name: "Error/MissingPostgres", skipPostgres: true, expectStatus: codes.Unavailable},

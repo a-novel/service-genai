@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/a-novel/service-genai/internal/core"
 	"github.com/a-novel/service-genai/internal/handlers"
@@ -18,6 +19,7 @@ func TestNewGrpcGeneration(t *testing.T) {
 
 	// A stored timestamp carries microseconds, which the wire form keeps.
 	createdAt := time.Date(2026, 1, 1, 0, 0, 0, 123456000, time.UTC)
+	createdAtUnix := int64(1767225600)
 	settledAt := createdAt.Add(time.Minute)
 	expiresAt := settledAt.Add(time.Hour)
 	message := "the provider failed the call"
@@ -44,7 +46,8 @@ func TestNewGrpcGeneration(t *testing.T) {
 				Id: testGenerationID, OwnerId: testOwnerID, Purpose: "studio.generation", Provider: "openai",
 				Status:    genaiv0.GenerationStatus_GENERATION_STATUS_PENDING,
 				Attempts:  []*genaiv0.GenerationAttempt{},
-				CreatedAt: "2026-01-01T00:00:00.123456Z", UpdatedAt: "2026-01-01T00:00:00.123456Z",
+				CreatedAt: &timestamppb.Timestamp{Seconds: createdAtUnix, Nanos: 123456000},
+				UpdatedAt: &timestamppb.Timestamp{Seconds: createdAtUnix, Nanos: 123456000},
 			},
 		},
 		{
@@ -69,8 +72,10 @@ func TestNewGrpcGeneration(t *testing.T) {
 					{Number: 1, Response: []byte(failedResponse)},
 					{Number: 2, Response: []byte(failedResponse)},
 				},
-				CreatedAt: "2026-01-01T00:00:00.123456Z", UpdatedAt: "2026-01-01T00:01:00.123456Z",
-				SettledAt: "2026-01-01T00:01:00.123456Z", ExpiresAt: "2026-01-01T01:01:00.123456Z",
+				CreatedAt: &timestamppb.Timestamp{Seconds: createdAtUnix, Nanos: 123456000},
+				UpdatedAt: &timestamppb.Timestamp{Seconds: createdAtUnix + 60, Nanos: 123456000},
+				SettledAt: &timestamppb.Timestamp{Seconds: createdAtUnix + 60, Nanos: 123456000},
+				ExpiresAt: &timestamppb.Timestamp{Seconds: createdAtUnix + 3660, Nanos: 123456000},
 			},
 		},
 	}

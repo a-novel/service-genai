@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/a-novel/service-genai/internal/core"
 	genaiv0 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v0"
@@ -39,7 +40,7 @@ func testGrpcGeneration() *genaiv0.Generation {
 		Provider:  "openai",
 		Status:    genaiv0.GenerationStatus_GENERATION_STATUS_PENDING,
 		Attempts:  []*genaiv0.GenerationAttempt{},
-		CreatedAt: "2026-01-01T00:00:00Z",
-		UpdatedAt: "2026-01-01T00:00:00Z",
+		CreatedAt: timestamppb.New(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)),
+		UpdatedAt: timestamppb.New(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)),
 	}
 }
