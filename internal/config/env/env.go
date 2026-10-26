@@ -25,9 +25,9 @@ const (
 	// AppNameDefault names the application in logs and traces when APP_NAME is unset.
 	AppNameDefault = "service-genai"
 
-	// TimeoutShutdownDefault ends a server's drain inside the ten seconds Cloud Run allows between
-	// SIGTERM and SIGKILL, leaving the process time to flush its telemetry.
-	TimeoutShutdownDefault = 8 * time.Second
+	// TimeoutShutdownDefault ends a server's drain 6 seconds after SIGTERM, so its Sentry and
+	// OpenTelemetry flushes, up to 2 seconds each, finish before Cloud Run kills it at 10 seconds.
+	TimeoutShutdownDefault = 6 * time.Second
 
 	// TimeoutRequestDefault bounds a REST request, which runs its checks before it answers. A sweep call
 	// checks for a minute, then waits out its last checks, which take a minute at most.

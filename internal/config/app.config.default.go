@@ -18,7 +18,8 @@ import (
 // shutdown.
 const OtelFlushTimeout = 2 * time.Second
 
-// SentryFlushTimeout bounds how long the Sentry reporter waits to send pending events on shutdown.
+// SentryFlushTimeout bounds how long a server waits on exit to send its pending Sentry events, inside
+// the platform's shutdown grace period.
 const SentryFlushTimeout = 2 * time.Second
 
 // OtelPresetDefault is the OpenTelemetry exporter of the servers. It exports nothing unless OTEL is
