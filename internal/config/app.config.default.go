@@ -22,6 +22,11 @@ const OtelFlushTimeout = 2 * time.Second
 // the platform's shutdown grace period.
 const SentryFlushTimeout = 2 * time.Second
 
+// SweepTelemetryTimeout bounds how long a sweep's answer waits for its Sentry events and spans to
+// leave. No consumer waits on the sweep, and the wait fits in the 15 seconds the write timeout
+// leaves after the request's deadline.
+const SweepTelemetryTimeout = 10 * time.Second
+
 // OtelPresetDefault is the OpenTelemetry exporter of the servers. It exports nothing unless OTEL is
 // set, then exports to Google Cloud when GCLOUD_PROJECT_ID is set, and to standard output otherwise.
 var OtelPresetDefault = newOtelPreset()
