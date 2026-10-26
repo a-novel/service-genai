@@ -244,6 +244,14 @@ Logs and tracing (all server images). OpenTelemetry exports to stdout or to Goog
 | `GCLOUD_PROJECT_ID` | Google Cloud project ID. When set, switches logs and the OTel exporter to GCP. |                 |
 | `APP_NAME`          | Application name attached to traces and logs.                                  | `service-genai` |
 
+Error reporting (server images). With `SENTRY_DSN` set, the servers send each server fault to Sentry: a `5xx`, a gRPC `INTERNAL` or `UNAVAILABLE`, and a panic. Without it, they report nothing.
+
+| Name                 | Description                                                                                                                    | Default |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------- |
+| `SENTRY_DSN`         | Client key of the service's Sentry project. **Inject it as a secret.**                                                         |         |
+| `SENTRY_RELEASE`     | Release the servers run, as `service-genai@<version>`, the name release CI gives it in Sentry. **Required with `SENTRY_DSN`.** |         |
+| `SENTRY_ENVIRONMENT` | Deployment name, such as `production`. **Required with `SENTRY_DSN`.**                                                         |         |
+
 </details>
 
 ## Using the client package

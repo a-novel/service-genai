@@ -81,6 +81,8 @@ func TestGrpcGenerationStream(t *testing.T) {
 
 		expect       []*genaiv0.GenerationStreamResponse
 		expectStatus codes.Code
+		// expectCause is the error the fault wraps, which Sentry groups it by.
+		expectCause error
 	}{
 		{
 			name: "Success",
@@ -103,6 +105,7 @@ func TestGrpcGenerationStream(t *testing.T) {
 
 			expect:       []*genaiv0.GenerationStreamResponse{{SequenceNumber: 3, Event: delta}},
 			expectStatus: codes.Unavailable,
+			expectCause:  core.ErrProviderRetryable,
 		},
 		{
 			// Leaving cuts the provider's stream too, which is no server fault.
@@ -181,6 +184,7 @@ func TestGrpcGenerationStream(t *testing.T) {
 			serviceMock: &serviceMock{err: errFoo},
 
 			expectStatus: codes.Internal,
+			expectCause:  errFoo,
 		},
 	}
 
@@ -210,6 +214,11 @@ func TestGrpcGenerationStream(t *testing.T) {
 				testCase.expectStatus, resSt.Code(),
 				"expected status code %s, got %s (%v)", testCase.expectStatus, resSt.Code(), err,
 			)
+
+			if testCase.expectCause != nil {
+				require.ErrorIs(t, err, testCase.expectCause)
+			}
+
 			require.Equal(t, testCase.expect, stream.sent)
 
 			service.AssertExpectations(t)

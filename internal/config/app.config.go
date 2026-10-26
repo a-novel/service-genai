@@ -10,6 +10,7 @@ import (
 	"github.com/a-novel-kit/golib/logging"
 	"github.com/a-novel-kit/golib/otel"
 	"github.com/a-novel-kit/golib/postgres"
+	"github.com/a-novel-kit/golib/sentryf"
 )
 
 // ErrInvalidConfig reports a configuration the service cannot run with.
@@ -90,6 +91,8 @@ type App struct {
 	Caps Caps `json:"caps" yaml:"caps"`
 	// Otel configures the OpenTelemetry exporter for traces and metrics.
 	Otel otel.Config `json:"otel" yaml:"otel"`
+	// Sentry configures the reporter that sends the servers' faults to Sentry.
+	Sentry sentryf.Config `json:"sentry" yaml:"sentry"`
 	// Logger is the base application logger: checks log provider failures to it, and the REST handlers
 	// their errors.
 	Logger logging.Log `json:"logger" yaml:"logger"`

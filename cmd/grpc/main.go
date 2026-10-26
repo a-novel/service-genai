@@ -22,6 +22,7 @@ import (
 	"github.com/a-novel-kit/golib/grpcf"
 	"github.com/a-novel-kit/golib/otel"
 	"github.com/a-novel-kit/golib/postgres"
+	"github.com/a-novel-kit/golib/sentryf"
 
 	"github.com/a-novel/service-genai/internal/config"
 	"github.com/a-novel/service-genai/internal/config/env"
@@ -50,6 +51,10 @@ func main() {
 
 	lo.Must0(otel.Init(cfg.Otel))
 	defer cfg.Otel.Flush()
+
+	lo.Must0(sentryf.Init(cfg.Sentry))
+
+	defer sentryf.Flush(config.SentryFlushTimeout)
 
 	if env.GcloudProjectID == "" {
 		log.SetFlags(log.Flags() &^ (log.Ldate | log.Ltime))

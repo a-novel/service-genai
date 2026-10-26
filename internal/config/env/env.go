@@ -9,6 +9,7 @@ import (
 	"github.com/a-novel-kit/golib/downtime"
 	"github.com/a-novel-kit/golib/grpcf"
 	"github.com/a-novel-kit/golib/httpf"
+	"github.com/a-novel-kit/golib/sentryf"
 )
 
 // prefix is prepended to every configuration variable name that this package reads.
@@ -129,6 +130,10 @@ var (
 	// GcloudProjectID is the Google Cloud project the service runs in. When set, logs and traces
 	// go to Google Cloud. When empty, they go to standard output.
 	GcloudProjectID = getEnv("GCLOUD_PROJECT_ID")
+
+	// Sentry configures the report of server faults from the SENTRY_* variables. Without a DSN, the
+	// servers report nothing.
+	Sentry = sentryf.LoadConfig(getEnv)
 
 	// DowntimeStart is when a planned downtime of this service starts, in RFC 3339. From then
 	// until it is removed, the service refuses work. Nil when none is planned.

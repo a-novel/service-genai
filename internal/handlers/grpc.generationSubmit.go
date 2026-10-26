@@ -8,6 +8,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/a-novel-kit/golib/grpcf"
 	"github.com/a-novel-kit/golib/otel"
 
 	"github.com/a-novel/service-genai/internal/core"
@@ -75,9 +76,7 @@ func (handler *GrpcGenerationSubmit) GenerationSubmit(
 	}
 
 	if err != nil {
-		_ = otel.ReportError(span, err)
-
-		return nil, status.Error(codes.Internal, "internal error")
+		return nil, grpcf.Fault(codes.Internal, "internal error", otel.ReportError(span, err))
 	}
 
 	return &genaiv0.GenerationSubmitResponse{

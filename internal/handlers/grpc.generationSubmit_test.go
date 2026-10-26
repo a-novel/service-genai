@@ -49,6 +49,8 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 		expectStatus codes.Code
 		// expectMessage is part of the error a caller reads, telling it what to fix.
 		expectMessage string
+		// expectCause is the error the fault wraps, which Sentry groups it by.
+		expectCause error
 	}{
 		{
 			name: "Success",
@@ -141,6 +143,7 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 			serviceMock: &serviceMock{err: errFoo},
 
 			expectStatus: codes.Internal,
+			expectCause:  errFoo,
 		},
 	}
 
@@ -173,6 +176,11 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 				"expected status code %s, got %s (%v)", testCase.expectStatus, resSt.Code(), err,
 			)
 			require.Contains(t, resSt.Message(), testCase.expectMessage)
+
+			if testCase.expectCause != nil {
+				require.ErrorIs(t, err, testCase.expectCause)
+			}
+
 			require.Equal(t, testCase.expect, res)
 
 			service.AssertExpectations(t)

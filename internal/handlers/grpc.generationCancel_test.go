@@ -32,6 +32,8 @@ func TestGrpcGenerationCancel(t *testing.T) {
 
 		expect       *genaiv0.GenerationCancelResponse
 		expectStatus codes.Code
+		// expectCause is the error the fault wraps, which Sentry groups it by.
+		expectCause error
 	}{
 		{
 			name: "Success",
@@ -80,6 +82,7 @@ func TestGrpcGenerationCancel(t *testing.T) {
 			serviceMock: &serviceMock{err: errFoo},
 
 			expectStatus: codes.Internal,
+			expectCause:  errFoo,
 		},
 	}
 
@@ -105,6 +108,11 @@ func TestGrpcGenerationCancel(t *testing.T) {
 				testCase.expectStatus, resSt.Code(),
 				"expected status code %s, got %s (%v)", testCase.expectStatus, resSt.Code(), err,
 			)
+
+			if testCase.expectCause != nil {
+				require.ErrorIs(t, err, testCase.expectCause)
+			}
+
 			require.Equal(t, testCase.expect, res)
 
 			service.AssertExpectations(t)
