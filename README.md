@@ -196,10 +196,10 @@ Checks (all servers) and sweep (`sweep`). [Generation checks](./docs/operations/
 
 gRPC server:
 
-| Name                    | Description                                                                                                               | Default |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------- | ------- |
-| `GRPC_PORT`             | Port the server listens on.                                                                                               | `8080`  |
-| `GRPC_TIMEOUT_SHUTDOWN` | Graceful shutdown budget. Keep it under the orchestrator's kill delay: Cloud Run sends SIGKILL ten seconds after SIGTERM. | `8s`    |
+| Name                    | Description                                                                                                                  | Default |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ------- |
+| `GRPC_PORT`             | Port the server listens on.                                                                                                  | `8080`  |
+| `GRPC_TIMEOUT_SHUTDOWN` | Graceful shutdown budget. With the 4 seconds of telemetry flushes after it, it fits Cloud Run's 10 seconds before `SIGKILL`. | `6s`    |
 
 REST servers (images `rest` and `sweep`). Every notification comes from the provider's few addresses, so the rate limit is sized for the provider's bursts.
 
@@ -217,7 +217,7 @@ REST servers (images `rest` and `sweep`). Every notification comes from the prov
 | `REST_TIMEOUT_WRITE`        | Write timeout. Keep it above the request timeout, or a sweep's answer is lost.                                                                | `2m15s`         |
 | `REST_TIMEOUT_IDLE`         | Idle keep-alive timeout.                                                                                                                      | `60s`           |
 | `REST_TIMEOUT_REQUEST`      | Per-request timeout. A sweep starts no check this deadline could not wait out, and a check takes a minute at most, so keep it above a minute. | `2m`            |
-| `REST_TIMEOUT_SHUTDOWN`     | Graceful shutdown budget. Keep it under the orchestrator's kill delay.                                                                        | `8s`            |
+| `REST_TIMEOUT_SHUTDOWN`     | Graceful shutdown budget. With the 4 seconds of telemetry flushes after it, it fits Cloud Run's 10 seconds before `SIGKILL`.                  | `6s`            |
 
 Memory (server images). A request holds a few copies of what it carries: a submit its payload, up to 16 MiB, and a read its responses, up to 24 MiB each. Twenty concurrent submits of the largest payloads peak near 1.6 GiB on one `grpc` instance. Give it 2 GiB with `GOMEMLIMIT` near `1600MiB`, or lower its request concurrency.
 
