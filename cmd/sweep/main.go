@@ -117,7 +117,9 @@ func main() {
 
 	log.Println("Starting sweep server on :" + strconv.Itoa(cfg.Rest.Port))
 
-	err := httpf.ListenAndServe(ctx, cfg.Rest, router)
+	// The sweep is billed per request and no consumer waits on it, so each answer waits for its
+	// telemetry to leave while the request still holds a CPU.
+	err := httpf.ListenAndServe(ctx, cfg.Rest, httpf.SendTelemetry(config.SweepTelemetryTimeout)(router))
 
 	stop()
 

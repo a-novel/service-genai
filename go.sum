@@ -10,8 +10,8 @@ github.com/Azure/azure-sdk-for-go/sdk/azcore v1.23.2 h1:utpeoEeZjd+A8J41zvoLsOOr
 github.com/Azure/azure-sdk-for-go/sdk/azcore v1.23.2/go.mod h1:iptorS+VYKFL2N6PnebpS91dubG35eAOEERnT4PJbQU=
 github.com/Azure/azure-sdk-for-go/sdk/internal v1.12.0 h1:fhqpLE3UEXi9lPaBRpQ6XuRW0nU7hgg4zlmZZa+a9q4=
 github.com/Azure/azure-sdk-for-go/sdk/internal v1.12.0/go.mod h1:7dCRMLwisfRH3dBupKeNCioWYUZ4SS09Z14H+7i8ZoY=
-github.com/a-novel-kit/golib v0.52.0 h1:X7cxAK5SfxDGmqDQCykDOUm2u5kGofGhDwH51FaziuQ=
-github.com/a-novel-kit/golib v0.52.0/go.mod h1:nPiIx7kuUGYDsMI7YBscAFzd8KOSoWNnFPOs2Jbi4fc=
+github.com/a-novel-kit/golib v0.53.0 h1:JArpYCdRtd1AgUfCh2B3mUHIiGwYOYNac/bB+JutRZA=
+github.com/a-novel-kit/golib v0.53.0/go.mod h1:nPiIx7kuUGYDsMI7YBscAFzd8KOSoWNnFPOs2Jbi4fc=
 github.com/cenkalti/backoff/v5 v5.0.3 h1:ZN+IMa753KfX5hd8vVaMixjnqRZ3y8CuJKRKj1xcsSM=
 github.com/cenkalti/backoff/v5 v5.0.3/go.mod h1:rkhZdG3JZukswDf7f0cwqPNk4K0sa+F97BxZthm/crw=
 github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=
