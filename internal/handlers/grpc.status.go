@@ -4,9 +4,9 @@ import (
 	"context"
 
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
 
+	"github.com/a-novel-kit/golib/grpcf"
 	"github.com/a-novel-kit/golib/otel"
 	"github.com/a-novel-kit/golib/postgres"
 
@@ -47,16 +47,12 @@ func (handler *GrpcStatus) Status(ctx context.Context, _ *genaiv0.StatusRequest)
 
 	err := handler.reportPostgres(ctx)
 	if err != nil {
-		_ = otel.ReportError(span, err)
-
-		return nil, status.Error(codes.Unavailable, "service dependencies unavailable")
+		return nil, grpcf.Fault(codes.Unavailable, "service dependencies unavailable", otel.ReportError(span, err))
 	}
 
 	depth, err := handler.service.Exec(ctx, &core.GenerationQueueDepthRequest{})
 	if err != nil {
-		_ = otel.ReportError(span, err)
-
-		return nil, status.Error(codes.Unavailable, "service dependencies unavailable")
+		return nil, grpcf.Fault(codes.Unavailable, "service dependencies unavailable", otel.ReportError(span, err))
 	}
 
 	return &genaiv0.StatusResponse{

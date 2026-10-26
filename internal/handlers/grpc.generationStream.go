@@ -10,6 +10,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/a-novel-kit/golib/grpcf"
 	"github.com/a-novel-kit/golib/otel"
 
 	"github.com/a-novel/service-genai/internal/core"
@@ -93,12 +94,10 @@ func streamStatus(span trace.Span, left, err error) error {
 		return status.Error(codes.Unimplemented, "the provider does not support the Streaming mode")
 	case errors.Is(err, core.ErrProviderRetryable):
 		// The provider dropped the stream, a server fault: a new one resumes after the last event received.
-		_ = otel.ReportError(span, err)
-
-		return status.Error(codes.Unavailable, "stream interrupted: resume after the last event received")
+		return grpcf.Fault(
+			codes.Unavailable, "stream interrupted: resume after the last event received", otel.ReportError(span, err),
+		)
 	}
 
-	_ = otel.ReportError(span, err)
-
-	return status.Error(codes.Internal, "internal error")
+	return grpcf.Fault(codes.Internal, "internal error", otel.ReportError(span, err))
 }

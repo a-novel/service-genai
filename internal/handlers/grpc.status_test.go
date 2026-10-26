@@ -40,6 +40,8 @@ func TestGrpcStatus(t *testing.T) {
 		queueError    error
 		expectQueue   *genaiv0.QueueDepth
 		expectStatus  codes.Code
+		// expectCause is the error the fault wraps, which Sentry groups it by.
+		expectCause error
 	}{
 		{
 			name: "Success",
@@ -55,7 +57,7 @@ func TestGrpcStatus(t *testing.T) {
 		{name: "Error/ClosedPostgres", closePostgres: true, expectStatus: codes.Unavailable},
 		{name: "Error/TransactionContext", transaction: true, expectStatus: codes.Unavailable},
 		{name: "Error/CancelledProbe", cancel: true, expectStatus: codes.Unavailable},
-		{name: "Error/QueueInspection", queueError: errFoo, expectStatus: codes.Unavailable},
+		{name: "Error/QueueInspection", queueError: errFoo, expectStatus: codes.Unavailable, expectCause: errFoo},
 	}
 
 	for _, testCase := range testCases {
@@ -113,6 +115,10 @@ func TestGrpcStatus(t *testing.T) {
 			result, ok := status.FromError(err)
 			require.True(t, ok)
 			require.Equal(t, testCase.expectStatus, result.Code())
+
+			if testCase.expectCause != nil {
+				require.ErrorIs(t, err, testCase.expectCause)
+			}
 
 			if testCase.expectStatus != codes.OK {
 				require.Nil(t, response)
