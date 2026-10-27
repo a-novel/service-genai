@@ -236,13 +236,16 @@ Planned downtime (server images):
 
 From `DOWNTIME_START` until the variable is removed, even past the announced end, the servers answer `503` / `UNAVAILABLE`. Ping, gRPC health and echo still answer, and the servers start without the database. A request already running still finishes, a sweep up to `REST_TIMEOUT_REQUEST` later, so stop the database only once that has passed. The provider delivers the notifications it could not send once the downtime ends. Calls already sent keep running at the provider. OpenAI keeps a finished background response it does not store for about 10 minutes. A call that finishes more than 10 minutes before the downtime ends therefore settles failed, its result lost. Keep a downtime short while generations run.
 
-Logs and tracing (all server images). OpenTelemetry exports to stdout or to Google Cloud.
+Logs and tracing (all server images). OpenTelemetry exports to stdout, or over OTLP/HTTP once an endpoint is set.
 
-| Name                | Description                                                                    | Default         |
-| ------------------- | ------------------------------------------------------------------------------ | --------------- |
-| `OTEL`              | Enable OTel tracing; the variables below pick the exporter.                    | `false`         |
-| `GCLOUD_PROJECT_ID` | Google Cloud project ID. When set, switches logs and the OTel exporter to GCP. |                 |
-| `APP_NAME`          | Application name attached to traces and logs.                                  | `service-genai` |
+| Name                             | Description                                                                                                      | Default         |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------- | --------------- |
+| `OTEL`                           | Enable OTel tracing; the variables below pick the exporter.                                                      | `false`         |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`    | Base URL of the OTLP/HTTP backend. When set, traces and logs export there, and the servers write no request log. |                 |
+| `OTEL_EXPORTER_OTLP_HEADERS`     | Headers each export sends, such as the backend's key. Inject it as a secret.                                     |                 |
+| `OTEL_EXPORTER_OTLP_COMPRESSION` | `gzip` compresses each export.                                                                                   |                 |
+| `OTEL_SERVICE_NAME`              | Service name every span and log record carries.                                                                  |                 |
+| `APP_NAME`                       | Application name attached to traces and logs.                                                                    | `service-genai` |
 
 Error reporting (server images). With `SENTRY_DSN` set, the servers send each server fault to Sentry: a `5xx`, a gRPC `INTERNAL` or `UNAVAILABLE`, and a panic. Without it, they report nothing.
 
