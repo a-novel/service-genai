@@ -32,6 +32,10 @@ const SweepTelemetryTimeout = 10 * time.Second
 // otherwise. The liveness probe produces no span.
 var OtelPresetDefault = newOtelPreset()
 
+// exportsOTLP reports whether the servers export over OTLP: OTEL is set, and so is the OTLP
+// endpoint. Their logs then go through the same backend, and their spans record each request.
+var exportsOTLP = env.Otel && env.OTLPEndpoint != ""
+
 // LoggerDevGrpc prints gRPC request logs to the console in a human-readable format.
 var LoggerDevGrpc = loggingpresets.GRPCLocal{}
 
@@ -42,7 +46,7 @@ var LoggerDev = &loggingpresets.LogLocal{Out: os.Stdout}
 var LoggerProd = &loggingpresets.LogOTel{}
 
 // AppPresetDefault is the configuration the service starts with. It reads every value from the
-// environment, and logs through the OpenTelemetry backend once an OTLP endpoint is set. Spans then
+// environment, and logs through the OpenTelemetry backend when [exportsOTLP] holds. Spans then
 // record each request and call, so the servers write no request log.
 var AppPresetDefault = App{
 	App: Main{
@@ -71,10 +75,10 @@ var AppPresetDefault = App{
 
 	Otel:       OtelPresetDefault,
 	Sentry:     env.Sentry,
-	Logger:     lo.Ternary[logging.Log](env.OTLPEndpoint == "", LoggerDev, LoggerProd),
-	GrpcLogger: lo.Ternary[logging.RPCConfig](env.OTLPEndpoint == "", &LoggerDevGrpc, &loggingpresets.GRPCOTel{}),
+	Logger:     lo.Ternary[logging.Log](!exportsOTLP, LoggerDev, LoggerProd),
+	GrpcLogger: lo.Ternary[logging.RPCConfig](!exportsOTLP, &LoggerDevGrpc, &loggingpresets.GRPCOTel{}),
 	RestLogger: lo.Ternary[logging.HTTPConfig](
-		env.OTLPEndpoint == "", &loggingpresets.HTTPLocal{BaseLogger: LoggerDev}, nil,
+		!exportsOTLP, &loggingpresets.HTTPLocal{BaseLogger: LoggerDev}, nil,
 	),
 	Postgres: PostgresPresetServer,
 }
