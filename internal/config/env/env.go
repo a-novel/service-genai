@@ -127,9 +127,11 @@ var (
 	// SweepBatchSize caps the generations one batch of a sweep takes.
 	SweepBatchSize = config.LoadEnv(getEnv("SWEEP_BATCH_SIZE"), SweepBatchSizeDefault, config.IntParser)
 
-	// GcloudProjectID is the Google Cloud project the service runs in. When set, logs and traces
-	// go to Google Cloud. When empty, they go to standard output.
-	GcloudProjectID = getEnv("GCLOUD_PROJECT_ID")
+	// OTLPEndpoint is the standard OTEL_EXPORTER_OTLP_ENDPOINT. When set, traces and logs export
+	// over OTLP/HTTP, which the OTEL_EXPORTER_OTLP_* variables configure. When empty, they go to
+	// standard output. The OpenTelemetry SDK reads these variables without the prefix, so this one
+	// is read without it too.
+	OTLPEndpoint = os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
 
 	// Sentry configures the report of server faults from the SENTRY_* variables. Without a DSN, the
 	// servers report nothing.

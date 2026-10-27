@@ -44,7 +44,7 @@ func main() {
 
 	defer sentryf.Flush(config.SentryFlushTimeout)
 
-	if env.GcloudProjectID == "" {
+	if env.OTLPEndpoint == "" {
 		log.SetFlags(log.Flags() &^ (log.Ldate | log.Ltime))
 	}
 
