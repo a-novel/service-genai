@@ -42,13 +42,16 @@ type Main struct {
 
 // Sweep holds the settings of the sweep that checks generations nobody polled.
 type Sweep struct {
-	// Interval is how often the scheduler calls the sweep. Each call checks every generation nobody
-	// checked within half of it.
+	// Interval is how often the sweep runs. Each run checks every generation nobody checked within
+	// half of it.
 	Interval time.Duration `json:"interval" yaml:"interval"`
 	// BatchSize caps the generations one batch of a sweep takes.
 	BatchSize int `json:"batchSize" yaml:"batchSize"`
 	// Concurrency caps the checks the sweep runs at once, across every call that overlaps.
 	Concurrency int `json:"concurrency" yaml:"concurrency"`
+	// Ticker makes the sweep server run the sweep every interval, besides answering a scheduler's
+	// calls. The server then needs its CPU between requests.
+	Ticker bool `json:"ticker" yaml:"ticker"`
 }
 
 // Generations holds how generations are run and kept.
