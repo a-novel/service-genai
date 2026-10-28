@@ -262,7 +262,7 @@ Error reporting (server images). With `SENTRY_DSN` set, the servers send each se
 
 ## Using the client package
 
-The Go client is what a consuming service imports. Its full surface is on [pkg.go.dev](https://pkg.go.dev/github.com/a-novel/service-genai).
+The Go client is what a consuming service imports. Its full surface is on [pkg.go.dev](https://pkg.go.dev/github.com/a-novel/service-genai), and the [API reference](https://a-novel.github.io/service-genai) documents the gRPC API it calls.
 
 ```bash
 go get github.com/a-novel/service-genai

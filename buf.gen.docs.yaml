@@ -1,0 +1,17 @@
+# Converts the protos into the gRPC document of the API reference. publish-docs runs it and
+# deploys the result; nothing it writes is committed.
+version: v2
+plugins:
+  - remote: buf.build/community/sudorandom-connect-openapi:v0.28.0
+    out: .
+    opt:
+      - path=grpc.openapi.json
+      - format=json
+      - features=connectrpc
+      - with-proto-names
+      - with-streaming
+      - short-service-tags
+      - short-operation-ids
+      - trim-unused-types
+inputs:
+  - directory: internal/models/proto
