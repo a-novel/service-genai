@@ -393,3 +393,42 @@ jobs:
           codecov_token: ${{ secrets.CODECOV_TOKEN }}
           coverage_files: coverage.txt,coverage_pkg.txt
           coverage_artifact_ids: ${{ needs.test-go.outputs.artifact-id }},${{ needs.test-pkg.outputs.artifact-id }}
+
+  publish-docs:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master' && success()
+    # lint-js checks the page this job deploys, and lint-proto the protos it converts.
+    needs: [lint-js, lint-proto]
+    # GitHub Pages allows one deployment in flight per site. The group serializes concurrent
+    # master runs.
+    concurrency:
+      group: github-pages
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: bufbuild/buf-action@85aebf73123b5c15fd5528aaecbf9129cddf7fa7 # v1.6.0
+        with:
+          setup_only: true
+      # The converted document names no API and no version, carries the Connect protocol headers,
+      # and repeats each field's name as its title. jq fixes all three.
+      - env:
+          GRPC_TITLE: GenAI gRPC API
+        run: |
+          mkdir _site
+          mv openapi.html _site/index.html
+          buf generate --template buf.gen.docs.yaml -o "$RUNNER_TEMP"
+          jq --arg title "$GRPC_TITLE" --arg version "v$(jq -r .version package.json)" '
+            .info = {title: $title, version: $version}
+            | del(.paths[][].parameters, .components.schemas["connect-protocol-version", "connect-timeout-header"])
+            | walk(if type == "object" and (.properties | type) == "object" then .properties[] |= del(.title) else . end)
+          ' "$RUNNER_TEMP/grpc.openapi.json" > _site/grpc.openapi.json
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
