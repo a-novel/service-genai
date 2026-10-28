@@ -37,6 +37,8 @@ Once it logs `Starting sweep server on :8090`, post to it from another shell:
 curl -X POST localhost:8090/sweep
 ```
 
+Start it with `SWEEP_TICKER=true` instead, and it sweeps every `SWEEP_INTERVAL` on its own.
+
 ### Generations
 
 The payload and each attempt's response are `bytes` fields, so `grpcurl` takes and prints them base64-encoded. The local stack reads `OPENAI_API_KEY` from the environment it starts in, and falls back to a placeholder (see [`builds/podman-compose.yaml`](./builds/podman-compose.yaml)). OpenAI refuses every start made with the placeholder. The service retries it as a fault of its own configuration, so the generation stays pending for ten minutes, then fails with no attempt.

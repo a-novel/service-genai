@@ -7,7 +7,7 @@ No process holds a generation. A **check** looks at one generation and applies w
 - `GenerationSubmit` checks the generation it just created, which starts its provider call.
 - `GenerationGet` checks a generation nobody checked within `CHECK_INTERVAL`. Concurrent polls elect one checker, so a generation reaches the provider at most once per interval however many callers poll it.
 - A provider's notification that a call ended checks the generation running it, through the `rest` server. A notification that arrives before the call's id is recorded finds no generation, and the next poll or sweep settles it.
-- The `sweep` server checks the unsettled generations nobody checked within half of `SWEEP_INTERVAL`, each time a scheduler posts to `/sweep`. A call takes batches of `SWEEP_BATCH_SIZE` while each comes back full, and starts no check its deadline could not wait out. Overlapping calls take disjoint batches.
+- The `sweep` server checks the unsettled generations nobody checked within half of `SWEEP_INTERVAL`, each time a scheduler posts to `/sweep`, and every `SWEEP_INTERVAL` when `SWEEP_TICKER` is set. A call takes batches of `SWEEP_BATCH_SIZE` while each comes back full, and starts no check its deadline could not wait out. Overlapping calls take disjoint batches.
 
 The sweep exists for generations whose caller stopped polling. The provider keeps a finished result it does not store only for a while, and only a check frees the concurrency slot of a generation nobody follows.
 
@@ -48,7 +48,7 @@ A held slot covers a call the provider may still run while nothing tracks or met
 
 Nothing needs draining. A start already sent runs detached from shutdown until the process exits. The orchestrator kills it ten seconds after SIGTERM on Cloud Run, and a sweep's server exits two seconds earlier, when its drain ends. A provider answers a start well within that, so the start is not cut between the provider accepting the call and its id reaching the database. Every write the start makes after that carries its own deadline.
 
-A sweep stops taking generations once shutdown begins, so it starts no call the kill could cut, and answers when the checks it started end. A replica that dies mid-check leaves a row the next poll or sweep picks up. A stream open on a stopping replica ends with `UNAVAILABLE`, and its caller resumes it on another replica, after the last event received.
+A sweep stops taking generations once shutdown begins, so it starts no call the kill could cut, and answers when the checks it started end. With `SWEEP_TICKER`, the server exits only once its run's checks end, a minute after SIGTERM at most. A replica that dies mid-check leaves a row the next poll or sweep picks up. A stream open on a stopping replica ends with `UNAVAILABLE`, and its caller resumes it on another replica, after the last event received.
 
 The losses that remain are rare. Each settles its generation `failed` with an unknown outcome, and its answer goes unrecorded:
 

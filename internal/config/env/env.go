@@ -49,8 +49,8 @@ const (
 	// after a lost connection, short enough that a request's content and its key are not kept.
 	RetentionDefault = 6 * time.Hour
 
-	// SweepIntervalDefault is how often the scheduler calls the sweep, well inside the time a finished
-	// provider result stays retrievable.
+	// SweepIntervalDefault is how often the sweep runs, well inside the time a finished provider result
+	// stays retrievable.
 	SweepIntervalDefault = time.Minute
 	// SweepBatchSizeDefault is how many generations one batch of a sweep takes.
 	SweepBatchSizeDefault = 50
@@ -122,10 +122,12 @@ var (
 	// Retention is how long a settled generation's user content survives before the purge.
 	Retention = config.LoadEnv(getEnv("RETENTION"), RetentionDefault, config.DurationParser)
 
-	// SweepInterval is how often the scheduler calls the sweep.
+	// SweepInterval is how often the sweep runs.
 	SweepInterval = config.LoadEnv(getEnv("SWEEP_INTERVAL"), SweepIntervalDefault, config.DurationParser)
 	// SweepBatchSize caps the generations one batch of a sweep takes.
 	SweepBatchSize = config.LoadEnv(getEnv("SWEEP_BATCH_SIZE"), SweepBatchSizeDefault, config.IntParser)
+	// SweepTicker makes the sweep server run the sweep itself, every interval.
+	SweepTicker = config.LoadEnv(getEnv("SWEEP_TICKER"), false, config.BoolParser)
 
 	// OTLPEndpoint is the standard OTEL_EXPORTER_OTLP_ENDPOINT. When set, traces and logs export
 	// over OTLP/HTTP, which the OTEL_EXPORTER_OTLP_* variables configure. When empty, they go to

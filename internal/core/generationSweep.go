@@ -45,8 +45,8 @@ type GenerationSweepResult struct {
 //
 // Callers polling a generation keep it fresh. The sweep catches the rest: a generation whose caller
 // went away still settles while the provider holds its result, and one whose start never ran still
-// starts. A scheduler calls it, so it runs within a request, where the instance has its CPU. Calls
-// that overlap share its concurrency, which the connection pool sizes.
+// starts. A scheduler's request or the sweep server's own ticker calls it. Calls that overlap share
+// its concurrency, which the connection pool sizes.
 type GenerationSweep struct {
 	dao          GenerationSweepDao
 	serviceCheck GenerationSweepServiceCheck

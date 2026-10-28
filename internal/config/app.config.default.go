@@ -65,6 +65,7 @@ var AppPresetDefault = App{
 		Interval:    env.SweepInterval,
 		BatchSize:   env.SweepBatchSize,
 		Concurrency: sweepConcurrency(env.PostgresMaxOpenConns),
+		Ticker:      env.SweepTicker,
 	},
 	OpenAI: OpenAI{
 		APIKey:        env.OpenAIAPIKey,
