@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/samber/lo"
-	"go.opentelemetry.io/otel/trace"
 
 	"github.com/a-novel-kit/golib/downtime"
 	"github.com/a-novel-kit/golib/httpf"
@@ -142,22 +141,17 @@ func main() {
 	}
 }
 
-// sweepRun returns the run the ticker repeats. No handler answers for it, so it reports its own
-// failure and panic to Sentry. From a planned downtime's start, it leaves the database alone.
+// sweepRun returns the run the ticker repeats. [worker.Poll] reports the run's failures and panics
+// to Sentry. From a planned downtime's start, the run leaves the database alone.
 //
 // A run drains the backlog batch after batch, so it asks [worker.Poll] for no immediate rerun.
 func sweepRun(service *core.GenerationSweep, downtimeStart *time.Time) func(context.Context) (bool, error) {
 	return func(ctx context.Context) (bool, error) {
-		defer otel.RecoverPanic(ctx, trace.SpanFromContext(ctx))
-
 		if downtime.Started(downtimeStart, time.Now()) {
 			return false, nil
 		}
 
 		_, err := service.Exec(ctx, &core.GenerationSweepRequest{})
-		if err != nil {
-			sentryf.Capture(ctx, "sweep", err)
-		}
 
 		return false, err
 	}
