@@ -105,6 +105,16 @@ var (
 	// Grpc configures the gRPC server from the GRPC_* variables.
 	Grpc = grpcf.LoadServerConfig(getEnv, grpcDefaults())
 
+	// ServiceTokenIssuer is the issuer of the service tokens the gRPC server accepts, as a token's
+	// "iss" claim names it. When empty, the server takes every call without a service token.
+	ServiceTokenIssuer = getEnv("SERVICE_TOKEN_ISSUER")
+	// ServiceTokenAudience is the audience the gRPC server answers to. Each caller requests its token
+	// for it.
+	ServiceTokenAudience = getEnv("SERVICE_TOKEN_AUDIENCE")
+	// ServiceTokenCallers are the service accounts allowed to call, as a comma-separated list of
+	// system:serviceaccount:<namespace>:<name>.
+	ServiceTokenCallers = config.LoadEnv(getEnv("SERVICE_TOKEN_CALLERS"), nil, config.SliceParser(config.StringParser))
+
 	// OpenAIAPIKey authenticates the OpenAI connector. It is the only credential this service holds,
 	// so no caller holds one.
 	OpenAIAPIKey = getEnv("OPENAI_API_KEY")
