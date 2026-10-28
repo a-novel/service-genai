@@ -11,6 +11,7 @@ import (
 	"github.com/a-novel-kit/golib/otel"
 	"github.com/a-novel-kit/golib/postgres"
 	"github.com/a-novel-kit/golib/sentryf"
+	"github.com/a-novel-kit/golib/servicetoken"
 )
 
 // ErrInvalidConfig reports a configuration the service cannot run with.
@@ -84,6 +85,9 @@ type App struct {
 	Grpc grpcf.ServerConfig `json:"grpc" yaml:"grpc"`
 	// Rest holds the configuration of the REST servers: the notification server and the sweep.
 	Rest httpf.ServerConfig `json:"rest" yaml:"rest"`
+	// ServiceToken names the service tokens the gRPC server accepts. Without an issuer, it takes every
+	// call without one.
+	ServiceToken servicetoken.Config `json:"serviceToken" yaml:"serviceToken"`
 	// Generations holds how generations are run and kept.
 	Generations Generations `json:"generations" yaml:"generations"`
 	// Sweep configures the sweep that checks generations nobody polled.
