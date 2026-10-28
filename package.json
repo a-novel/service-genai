@@ -35,7 +35,7 @@
     "@a-novel-kit/nodelib-test": "^2.0.0",
     "@eslint/js": "^10.0.1",
     "@trivago/prettier-plugin-sort-imports": "^6.0.2",
-    "@types/node": "^24.10.1",
+    "@types/node": "^26.0.0",
     "eslint": "^10.0.2",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.4",
