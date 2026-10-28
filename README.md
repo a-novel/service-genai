@@ -45,7 +45,7 @@ The service runs as published OCI images plus a PostgreSQL database. All state l
 | Image                           | Role                                                                        |
 | ------------------------------- | --------------------------------------------------------------------------- |
 | `service-genai/grpc`            | The generation API. Internal network only.                                  |
-| `service-genai/sweep`           | Checks the generations nobody polled when a scheduler calls it. Private.    |
+| `service-genai/sweep`           | Checks the generations nobody polled, on a schedule. Private.               |
 | `service-genai/rest`            | Receives the provider's notifications that a call ended. Public.            |
 | `service-genai/jobs/migrations` | One-shot schema migration job; runs to completion before the server starts. |
 | `service-genai/database`        | PostgreSQL with `pg_cron` and pgBackRest, or bring your own Postgres.       |
@@ -55,7 +55,7 @@ Pin every image to the same release tag, from the [latest release](https://githu
 
 A caller controls the whole payload, including the model and the provider's built-in tools. Grant invocation to calling services only, and restrict the OpenAI key to the Responses endpoints.
 
-Every server does its work inside a request, so none needs CPU outside of one. Each needs outbound access to the provider's API. A check its caller abandons resumes only with the server's next request, and a streamed start waits for the provider to begin the call. Give a streamed generation's submit and polls a deadline of at least 35 seconds.
+Every server does its work inside a request, so none needs CPU outside of one. A `sweep` server with `SWEEP_TICKER` set is the exception. Each needs outbound access to the provider's API. A check its caller abandons resumes only with the server's next request, and a streamed start waits for the provider to begin the call. Give a streamed generation's submit and polls a deadline of at least 35 seconds.
 
 ```yaml
 services:
@@ -141,6 +141,8 @@ Each poll checks its generation with the provider. The `sweep` server checks the
 
 Run it privately, and have a scheduler `POST /sweep` every `SWEEP_INTERVAL`. On Google Cloud, use Cloud Scheduler with an OIDC token for the only identity allowed to invoke it. A call checks batch after batch and answers within two minutes. The server checks as many generations at once as its connection pool has connections, eight at most, however many calls overlap.
 
+On a platform that keeps the server's CPU between requests, such as Kubernetes, set `SWEEP_TICKER` instead. The server then sweeps every `SWEEP_INTERVAL` on its own and needs no scheduler. On SIGTERM, a run starts no new check and waits for those it started, a minute at most. Give the process at least 75 seconds between SIGTERM and SIGKILL. From `DOWNTIME_START` on, the server starts no run.
+
 ### Provider notifications
 
 The `rest` image checks a generation the moment its provider reports the call ended, instead of on the next poll or sweep. It serves `POST /webhooks/{provider}`, `/ping` and `/healthcheck`. It reuses the database and the migrations, and needs the same variables as `grpc` plus `OPENAI_WEBHOOK_SECRET`.
@@ -189,8 +191,9 @@ Checks (all servers) and sweep (`sweep`). [Generation checks](./docs/operations/
 | Name               | Description                                                                                                                                                          | Default |
 | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
 | `CHECK_INTERVAL`   | How long a check stays fresh. However often callers poll, a generation reaches the provider at most once per interval.                                               | `2s`    |
-| `SWEEP_INTERVAL`   | How often the scheduler calls the sweep. Each call checks every generation nobody checked within half of it. At most `5m`.                                           | `1m`    |
+| `SWEEP_INTERVAL`   | How often the sweep runs. Each run checks every generation nobody checked within half of it. At most `5m`.                                                           | `1m`    |
 | `SWEEP_BATCH_SIZE` | Generations one batch of a sweep takes, from 1 to 100. A sweep takes another batch while each comes back full.                                                       | `50`    |
+| `SWEEP_TICKER`     | Run the sweep every `SWEEP_INTERVAL` from the server itself, besides `POST /sweep`. The server then needs CPU between requests.                                      | `false` |
 | `MAX_ATTEMPTS`     | Provider calls a generation gets when a call fails retryably, 1 or 2, so a generation's responses fit one message. Each one is paid. A streamed generation gets one. | `2`     |
 | `RETENTION`        | How long a settled generation, its attempts and its request key survive before the purge deletes them. At least `15m`.                                               | `6h`    |
 
