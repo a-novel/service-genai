@@ -29,6 +29,10 @@ const (
 	// OpenTelemetry flushes, up to 2 seconds each, finish before Cloud Run kills it at 10 seconds.
 	TimeoutShutdownDefault = 6 * time.Second
 
+	// MaxConcurrentCallsDefault bounds the gRPC calls one instance runs at once. Twenty submits at the
+	// payload ceiling fit an instance of 2 GiB with GOMEMLIMIT at 1600MiB.
+	MaxConcurrentCallsDefault = 20
+
 	// TimeoutRequestDefault bounds a REST request, which runs its checks before it answers. A sweep call
 	// checks for a minute, then waits out its last checks, which take a minute at most.
 	TimeoutRequestDefault = 2 * time.Minute
@@ -169,10 +173,12 @@ func restDefaults() httpf.ServerConfig {
 	return defaults
 }
 
-// grpcDefaults keeps golib's gRPC defaults but for the drain, which fits Cloud Run's kill window.
+// grpcDefaults keeps golib's gRPC defaults but for the drain, which fits Cloud Run's kill window, and
+// the call cap, which bounds the memory requests hold.
 func grpcDefaults() grpcf.ServerConfig {
 	defaults := grpcf.ServerConfigDefault
 	defaults.Shutdown = TimeoutShutdownDefault
+	defaults.MaxConcurrentCalls = MaxConcurrentCallsDefault
 
 	return defaults
 }

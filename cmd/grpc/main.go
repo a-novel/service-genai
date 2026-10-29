@@ -35,11 +35,15 @@ import (
 	"github.com/a-novel/service-genai/internal/lib/connectors"
 )
 
-// serverOptions admit a submit at its payload ceiling, and make a stopping server wait for its
-// handlers, so none still runs once the database closes.
-var serverOptions = []grpc.ServerOption{
-	grpc.MaxRecvMsgSize(handlers.GrpcMaxReceiveBytes),
-	grpc.WaitForHandlers(true),
+// serverOptions admit a submit at its payload ceiling, refuse a call past maxConcurrentCalls so the
+// requests in memory stay bounded, and make a stopping server wait for its handlers, so none still
+// runs once the database closes.
+func serverOptions(maxConcurrentCalls int) []grpc.ServerOption {
+	return []grpc.ServerOption{
+		grpc.MaxRecvMsgSize(handlers.GrpcMaxReceiveBytes),
+		grpcf.MaxConcurrentCalls(maxConcurrentCalls),
+		grpc.WaitForHandlers(true),
+	}
 }
 
 func main() {
@@ -150,9 +154,8 @@ func main() {
 
 	serviceToken := handlers.GrpcServiceToken(cfg.ServiceToken, httpf.NewPoolClient(httpf.PoolOptions{}))
 
-	server := grpcf.NewServer(
-		ctx, cfg.Otel, cfg.GrpcLogger, cfg.App.DowntimeStart, ctxInterceptor, slices.Concat(serverOptions, serviceToken)...,
-	)
+	options := slices.Concat(serverOptions(cfg.Grpc.MaxConcurrentCalls), serviceToken)
+	server := grpcf.NewServer(ctx, cfg.Otel, cfg.GrpcLogger, cfg.App.DowntimeStart, ctxInterceptor, options...)
 
 	healthcheck := grpcf.RegisterEchoServers(server)
 	healthcheck.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
