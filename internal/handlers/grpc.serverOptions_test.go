@@ -1,4 +1,4 @@
-package main
+package handlers_test
 
 import (
 	"context"
@@ -15,6 +15,7 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/a-novel/service-genai/internal/config"
+	"github.com/a-novel/service-genai/internal/handlers"
 )
 
 // heldService holds each call to test.Held/Hold until the test ends it, and answers test.Held/Pass at
@@ -57,7 +58,7 @@ func passCall(_ any, _ context.Context, decode func(any) error, _ grpc.UnaryServ
 	return &emptypb.Empty{}, decode(&emptypb.Empty{})
 }
 
-func TestServerOptions(t *testing.T) {
+func TestGrpcServerOptions(t *testing.T) {
 	t.Parallel()
 
 	limit := config.AppPresetDefault.Grpc.MaxConcurrentCalls
@@ -92,7 +93,7 @@ func TestServerOptions(t *testing.T) {
 
 			calls := &heldCalls{started: make(chan struct{}, testCase.held), release: make(chan struct{})}
 
-			server := grpc.NewServer(serverOptions(limit)...)
+			server := grpc.NewServer(handlers.GrpcServerOptions(limit)...)
 			server.RegisterService(heldService, calls)
 
 			listener := bufconn.Listen(1 << 16)
