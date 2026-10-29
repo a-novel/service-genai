@@ -199,10 +199,11 @@ Checks (all servers) and sweep (`sweep`). [Generation checks](./docs/operations/
 
 gRPC server:
 
-| Name                    | Description                                                                                                                  | Default |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ------- |
-| `GRPC_PORT`             | Port the server listens on.                                                                                                  | `8080`  |
-| `GRPC_TIMEOUT_SHUTDOWN` | Graceful shutdown budget. With the 4 seconds of telemetry flushes after it, it fits Cloud Run's 10 seconds before `SIGKILL`. | `6s`    |
+| Name                        | Description                                                                                                                                                   | Default |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| `GRPC_PORT`                 | Port the server listens on.                                                                                                                                   | `8080`  |
+| `GRPC_TIMEOUT_SHUTDOWN`     | Graceful shutdown budget. With the 4 seconds of telemetry flushes after it, it fits Cloud Run's 10 seconds before `SIGKILL`.                                  | `6s`    |
+| `GRPC_MAX_CONCURRENT_CALLS` | Calls the server runs at once, the health service aside. It refuses one more with `UNAVAILABLE` before reading it, so the caller retries. `0` bounds nothing. | `20`    |
 
 Service tokens (image `grpc`). Without `SERVICE_TOKEN_ISSUER`, the server takes every call. With it, the server refuses a call unless its `X-Service-Authorization` header carries a token from an allowed caller. The gRPC health service stays open for probes:
 
@@ -230,7 +231,7 @@ REST servers (images `rest` and `sweep`). Every notification comes from the prov
 | `REST_TIMEOUT_REQUEST`      | Per-request timeout. A sweep starts no check this deadline could not wait out, and a check takes a minute at most, so keep it above a minute. | `2m`            |
 | `REST_TIMEOUT_SHUTDOWN`     | Graceful shutdown budget. With the 4 seconds of telemetry flushes after it, it fits Cloud Run's 10 seconds before `SIGKILL`.                  | `6s`            |
 
-Memory (server images). A request holds a few copies of what it carries: a submit its payload, up to 16 MiB, and a read its responses, up to 24 MiB each. Twenty concurrent submits of the largest payloads peak near 1.6 GiB on one `grpc` instance. Give it 2 GiB with `GOMEMLIMIT` near `1600MiB`, or lower its request concurrency.
+Memory (server images). A request holds a few copies of what it carries: a submit its payload, up to 16 MiB, and a read its responses, up to 24 MiB each. Twenty concurrent submits of the largest payloads peak near 1.6 GiB on one `grpc` instance. Give it 2 GiB with `GOMEMLIMIT` near `1600MiB`, or lower `GRPC_MAX_CONCURRENT_CALLS`.
 
 Database connection pool (server images). The limits are **per process**. Keep `POSTGRES_MAX_OPEN_CONNS` × the maximum replica count × 2, which covers a rollout's overlap, plus the migration job, under the database's `max_connections`. The server's sessions also give up on the database side: a statement after 9 seconds, a lock wait after 5, and a transaction left idle after 30.
 

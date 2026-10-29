@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/samber/lo"
-	"google.golang.org/grpc"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
 
@@ -34,13 +33,6 @@ import (
 	genaiv0 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v0"
 	"github.com/a-novel/service-genai/internal/lib/connectors"
 )
-
-// serverOptions admit a submit at its payload ceiling, and make a stopping server wait for its
-// handlers, so none still runs once the database closes.
-var serverOptions = []grpc.ServerOption{
-	grpc.MaxRecvMsgSize(handlers.GrpcMaxReceiveBytes),
-	grpc.WaitForHandlers(true),
-}
 
 func main() {
 	cfg := config.AppPresetDefault
@@ -150,9 +142,8 @@ func main() {
 
 	serviceToken := handlers.GrpcServiceToken(cfg.ServiceToken, httpf.NewPoolClient(httpf.PoolOptions{}))
 
-	server := grpcf.NewServer(
-		ctx, cfg.Otel, cfg.GrpcLogger, cfg.App.DowntimeStart, ctxInterceptor, slices.Concat(serverOptions, serviceToken)...,
-	)
+	options := slices.Concat(handlers.GrpcServerOptions(cfg.Grpc.MaxConcurrentCalls), serviceToken)
+	server := grpcf.NewServer(ctx, cfg.Otel, cfg.GrpcLogger, cfg.App.DowntimeStart, ctxInterceptor, options...)
 
 	healthcheck := grpcf.RegisterEchoServers(server)
 	healthcheck.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
