@@ -175,7 +175,7 @@ jobs:
       - uses: a-novel-kit/workflows/go-actions/test-go@v1.81.0
         id: test
         with:
-          include: /internal
+          include: /internal|/cmd
           skip_setup: true
           test_artifact: gotest
           coverage_artifact: gocover
