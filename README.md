@@ -204,6 +204,7 @@ gRPC server:
 | `GRPC_PORT`                 | Port the server listens on.                                                                                                                                   | `8080`  |
 | `GRPC_TIMEOUT_SHUTDOWN`     | Graceful shutdown budget. With the 4 seconds of telemetry flushes after it, it fits Cloud Run's 10 seconds before `SIGKILL`.                                  | `6s`    |
 | `GRPC_MAX_CONCURRENT_CALLS` | Calls the server runs at once, the health service aside. It refuses one more with `UNAVAILABLE` before reading it, so the caller retries. `0` bounds nothing. | `20`    |
+| `METRICS_PORT`              | Port that serves the calls in flight as the Prometheus gauge `grpc_server_calls_in_flight`, for an autoscaler. It stops with the server.                      | `9090`  |
 
 Service tokens (image `grpc`). Without `SERVICE_TOKEN_ISSUER`, the server takes every call. With it, the server refuses a call unless its `X-Service-Authorization` header carries a token from an allowed caller. The gRPC health service stays open for probes:
 
@@ -328,7 +329,7 @@ grpcurl --plaintext "localhost:${SERVICE_GENAI_GRPC_PORT}" list
 Without the CLI, the repository's compose file runs a target on its own. Enable the target's profile and set the host ports it publishes. The `sweep` target serves `POST /sweep` on `SWEEP_PORT`.
 
 ```bash
-POSTGRES_PORT=5432 GRPC_PORT=8080 podman compose -f builds/podman-compose.yaml --profile grpc up -d
+POSTGRES_PORT=5432 GRPC_PORT=8080 METRICS_PORT=9090 podman compose -f builds/podman-compose.yaml --profile grpc up -d
 ```
 
 ## Contributing
