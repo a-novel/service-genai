@@ -1,9 +1,13 @@
 package servicegenai_test
 
 import (
+	"bytes"
 	"context"
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/google/uuid"
@@ -23,8 +27,27 @@ import (
 
 	"github.com/a-novel/service-genai/internal/config/env"
 	"github.com/a-novel/service-genai/internal/core"
+	genaiv0 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v0"
 	servicegenai "github.com/a-novel/service-genai/pkg/go"
 )
+
+// refuseFirstSubmit refuses the first submit it reads with Unavailable, as a full server does, and
+// answers the others with a new generation.
+type refuseFirstSubmit struct {
+	genaiv0.UnimplementedGenerationSubmitServiceServer
+
+	refused *atomic.Bool
+}
+
+func (server refuseFirstSubmit) GenerationSubmit(
+	context.Context, *servicegenai.GenerationSubmitRequest,
+) (*servicegenai.GenerationSubmitResponse, error) {
+	if server.refused.CompareAndSwap(false, true) {
+		return nil, status.Error(codes.Unavailable, "server at its concurrent call limit: retry later")
+	}
+
+	return &servicegenai.GenerationSubmitResponse{Created: true}, nil
+}
 
 // newClient dials the service this test runs against. It is a live container, not a mock: what is
 // checked here is that the published contract works end to end.
@@ -126,6 +149,48 @@ func TestClient(t *testing.T) {
 		traceparent := <-received
 		require.Len(t, traceparent, 1)
 		require.Contains(t, traceparent[0], caller.TraceID().String())
+	})
+
+	// A full server refuses a submit past gRPC's default retry buffer of 256 KiB, and an in-cluster
+	// caller sends it again.
+	t.Run("Success/RetriesRefusedSubmit", func(t *testing.T) {
+		t.Parallel()
+
+		// The server refuses the first submit once it has read it, so the client has sent the whole
+		// request when the refusal arrives.
+		var refused atomic.Bool
+
+		server := grpc.NewServer()
+		genaiv0.RegisterGenerationSubmitServiceServer(server, refuseFirstSubmit{refused: &refused})
+
+		listener := bufconn.Listen(1 << 16)
+		go func() { _ = server.Serve(listener) }()
+
+		defer server.Stop()
+
+		tokenPath := filepath.Join(t.TempDir(), "token")
+		require.NoError(t, os.WriteFile(tokenPath, []byte("token"), 0o600))
+
+		provider := &grpcf.ServiceTokenCredentialsProvider{ServiceTokenPath: tokenPath}
+		options, err := provider.Options(t.Context())
+		require.NoError(t, err)
+
+		client, err := servicegenai.NewClient("passthrough:///bufconn", append(options,
+			grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+				return listener.DialContext(ctx)
+			}),
+		)...)
+		require.NoError(t, err)
+
+		defer client.Close()
+
+		request := submitRequest(uuid.Must(uuid.NewV7()).String())
+		request.Payload = bytes.Repeat([]byte("x"), 1<<20)
+
+		response, err := client.GenerationSubmit(t.Context(), request)
+		require.NoError(t, err)
+		require.True(t, response.GetCreated())
+		require.True(t, refused.Load())
 	})
 
 	// The submit contract against a running service: a resend of the same request replays it, any other

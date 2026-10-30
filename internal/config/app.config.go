@@ -83,6 +83,8 @@ type App struct {
 	App Main `json:"app" yaml:"app"`
 	// Grpc holds the gRPC server configuration.
 	Grpc grpcf.ServerConfig `json:"grpc" yaml:"grpc"`
+	// Metrics holds the configuration of the server that reports the gRPC server's calls in flight.
+	Metrics httpf.ServerConfig `json:"metrics" yaml:"metrics"`
 	// Rest holds the configuration of the REST servers: the notification server and the sweep.
 	Rest httpf.ServerConfig `json:"rest" yaml:"rest"`
 	// ServiceToken names the service tokens the gRPC server accepts. Without an issuer, it takes every

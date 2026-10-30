@@ -1,10 +1,11 @@
-// Command grpc serves the generation API, internal only. cmd/rest receives the providers'
-// notifications, cmd/sweep checks the generations nobody polled, and cmd/migrations applies the
-// database schema.
+// Command grpc serves the generation API, internal only, and its calls in flight to an autoscaler.
+// cmd/rest receives the providers' notifications, cmd/sweep checks the generations nobody polled, and
+// cmd/migrations applies the database schema.
 package main
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log"
 	"os"
@@ -140,9 +141,10 @@ func main() {
 		return postgres.TransferContext(ctx, rpCtx)
 	}
 
+	callLimit := grpcf.NewCallLimit(cfg.Grpc.MaxConcurrentCalls)
 	serviceToken := handlers.GrpcServiceToken(cfg.ServiceToken, httpf.NewPoolClient(httpf.PoolOptions{}))
 
-	options := slices.Concat(handlers.GrpcServerOptions(cfg.Grpc.MaxConcurrentCalls), serviceToken)
+	options := slices.Concat(handlers.GrpcServerOptions(callLimit), serviceToken)
 	server := grpcf.NewServer(ctx, cfg.Otel, cfg.GrpcLogger, cfg.App.DowntimeStart, ctxInterceptor, options...)
 
 	healthcheck := grpcf.RegisterEchoServers(server)
@@ -166,11 +168,22 @@ func main() {
 	// =================================================================================================================
 
 	log.Println("Starting gRPC server on :" + strconv.Itoa(cfg.Grpc.Port))
+	log.Println("Serving the calls in flight on :" + strconv.Itoa(cfg.Metrics.Port))
+
+	// Either server stops the other when it ends, so the process never serves calls it cannot report.
+	metrics := make(chan error, 1)
+
+	go func() {
+		metrics <- httpf.ListenAndServe(ctx, cfg.Metrics, callLimit)
+
+		stop()
+	}()
 
 	err := grpcf.ListenAndServe(ctx, cfg.Grpc, server)
 
 	stop()
 
+	err = errors.Join(err, <-metrics)
 	if err != nil {
 		panic(err)
 	}

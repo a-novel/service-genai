@@ -32,6 +32,8 @@ const (
 	// MaxConcurrentCallsDefault bounds the gRPC calls one instance runs at once. Twenty submits at the
 	// payload ceiling fit an instance of 2 GiB with GOMEMLIMIT at 1600MiB.
 	MaxConcurrentCallsDefault = 20
+	// MetricsPortDefault is the port that serves the gRPC server's calls in flight to an autoscaler.
+	MetricsPortDefault = 9090
 
 	// TimeoutRequestDefault bounds a REST request, which runs its checks before it answers. A sweep call
 	// checks for a minute, then waits out its last checks, which take a minute at most.
@@ -108,6 +110,8 @@ var (
 	Rest = httpf.LoadServerConfig(getEnv, restDefaults())
 	// Grpc configures the gRPC server from the GRPC_* variables.
 	Grpc = grpcf.LoadServerConfig(getEnv, grpcDefaults())
+	// Metrics configures the server that reports the gRPC server's calls in flight, on METRICS_PORT.
+	Metrics = metricsConfig()
 
 	// ServiceTokenIssuer is the issuer of the service tokens the gRPC server accepts, as a token's
 	// "iss" claim names it. When empty, the server takes every call without a service token.
@@ -181,4 +185,14 @@ func grpcDefaults() grpcf.ServerConfig {
 	defaults.MaxConcurrentCalls = MaxConcurrentCallsDefault
 
 	return defaults
+}
+
+// metricsConfig reads METRICS_PORT and keeps golib's REST timeouts, with the drain of the other
+// servers.
+func metricsConfig() httpf.ServerConfig {
+	metrics := httpf.ServerConfigDefault
+	metrics.Port = config.LoadEnv(getEnv("METRICS_PORT"), MetricsPortDefault, config.IntParser)
+	metrics.Timeouts.Shutdown = TimeoutShutdownDefault
+
+	return metrics
 }

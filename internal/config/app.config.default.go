@@ -54,8 +54,9 @@ var AppPresetDefault = App{
 		Name:          env.AppName,
 		DowntimeStart: env.DowntimeStart,
 	},
-	Grpc: env.Grpc,
-	Rest: env.Rest,
+	Grpc:    env.Grpc,
+	Metrics: env.Metrics,
+	Rest:    env.Rest,
 	ServiceToken: servicetoken.Config{
 		Issuer:   env.ServiceTokenIssuer,
 		Audience: env.ServiceTokenAudience,

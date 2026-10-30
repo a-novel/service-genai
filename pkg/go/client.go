@@ -123,11 +123,19 @@ func (c *client) Close() {
 // to the underlying gRPC connection, after a receive limit large enough for a
 // generation's responses.
 //
+// A request up to the same size stays retryable, so a connection with a retry policy, such as
+// golib's in-cluster one, sends a refused submit again at any payload size. The connection keeps
+// each request in memory until the server begins its answer.
+//
 // Each call opens a client span and sends the caller's trace context, so the server's
 // spans join the caller's trace.
 func NewClient(addr string, opts ...grpc.DialOption) (Client, error) {
 	defaults := []grpc.DialOption{
-		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(maxReceiveBytes)),
+		grpc.WithDefaultCallOptions(
+			grpc.MaxCallRecvMsgSize(maxReceiveBytes),
+			// gRPC keeps 256 KiB of a call for a retry by default: a larger call, once sent, is never retried.
+			grpc.MaxRetryRPCBufferSize(maxReceiveBytes),
+		),
 		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
 	}
 
