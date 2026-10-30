@@ -14,6 +14,8 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/types/known/emptypb"
 
+	"github.com/a-novel-kit/golib/grpcf"
+
 	"github.com/a-novel/service-genai/internal/config"
 	"github.com/a-novel/service-genai/internal/handlers"
 )
@@ -93,7 +95,7 @@ func TestGrpcServerOptions(t *testing.T) {
 
 			calls := &heldCalls{started: make(chan struct{}, testCase.held), release: make(chan struct{})}
 
-			server := grpc.NewServer(handlers.GrpcServerOptions(limit)...)
+			server := grpc.NewServer(handlers.GrpcServerOptions(grpcf.NewCallLimit(limit))...)
 			server.RegisterService(heldService, calls)
 
 			listener := bufconn.Listen(1 << 16)
