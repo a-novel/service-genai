@@ -1,5 +1,5 @@
-// Command migrations applies the service's database schema migrations and exits.
-// The cmd/grpc, cmd/rest and cmd/sweep servers start once the schema is in place.
+// Command migrations applies the service's database schema migrations, schedules its pg_cron jobs
+// and exits. The cmd/grpc, cmd/rest and cmd/sweep servers start once the schema is in place.
 package main
 
 import (
@@ -16,4 +16,7 @@ import (
 func main() {
 	ctx := lo.Must(postgres.NewContext(context.Background(), config.PostgresPresetMigrations))
 	lo.Must0(postgres.RunMigrationsContext(ctx, migrations.Migrations))
+
+	db := lo.Must(postgres.GetContext(ctx))
+	lo.Must(db.NewRaw(migrations.Jobs).Exec(ctx))
 }
