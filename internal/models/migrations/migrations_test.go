@@ -194,3 +194,129 @@ func TestPurgeSettledGenerations(t *testing.T) {
 		})
 	}
 }
+
+func TestJobs(t *testing.T) {
+	t.Parallel()
+
+	// jobsQuery reads the service's pg_cron jobs. Own reports whether the test's role owns the job.
+	jobsQuery := `SELECT jobid, jobname, schedule, command, username = current_user AS own
+		FROM cron.job WHERE jobname LIKE 'service-genai-%' ORDER BY jobname, jobid LIMIT 10`
+
+	type cronJob struct {
+		JobID int64 `bun:"jobid"`
+
+		Name     string `bun:"jobname"`
+		Schedule string `bun:"schedule"`
+		Command  string `bun:"command"`
+		Own      bool   `bun:"own"`
+	}
+
+	// expectJob is what a case checks of each job.
+	type expectJob struct {
+		Name     string
+		Schedule string
+		Own      bool
+	}
+
+	// An import leaves the jobs out, as the delete does.
+	noJobs := "DELETE FROM cron.job WHERE jobname LIKE 'service-genai-%'"
+
+	testCases := []struct {
+		name string
+
+		// setup prepares pg_cron's jobs before Jobs runs.
+		setup []string
+
+		expect []expectJob
+	}{
+		{
+			name: "Success/Missing",
+
+			setup: []string{noJobs},
+
+			expect: []expectJob{
+				{Name: "service-genai-purge-cron-runs", Schedule: "0 4 * * *", Own: true},
+				{Name: "service-genai-purge-settled", Schedule: "10 seconds", Own: true},
+			},
+		},
+		{
+			// A database host hands the jobs to the service's role, and its migrations run as a
+			// superuser. The job keeps its owner and takes the definition.
+			name: "Success/OtherOwner",
+
+			setup: []string{
+				noJobs,
+				"CREATE ROLE service_genai_jobs_owner LOGIN",
+				`SELECT cron.schedule_in_database(
+					'service-genai-purge-settled', '* * * * *', 'SELECT 1', current_database(),
+					'service_genai_jobs_owner'
+				)`,
+			},
+
+			expect: []expectJob{
+				{Name: "service-genai-purge-cron-runs", Schedule: "0 4 * * *", Own: true},
+				{Name: "service-genai-purge-settled", Schedule: "10 seconds", Own: false},
+			},
+		},
+		{
+			// A cluster runs its migrations as the database owner, which sees only its own jobs.
+			name: "Success/DatabaseOwner",
+
+			setup: []string{
+				noJobs,
+				"CREATE ROLE service_genai_jobs_app LOGIN",
+				"GRANT USAGE ON SCHEMA cron TO service_genai_jobs_app",
+				"SET LOCAL ROLE service_genai_jobs_app",
+			},
+
+			expect: []expectJob{
+				{Name: "service-genai-purge-cron-runs", Schedule: "0 4 * * *", Own: true},
+				{Name: "service-genai-purge-settled", Schedule: "10 seconds", Own: true},
+			},
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			// The test database has pg_cron, and the rollback leaves its jobs as they were.
+			postgrestest.RunTransactionalTest(t, configtest.PostgresPreset, func(ctx context.Context, t *testing.T) {
+				t.Helper()
+
+				db, err := postgres.GetContext(ctx)
+				require.NoError(t, err)
+
+				for _, statement := range testCase.setup {
+					_, err = db.NewRaw(statement).Exec(ctx)
+					require.NoError(t, err)
+				}
+
+				_, err = db.NewRaw(migrations.Jobs).Exec(ctx)
+				require.NoError(t, err)
+
+				var jobs []cronJob
+
+				err = db.NewRaw(jobsQuery).Scan(ctx, &jobs)
+				require.NoError(t, err)
+				require.Equal(t, testCase.expect, lo.Map(jobs, func(job cronJob, _ int) expectJob {
+					return expectJob{Name: job.Name, Schedule: job.Schedule, Own: job.Own}
+				}))
+
+				purge, ok := lo.Find(jobs, func(job cronJob) bool { return job.Name == "service-genai-purge-settled" })
+				require.True(t, ok)
+				require.Equal(t, "SELECT public.purge_settled_generations()", purge.Command)
+
+				// A second run changes nothing.
+				_, err = db.NewRaw(migrations.Jobs).Exec(ctx)
+				require.NoError(t, err)
+
+				var rerun []cronJob
+
+				err = db.NewRaw(jobsQuery).Scan(ctx, &rerun)
+				require.NoError(t, err)
+				require.Equal(t, jobs, rerun)
+			})
+		})
+	}
+}

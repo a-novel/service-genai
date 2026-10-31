@@ -1,4 +1,4 @@
-# Runs the migrations job: applies pending database schema migrations.
+# Runs the migrations job: applies pending database schema migrations, then schedules the pg_cron jobs.
 FROM docker.io/library/golang:1.27.3-alpine AS builder
 
 ENV CGO_ENABLED=0

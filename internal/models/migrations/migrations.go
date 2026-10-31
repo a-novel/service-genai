@@ -11,3 +11,10 @@ import (
 //go:generate env GOLIB_UPDATE_SNAPSHOTS=1 go test -run ^TestMigrationRoundtrip$
 //go:embed *.sql
 var Migrations embed.FS
+
+// Jobs is the SQL that schedules the service's pg_cron jobs, such as the retention purge. Run it
+// after [Migrations] on every run: a database import keeps the migration history but not the jobs.
+// A second run changes nothing, and a database without pg_cron skips it.
+//
+//go:embed cron/jobs.sql
+var Jobs string
