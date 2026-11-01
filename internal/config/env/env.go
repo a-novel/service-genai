@@ -9,7 +9,6 @@ import (
 	"github.com/a-novel-kit/golib/downtime"
 	"github.com/a-novel-kit/golib/grpcf"
 	"github.com/a-novel-kit/golib/httpf"
-	"github.com/a-novel-kit/golib/sentryf"
 )
 
 // prefix is prepended to every configuration variable name that this package reads.
@@ -25,8 +24,8 @@ const (
 	// AppNameDefault names the application in logs and traces when APP_NAME is unset.
 	AppNameDefault = "service-genai"
 
-	// TimeoutShutdownDefault ends a server's drain 6 seconds after SIGTERM, so its Sentry and
-	// OpenTelemetry flushes, up to 2 seconds each, finish before Cloud Run kills it at 10 seconds.
+	// TimeoutShutdownDefault ends a server's drain 6 seconds after SIGTERM, so its OpenTelemetry
+	// flush, up to 2 seconds, finishes long before Kubernetes kills the pod at 30 seconds.
 	TimeoutShutdownDefault = 6 * time.Second
 
 	// MaxConcurrentCallsDefault bounds the gRPC calls one instance runs at once. Twenty submits at the
@@ -153,16 +152,12 @@ var (
 	// is read without it too.
 	OTLPEndpoint = os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
 
-	// Sentry configures the report of server faults from the SENTRY_* variables. Without a DSN, the
-	// servers report nothing.
-	Sentry = sentryf.LoadConfig(getEnv)
-
 	// DowntimeStart is when a planned downtime of this service starts, in RFC 3339. From then
 	// until it is removed, the service refuses work. Nil when none is planned.
 	DowntimeStart = config.LoadEnv(getEnv("DOWNTIME_START"), nil, downtime.ParseStart)
 )
 
-// restDefaults keeps golib's REST defaults but for a few. The drain fits Cloud Run's kill window, and a
+// restDefaults keeps golib's REST defaults but for a few. The drain fits the pod's grace period, and a
 // request has the time its checks need. The rate limit lets a provider's burst of notifications
 // through, since they all come from its few addresses. The routes only read, receive notifications
 // and sweep.
@@ -177,7 +172,7 @@ func restDefaults() httpf.ServerConfig {
 	return defaults
 }
 
-// grpcDefaults keeps golib's gRPC defaults but for the drain, which fits Cloud Run's kill window, and
+// grpcDefaults keeps golib's gRPC defaults but for the drain, which fits the pod's grace period, and
 // the call cap, which bounds the memory requests hold.
 func grpcDefaults() grpcf.ServerConfig {
 	defaults := grpcf.ServerConfigDefault

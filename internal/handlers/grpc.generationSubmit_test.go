@@ -49,7 +49,7 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 		expectStatus codes.Code
 		// expectMessage is part of the error a caller reads, telling it what to fix.
 		expectMessage string
-		// expectCause is the error the fault wraps, which Sentry groups it by.
+		// expectCause is the error the fault wraps, whose type the call's span records.
 		expectCause error
 	}{
 		{

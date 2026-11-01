@@ -32,7 +32,7 @@ func TestGrpcGenerationGet(t *testing.T) {
 
 		expect       *genaiv0.GenerationGetResponse
 		expectStatus codes.Code
-		// expectCause is the error the fault wraps, which Sentry groups it by.
+		// expectCause is the error the fault wraps, whose type the call's span records.
 		expectCause error
 	}{
 		{
