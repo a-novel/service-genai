@@ -4,8 +4,7 @@ name: release
 # by the release train, through workflow_call's identical inputs. `plan`
 # rehearses with no credential; `cut` runs in the protected `release` environment,
 # the "who can publish" gate whose key only it reads, and pushes the version
-# commit, the tag and the GitHub Release as the release App. It then records the
-# release in Sentry with its commits.
+# commit, the tag and the GitHub Release as the release App.
 #
 # The tag then runs this workflow again, and that run publishes: the images and
 # their attestations, and the pin dispatch. Only the release App and admins can
@@ -64,21 +63,13 @@ jobs:
     permissions:
       contents: read
     steps:
-      - id: release
-        uses: a-novel-kit/workflows/publish-actions/release-core@v1.81.3
+      - uses: a-novel-kit/workflows/publish-actions/release-core@v1.81.3
         with:
           # renovate: datasource=go depName=github.com/a-novel-kit/stack/cli
           cli_version: "1.42.0"
           release_type: ${{ inputs.release_type }}
           client_id: ${{ vars.RELEASE_BOT_CLIENT_ID }}
           app_private_key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
-      - uses: a-novel-kit/workflows/publish-actions/sentry-release@v1.81.3
-        with:
-          release_version: ${{ steps.release.outputs.version }}
-          auth_token: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          # renovate: datasource=custom.sentry-cli depName=getsentry/sentry-cli
-          version: "3.8.2"
-          sha256: "c958865f9d4000183509ea21b1f04925d5390de6d8d87386b9e69f2b305070c3"
 
   build-database:
     if: github.event_name == 'push'

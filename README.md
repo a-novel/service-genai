@@ -202,7 +202,7 @@ gRPC server:
 | Name                        | Description                                                                                                                                                   | Default |
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
 | `GRPC_PORT`                 | Port the server listens on.                                                                                                                                   | `8080`  |
-| `GRPC_TIMEOUT_SHUTDOWN`     | Graceful shutdown budget. With the 4 seconds of telemetry flushes after it, it fits Cloud Run's 10 seconds before `SIGKILL`.                                  | `6s`    |
+| `GRPC_TIMEOUT_SHUTDOWN`     | Graceful shutdown budget. With the 2-second telemetry flush after it, it fits Kubernetes' 30 seconds before `SIGKILL`.                                        | `6s`    |
 | `GRPC_MAX_CONCURRENT_CALLS` | Calls the server runs at once, the health service aside. It refuses one more with `UNAVAILABLE` before reading it, so the caller retries. `0` bounds nothing. | `20`    |
 | `METRICS_PORT`              | Port that serves the calls in flight as the Prometheus gauge `grpc_server_calls_in_flight`, for an autoscaler. It stops with the server.                      | `9090`  |
 
@@ -230,7 +230,7 @@ REST servers (images `rest` and `sweep`). Every notification comes from the prov
 | `REST_TIMEOUT_WRITE`        | Write timeout. Keep it above the request timeout, or a sweep's answer is lost.                                                                | `2m15s`         |
 | `REST_TIMEOUT_IDLE`         | Idle keep-alive timeout.                                                                                                                      | `60s`           |
 | `REST_TIMEOUT_REQUEST`      | Per-request timeout. A sweep starts no check this deadline could not wait out, and a check takes a minute at most, so keep it above a minute. | `2m`            |
-| `REST_TIMEOUT_SHUTDOWN`     | Graceful shutdown budget. With the 4 seconds of telemetry flushes after it, it fits Cloud Run's 10 seconds before `SIGKILL`.                  | `6s`            |
+| `REST_TIMEOUT_SHUTDOWN`     | Graceful shutdown budget. With the 2-second telemetry flush after it, it fits Kubernetes' 30 seconds before `SIGKILL`.                        | `6s`            |
 
 Memory (server images). A request holds a few copies of what it carries: a submit its payload, up to 16 MiB, and a read its responses, up to 24 MiB each. Twenty concurrent submits of the largest payloads peak near 1.6 GiB on one `grpc` instance. Give it 2 GiB with `GOMEMLIMIT` near `1600MiB`, or lower `GRPC_MAX_CONCURRENT_CALLS`.
 
@@ -259,14 +259,6 @@ Logs and tracing (all server images). OpenTelemetry exports to stdout, or over O
 | `OTEL_EXPORTER_OTLP_COMPRESSION` | `gzip` compresses each export.                                                                                   |                 |
 | `OTEL_SERVICE_NAME`              | Service name every span and log record carries.                                                                  |                 |
 | `APP_NAME`                       | Application name attached to traces and logs.                                                                    | `service-genai` |
-
-Error reporting (server images). With `SENTRY_DSN` set, the servers send each server fault to Sentry: a `5xx`, a gRPC `INTERNAL` or `UNAVAILABLE`, and a panic. Without it, they report nothing.
-
-| Name                 | Description                                                                                                                    | Default |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------- |
-| `SENTRY_DSN`         | Client key of the service's Sentry project. **Inject it as a secret.**                                                         |         |
-| `SENTRY_RELEASE`     | Release the servers run, as `service-genai@<version>`, the name release CI gives it in Sentry. **Required with `SENTRY_DSN`.** |         |
-| `SENTRY_ENVIRONMENT` | Deployment name, such as `production`. **Required with `SENTRY_DSN`.**                                                         |         |
 
 </details>
 
