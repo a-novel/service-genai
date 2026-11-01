@@ -199,12 +199,15 @@ Checks (all servers) and sweep (`sweep`). [Generation checks](./docs/operations/
 
 gRPC server:
 
-| Name                        | Description                                                                                                                                                   | Default |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| `GRPC_PORT`                 | Port the server listens on.                                                                                                                                   | `8080`  |
-| `GRPC_TIMEOUT_SHUTDOWN`     | Graceful shutdown budget. With the 2-second telemetry flush after it, it fits Kubernetes' 30 seconds before `SIGKILL`.                                        | `6s`    |
-| `GRPC_MAX_CONCURRENT_CALLS` | Calls the server runs at once, the health service aside. It refuses one more with `UNAVAILABLE` before reading it, so the caller retries. `0` bounds nothing. | `20`    |
-| `METRICS_PORT`              | Port that serves the calls in flight as the Prometheus gauge `grpc_server_calls_in_flight`, for an autoscaler. It stops with the server.                      | `9090`  |
+| Name                        | Description                                                                                                                                                                    | Default |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------- |
+| `GRPC_PORT`                 | Port the server listens on. It serves TLS once `GRPC_TLS_CERT_FILE` and `GRPC_TLS_KEY_FILE` are set.                                                                           | `8080`  |
+| `GRPC_TLS_CERT_FILE`        | PEM certificate chain the server presents, leaf first. The server loads it again at the first connection after the file changes, as when cert-manager renews a mounted Secret. |         |
+| `GRPC_TLS_KEY_FILE`         | PEM private key of that certificate.                                                                                                                                           |         |
+| `GRPC_PLAINTEXT_PORT`       | Also serve plaintext on this port beside the TLS one, while callers move to TLS. Unset serves none.                                                                            |         |
+| `GRPC_TIMEOUT_SHUTDOWN`     | Graceful shutdown budget. With the 2-second telemetry flush after it, it fits Kubernetes' 30 seconds before `SIGKILL`.                                                         | `6s`    |
+| `GRPC_MAX_CONCURRENT_CALLS` | Calls the server runs at once, the health service aside. It refuses one more with `UNAVAILABLE` before reading it, so the caller retries. `0` bounds nothing.                  | `20`    |
+| `METRICS_PORT`              | Port that serves the calls in flight as the Prometheus gauge `grpc_server_calls_in_flight`, for an autoscaler. It stops with the server.                                       | `9090`  |
 
 Service tokens (image `grpc`). Without `SERVICE_TOKEN_ISSUER`, the server takes every call. With it, the server refuses a call unless its `X-Service-Authorization` header carries a token from an allowed caller. The gRPC health service stays open for probes:
 
