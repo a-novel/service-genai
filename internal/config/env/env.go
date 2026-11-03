@@ -3,6 +3,7 @@ package env
 import (
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/a-novel-kit/golib/config"
@@ -124,7 +125,7 @@ var (
 	ServiceTokenCallers = config.LoadEnv(getEnv("SERVICE_TOKEN_CALLERS"), nil, config.SliceParser(config.StringParser))
 	// ServiceTokenIssuerOptional lets the gRPC server start without [ServiceTokenIssuer], and then
 	// take every call. Only a local or test stack sets it, as the standalone image does.
-	ServiceTokenIssuerOptional = config.LoadEnv(getEnv("SERVICE_TOKEN_ISSUER_OPTIONAL"), false, config.BoolParser)
+	ServiceTokenIssuerOptional = config.LoadEnv(getEnv("SERVICE_TOKEN_ISSUER_OPTIONAL"), false, strconv.ParseBool)
 
 	// OpenAIAPIKey authenticates the OpenAI connector. It is the only credential this service holds,
 	// so no caller holds one.
