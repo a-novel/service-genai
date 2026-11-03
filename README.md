@@ -34,7 +34,7 @@ Five rules shape the contract.
 
 **Usage is capped per purpose and user tier.** The [caps file](./internal/config/caps.config.yaml) is built into the image, so every change to it is reviewed. It declares each purpose a caller may submit and the token limits of each user tier over rolling windows. It also caps how many generations a user may run at once, per purpose and across all of them. Its comments explain every key. Once a user reaches a limit, a submit that would start a new generation answers `RESOURCE_EXHAUSTED`, naming the limit. An admitted call always finishes, even past its cap, and a resend of a running generation always attaches to it.
 
-Callers are other services, which reach the generation API over **gRPC** on the internal network. Once service tokens are configured, the server admits only the callers they allow. The optional `rest` server is public and serves no generation. It only receives the providers' notifications that their calls ended.
+Callers are other services, which reach the generation API over **gRPC** on the internal network. The server admits only the callers its service tokens allow, and refuses to start without a token issuer unless a local stack opts out. The optional `rest` server is public and serves no generation. It only receives the providers' notifications that their calls ended.
 
 ## Deploying
 
@@ -209,13 +209,14 @@ gRPC server:
 | `GRPC_MAX_CONCURRENT_CALLS` | Calls the server runs at once, the health service aside. It refuses one more with `UNAVAILABLE` before reading it, so the caller retries. `0` bounds nothing.                  | `20`    |
 | `METRICS_PORT`              | Port that serves the calls in flight as the Prometheus gauge `grpc_server_calls_in_flight`, for an autoscaler. It stops with the server.                                       | `9090`  |
 
-Service tokens (image `grpc`). Without `SERVICE_TOKEN_ISSUER`, the server takes every call. With it, the server refuses a call unless its `X-Service-Authorization` header carries a token from an allowed caller. The gRPC health service stays open for probes:
+Service tokens (image `grpc`). The server refuses a call unless its `X-Service-Authorization` header carries a token from an allowed caller, and refuses to start without `SERVICE_TOKEN_ISSUER`. The gRPC health service stays open for probes:
 
-| Name                     | Description                                                                                                                                                                                                                                                                 | Default |
-| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| `SERVICE_TOKEN_ISSUER`   | Issuer of the service tokens the server accepts, such as a GKE cluster's `https://container.googleapis.com/v1/projects/<project>/locations/<location>/clusters/<cluster>`. The server reads its keys through its OpenID discovery document, so it needs egress to its host. |         |
-| `SERVICE_TOKEN_AUDIENCE` | Audience the server answers to. Each caller's projected token names it.                                                                                                                                                                                                     |         |
-| `SERVICE_TOKEN_CALLERS`  | Service accounts allowed to call, comma-separated, each as `system:serviceaccount:<namespace>:<name>`. In production, the GenAI smoke check.                                                                                                                                |         |
+| Name                            | Description                                                                                                                                                                                                                                                                 | Default |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| `SERVICE_TOKEN_ISSUER`          | Issuer of the service tokens the server accepts, such as a GKE cluster's `https://container.googleapis.com/v1/projects/<project>/locations/<location>/clusters/<cluster>`. The server reads its keys through its OpenID discovery document, so it needs egress to its host. |         |
+| `SERVICE_TOKEN_AUDIENCE`        | Audience the server answers to. Each caller's projected token names it.                                                                                                                                                                                                     |         |
+| `SERVICE_TOKEN_CALLERS`         | Service accounts allowed to call, comma-separated, each as `system:serviceaccount:<namespace>:<name>`. In production, the GenAI smoke check.                                                                                                                                |         |
+| `SERVICE_TOKEN_ISSUER_OPTIONAL` | Start without `SERVICE_TOKEN_ISSUER`, and then take every call. For a local or test stack only: the `standalone-grpc` image sets it, and an issuer keeps the check on.                                                                                                      | `false` |
 
 REST servers (images `rest` and `sweep`). Every notification comes from the provider's few addresses, so the rate limit is sized for the provider's bursts.
 

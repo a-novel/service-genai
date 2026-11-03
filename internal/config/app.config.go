@@ -86,9 +86,12 @@ type App struct {
 	Metrics httpf.ServerConfig `json:"metrics" yaml:"metrics"`
 	// Rest holds the configuration of the REST servers: the notification server and the sweep.
 	Rest httpf.ServerConfig `json:"rest" yaml:"rest"`
-	// ServiceToken names the service tokens the gRPC server accepts. Without an issuer, it takes every
-	// call without one.
+	// ServiceToken names the service tokens the gRPC server accepts. Without an issuer, the server
+	// refuses to start unless ServiceTokenIssuerOptional is set.
 	ServiceToken servicetoken.Config `json:"serviceToken" yaml:"serviceToken"`
+	// ServiceTokenIssuerOptional lets the gRPC server start without a service-token issuer, and then
+	// take every call. Only a local or test stack sets it.
+	ServiceTokenIssuerOptional bool `json:"serviceTokenIssuerOptional" yaml:"serviceTokenIssuerOptional"`
 	// Generations holds how generations are run and kept.
 	Generations Generations `json:"generations" yaml:"generations"`
 	// Sweep configures the sweep that checks generations nobody polled.
