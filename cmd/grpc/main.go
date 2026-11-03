@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/samber/lo"
+	"google.golang.org/grpc"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
 
@@ -132,17 +134,8 @@ func main() {
 	// SERVER
 	// =================================================================================================================
 
-	ctxInterceptor := func(rpCtx context.Context) context.Context {
-		return postgres.TransferContext(ctx, rpCtx)
-	}
-
 	callLimit := grpcf.NewCallLimit(cfg.Grpc.MaxConcurrentCalls)
-	serviceToken := lo.Must(handlers.GrpcServiceToken(
-		cfg.ServiceToken, cfg.ServiceTokenIssuerOptional, httpf.NewPoolClient(httpf.PoolOptions{}),
-	))
-
-	options := slices.Concat(handlers.GrpcServerOptions(callLimit), serviceToken)
-	server := grpcf.NewServer(ctx, cfg.Otel, cfg.GrpcLogger, cfg.App.DowntimeStart, ctxInterceptor, options...)
+	server := lo.Must(newServer(ctx, cfg, callLimit))
 
 	healthcheck := grpcf.RegisterEchoServers(server)
 	healthcheck.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
@@ -184,6 +177,26 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+}
+
+// newServer builds the gRPC server under callLimit. Each call carries the database of ctx, and passes
+// the service-token gate first. The gate refuses an empty issuer unless cfg opts a local stack out, so
+// the server never starts open by mistake.
+func newServer(ctx context.Context, cfg config.App, callLimit *grpcf.CallLimit) (*grpc.Server, error) {
+	serviceToken, err := handlers.GrpcServiceToken(
+		cfg.ServiceToken, cfg.ServiceIssuerOptional, httpf.NewPoolClient(httpf.PoolOptions{}),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("service token gate: %w", err)
+	}
+
+	ctxInterceptor := func(rpCtx context.Context) context.Context {
+		return postgres.TransferContext(ctx, rpCtx)
+	}
+
+	options := slices.Concat(handlers.GrpcServerOptions(callLimit), serviceToken)
+
+	return grpcf.NewServer(ctx, cfg.Otel, cfg.GrpcLogger, cfg.App.DowntimeStart, ctxInterceptor, options...), nil
 }
 
 func closeDatabase(database io.Closer) {
