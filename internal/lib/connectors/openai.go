@@ -37,9 +37,9 @@ const readTimeout = 10 * time.Second
 // the ping may go unanswered.
 const healthCheckTimeout = 5 * time.Second
 
-// ResponseSizeCeiling bounds a provider response that a check reads whole. It holds twice the largest
-// output OpenAI writes, plus the instructions a response echoes from a payload at its ceiling. Two
-// attempts' responses still fit the client's 64 MiB message.
+// ResponseSizeCeiling bounds a provider response that a start or a check reads whole. It holds twice
+// the largest output OpenAI writes, plus the instructions a response echoes from a payload at its
+// ceiling. Two attempts' responses still fit the client's 64 MiB message.
 const ResponseSizeCeiling = 24 << 20
 
 // readOptions make a read a single bounded attempt: the next check is the retry. A response past
@@ -145,7 +145,11 @@ func (provider *OpenAI) Start(ctx context.Context, request *AsyncStartRequest) (
 
 	var raw []byte
 
-	err = provider.client.Post(ctx, responsesPath, body, &raw, option.WithMaxRetries(0))
+	// The answer is read whole, so it is bounded as a read's is. One past the ceiling was accepted
+	// and cannot be read: the start is ambiguous.
+	err = provider.client.Post(
+		ctx, responsesPath, body, &raw, option.WithMaxRetries(0), option.WithMiddleware(capResponse),
+	)
 	if err != nil {
 		return nil, otel.ReportError(span, classifyOpenAIStartError(err, sent.Load()))
 	}
