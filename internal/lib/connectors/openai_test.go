@@ -300,6 +300,17 @@ func TestOpenAI(t *testing.T) {
 			expectErr: connectors.ErrStartAmbiguous,
 		},
 		{
+			// Accepted, but past what the connector reads: the provider may run a call nothing can read.
+			name: "Error/TooLargeIsAmbiguous",
+
+			script: &scriptedProvider{
+				status: http.StatusOK,
+				body:   response("queued", `"pad": "`+strings.Repeat("x", connectors.ResponseSizeCeiling)+`"`),
+			},
+
+			expectErr: connectors.ErrStartAmbiguous,
+		},
+		{
 			// Retrying cannot help until an operator adds credit, so the generation fails with the body.
 			name: "Error/QuotaExhausted",
 
