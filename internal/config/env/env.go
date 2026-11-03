@@ -83,7 +83,7 @@ var (
 	// PostgresHost is the PostgreSQL server hostname or IP address.
 	PostgresHost = getEnv("POSTGRES_HOST")
 	// PostgresPort is the PostgreSQL server port.
-	PostgresPort = config.LoadEnv(getEnv("POSTGRES_PORT"), PostgresPortDefault, config.IntParser)
+	PostgresPort = config.LoadEnv(getEnv("POSTGRES_PORT"), PostgresPortDefault, strconv.Atoi)
 	// PostgresUser is the PostgreSQL login role.
 	PostgresUser = getEnv("POSTGRES_USER")
 	// PostgresPassword is the PostgreSQL login credential.
@@ -91,17 +91,17 @@ var (
 	// PostgresDatabase is the PostgreSQL database name.
 	PostgresDatabase = getEnv("POSTGRES_DATABASE")
 	// PostgresTLSEnabled controls transport encryption for the PostgreSQL connection.
-	PostgresTLSEnabled = config.LoadEnv(getEnv("POSTGRES_TLS_ENABLED"), PostgresTLSEnabledDefault, config.BoolParser)
+	PostgresTLSEnabled = config.LoadEnv(getEnv("POSTGRES_TLS_ENABLED"), PostgresTLSEnabledDefault, strconv.ParseBool)
 
 	// PostgresMaxOpenConns is the maximum number of open connections to the database.
-	PostgresMaxOpenConns = config.LoadEnv(getEnv("POSTGRES_MAX_OPEN_CONNS"), PostgresMaxOpenConnsDefault, config.IntParser)
+	PostgresMaxOpenConns = config.LoadEnv(getEnv("POSTGRES_MAX_OPEN_CONNS"), PostgresMaxOpenConnsDefault, strconv.Atoi)
 	// PostgresMaxIdleConns is the maximum number of connections kept open while idle.
-	PostgresMaxIdleConns = config.LoadEnv(getEnv("POSTGRES_MAX_IDLE_CONNS"), PostgresMaxIdleConnsDefault, config.IntParser)
+	PostgresMaxIdleConns = config.LoadEnv(getEnv("POSTGRES_MAX_IDLE_CONNS"), PostgresMaxIdleConnsDefault, strconv.Atoi)
 
 	// AppName is the name of the application, as it appears in logs and tracing.
 	AppName = config.LoadEnv(getEnv("APP_NAME"), AppNameDefault, config.StringParser)
 	// Otel enables OpenTelemetry tracing.
-	Otel = config.LoadEnv(getEnv("OTEL"), false, config.BoolParser)
+	Otel = config.LoadEnv(getEnv("OTEL"), false, strconv.ParseBool)
 
 	// GrpcURL is the address of the gRPC service, in the form <host>:<port>. The Go client tests
 	// dial it.
@@ -137,19 +137,19 @@ var (
 	OpenAIBaseURL = config.LoadEnv(getEnv("OPENAI_BASE_URL"), OpenAIBaseURLDefault, config.StringParser)
 
 	// CheckInterval is how long a check stays fresh.
-	CheckInterval = config.LoadEnv(getEnv("CHECK_INTERVAL"), CheckIntervalDefault, config.DurationParser)
+	CheckInterval = config.LoadEnv(getEnv("CHECK_INTERVAL"), CheckIntervalDefault, time.ParseDuration)
 	// MaxAttempts caps the provider calls a generation gets when a call fails retryably.
 	MaxAttempts = config.LoadEnv(getEnv("MAX_ATTEMPTS"), MaxAttemptsDefault, config.Int16Parser)
 
 	// Retention is how long a settled generation's user content survives before the purge.
-	Retention = config.LoadEnv(getEnv("RETENTION"), RetentionDefault, config.DurationParser)
+	Retention = config.LoadEnv(getEnv("RETENTION"), RetentionDefault, time.ParseDuration)
 
 	// SweepInterval is how often the sweep runs.
-	SweepInterval = config.LoadEnv(getEnv("SWEEP_INTERVAL"), SweepIntervalDefault, config.DurationParser)
+	SweepInterval = config.LoadEnv(getEnv("SWEEP_INTERVAL"), SweepIntervalDefault, time.ParseDuration)
 	// SweepBatchSize caps the generations one batch of a sweep takes.
-	SweepBatchSize = config.LoadEnv(getEnv("SWEEP_BATCH_SIZE"), SweepBatchSizeDefault, config.IntParser)
+	SweepBatchSize = config.LoadEnv(getEnv("SWEEP_BATCH_SIZE"), SweepBatchSizeDefault, strconv.Atoi)
 	// SweepTicker makes the sweep server run the sweep itself, every interval.
-	SweepTicker = config.LoadEnv(getEnv("SWEEP_TICKER"), false, config.BoolParser)
+	SweepTicker = config.LoadEnv(getEnv("SWEEP_TICKER"), false, strconv.ParseBool)
 
 	// OTLPEndpoint is the standard OTEL_EXPORTER_OTLP_ENDPOINT. When set, traces and logs export
 	// over OTLP/HTTP, which the OTEL_EXPORTER_OTLP_* variables configure. When empty, they go to
@@ -191,7 +191,7 @@ func grpcDefaults() grpcf.ServerConfig {
 // servers.
 func metricsConfig() httpf.ServerConfig {
 	metrics := httpf.ServerConfigDefault
-	metrics.Port = config.LoadEnv(getEnv("METRICS_PORT"), MetricsPortDefault, config.IntParser)
+	metrics.Port = config.LoadEnv(getEnv("METRICS_PORT"), MetricsPortDefault, strconv.Atoi)
 	metrics.Timeouts.Shutdown = TimeoutShutdownDefault
 
 	return metrics
