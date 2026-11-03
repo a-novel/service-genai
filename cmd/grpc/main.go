@@ -138,7 +138,7 @@ func main() {
 
 	callLimit := grpcf.NewCallLimit(cfg.Grpc.MaxConcurrentCalls)
 	serviceToken := lo.Must(handlers.GrpcServiceToken(
-		cfg.ServiceToken, cfg.ServiceTokenIssuerOptional, httpf.NewPoolClient(httpf.PoolOptions{}),
+		cfg.ServiceToken, cfg.ServiceIssuerOptional, httpf.NewPoolClient(httpf.PoolOptions{}),
 	))
 
 	options := slices.Concat(handlers.GrpcServerOptions(callLimit), serviceToken)

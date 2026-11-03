@@ -58,7 +58,7 @@ var AppPresetDefault = App{
 		Audience: env.ServiceTokenAudience,
 		Callers:  env.ServiceTokenCallers,
 	},
-	ServiceTokenIssuerOptional: env.ServiceTokenIssuerOptional,
+	ServiceIssuerOptional: env.ServiceIssuerOptional,
 
 	Generations: Generations{
 		CheckInterval: env.CheckInterval,

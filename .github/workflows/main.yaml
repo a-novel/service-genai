@@ -314,7 +314,7 @@ jobs:
           # The server refuses to start without a provider key or a token issuer. The smoke run never
           # calls the provider, and takes no service tokens.
           run_args: >-
-            -e POSTGRES_DSN="${POSTGRES_DSN}" -e OPENAI_API_KEY=smoke-test -e SERVICE_TOKEN_ISSUER_OPTIONAL=true
+            -e POSTGRES_DSN="${POSTGRES_DSN}" -e OPENAI_API_KEY=smoke-test -e SERVICE_ISSUER_OPTIONAL=true
 
   build-rest:
     needs: [build-database]
