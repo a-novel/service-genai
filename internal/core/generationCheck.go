@@ -539,7 +539,7 @@ func (service *GenerationCheck) ask(
 			return call, nil, nil
 		}
 
-		since = lo.ToPtr(start.Add(streamQueuedCeiling))
+		since = new(start.Add(streamQueuedCeiling))
 	}
 
 	call, err := connector.Cancel(ctx, *generation.ProviderCallID)
