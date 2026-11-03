@@ -401,8 +401,12 @@ func requestKey(request *GenerationSubmitRequest) ([]byte, error) {
 
 	digest := sha256.New()
 
+	// One buffer holds each field's length prefix in turn.
+	var length [8]byte
+
 	for _, field := range fields {
-		digest.Write(binary.BigEndian.AppendUint64(nil, uint64(len(field))))
+		binary.BigEndian.PutUint64(length[:], uint64(len(field)))
+		digest.Write(length[:])
 		digest.Write(field)
 	}
 
