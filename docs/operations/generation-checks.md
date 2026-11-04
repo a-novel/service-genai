@@ -46,9 +46,9 @@ A held slot covers a call the provider may still run while nothing tracks or met
 
 ## Deploying and recovering
 
-Nothing needs draining. A start already sent runs detached from shutdown until the process exits. The orchestrator kills it ten seconds after SIGTERM on Cloud Run, and a sweep's server exits two seconds earlier, when its drain ends. A provider answers a start well within that, so the start is not cut between the provider accepting the call and its id reaching the database. Every write the start makes after that carries its own deadline.
+Nothing needs draining. A start already sent runs detached from shutdown until the process exits. Kubernetes kills it 30 seconds after SIGTERM, its default grace period, long after a server's drain ends at 6 seconds. A provider answers a start well within that, so the start is not cut between the provider accepting the call and its id reaching the database. Every write the start makes after that carries its own deadline.
 
-A sweep stops taking generations once shutdown begins, so it starts no call the kill could cut, and answers when the checks it started end. With `SWEEP_TICKER`, the server exits only once its run's checks end, a minute after SIGTERM at most. A replica that dies mid-check leaves a row the next poll or sweep picks up. A stream open on a stopping replica ends with `UNAVAILABLE`, and its caller resumes it on another replica, after the last event received.
+A sweep stops taking generations once shutdown begins, so it starts no call the kill could cut, and answers when the checks it started end. With `SWEEP_TICKER`, the server exits once its run's checks end, or when Kubernetes kills it at 30 seconds. A replica that dies mid-check leaves a row the next poll or sweep picks up. A stream open on a stopping replica ends with `UNAVAILABLE`, and its caller resumes it on another replica, after the last event received.
 
 The losses that remain are rare. Each settles its generation `failed` with an unknown outcome, and its answer goes unrecorded:
 

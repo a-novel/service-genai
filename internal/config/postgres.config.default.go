@@ -1,8 +1,6 @@
 package config
 
 import (
-	"time"
-
 	"github.com/samber/lo"
 	"github.com/uptrace/bun/driver/pgdriver"
 
@@ -10,10 +8,6 @@ import (
 
 	"github.com/a-novel/service-genai/internal/config/env"
 )
-
-// postgresDialTimeout covers the network a Cloud Run instance with Direct VPC egress provisions
-// after it starts. The first connection can wait minutes for it.
-const postgresDialTimeout = 3 * time.Minute
 
 // PostgresPresetMigrations is the migrations job's connection. A migration waiting for a lock gives
 // up after three seconds, so the queries queued behind it on its table proceed, and the runner tries
@@ -40,14 +34,13 @@ var PostgresPresetServer = NewPostgresPreset(pgdriver.WithConnParams(serverSessi
 // taken applies to nothing and reports nothing.
 func NewPostgresPreset(extra ...pgdriver.Option) *postgrespresets.Default {
 	connection := postgrespresets.Connection{
-		DSN:         env.PostgresDSN,
-		Host:        env.PostgresHost,
-		Port:        env.PostgresPort,
-		User:        env.PostgresUser,
-		Password:    env.PostgresPassword,
-		Database:    env.PostgresDatabase,
-		TLSEnabled:  env.PostgresTLSEnabled,
-		DialTimeout: postgresDialTimeout,
+		DSN:        env.PostgresDSN,
+		Host:       env.PostgresHost,
+		Port:       env.PostgresPort,
+		User:       env.PostgresUser,
+		Password:   env.PostgresPassword,
+		Database:   env.PostgresDatabase,
+		TLSEnabled: env.PostgresTLSEnabled,
 	}
 
 	preset := postgrespresets.NewDefault(append(lo.Must(connection.Options()), extra...)...)
