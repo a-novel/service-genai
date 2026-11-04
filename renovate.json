@@ -1,7 +1,7 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "github>a-novel-kit/workflows//renovate/service#v1.81.4",
-    "github>a-novel-kit/workflows//renovate/protobuf#v1.81.4"
+    "github>a-novel-kit/workflows//renovate/service#v1.81.5",
+    "github>a-novel-kit/workflows//renovate/protobuf#v1.81.5"
   ]
 }
