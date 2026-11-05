@@ -7,7 +7,6 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
-	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/a-novel-kit/golib/otel"
 	"github.com/a-novel-kit/golib/postgres"
@@ -19,7 +18,6 @@ var generationAttemptInsertQuery string
 // GenerationAttemptInsertRequest is the input to [PgGenerationAttemptInsert.Exec].
 type GenerationAttemptInsertRequest struct {
 	GenerationID uuid.UUID
-	Attempt      int16
 	// Response is the provider's final answer, as sent.
 	Response json.RawMessage
 }
@@ -41,10 +39,6 @@ func (dao *PgGenerationAttemptInsert) Exec(
 	ctx, span := otel.Tracer().Start(ctx, "dao.PgGenerationAttemptInsert")
 	defer span.End()
 
-	span.SetAttributes(
-		attribute.Int("generation.attempt", int(request.Attempt)),
-	)
-
 	db, err := postgres.GetContext(ctx)
 	if err != nil {
 		return nil, otel.ReportError(span, fmt.Errorf("get postgres context: %w", err))
@@ -55,7 +49,6 @@ func (dao *PgGenerationAttemptInsert) Exec(
 	err = db.NewRaw(
 		generationAttemptInsertQuery,
 		request.GenerationID,
-		request.Attempt,
 		request.Response,
 	).Scan(ctx, entity)
 	if err != nil {

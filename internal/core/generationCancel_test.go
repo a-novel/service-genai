@@ -63,7 +63,7 @@ func TestGenerationCancel(t *testing.T) {
 			name: "Success/Running",
 
 			request:   &core.GenerationCancelRequest{ID: testGenerationID, OwnerID: testOwner},
-			daoMock:   &daoMock{resp: withCancel(runningGeneration(1))},
+			daoMock:   &daoMock{resp: withCancel(runningGeneration())},
 			checkMock: &daoMock{resp: settledGeneration(dao.GenerationStatusCancelled)},
 
 			expectStatus: core.GenerationStatusCancelled,
@@ -117,7 +117,7 @@ func TestGenerationCancel(t *testing.T) {
 			name: "Error/Check",
 
 			request:   &core.GenerationCancelRequest{ID: testGenerationID, OwnerID: testOwner},
-			daoMock:   &daoMock{resp: withCancel(runningGeneration(1))},
+			daoMock:   &daoMock{resp: withCancel(runningGeneration())},
 			checkMock: &daoMock{err: errFoo},
 
 			expectErr: errFoo,

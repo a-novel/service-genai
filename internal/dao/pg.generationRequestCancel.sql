@@ -34,5 +34,22 @@ WHERE
   AND generations.owner_id = ?1
   AND generations.status IN ('pending', 'running')
 RETURNING
-  generations.*,
+  generations.id,
+  generations.owner_id,
+  generations.purpose,
+  generations.provider,
+  generations.request_key,
+  generations.error,
+  generations.failure,
+  generations.status,
+  generations.start_requested_at,
+  generations.provider_call_id,
+  generations.cancel_requested_at,
+  generations.traceparent,
+  generations.outcome_unknown_at,
+  generations.streamed,
+  generations.created_at,
+  generations.updated_at,
+  generations.settled_at,
+  generations.expires_at,
   cancel.at AS read_at;

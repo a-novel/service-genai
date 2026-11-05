@@ -20,13 +20,11 @@ var generationSettleQuery string
 // GenerationSettleRequest is the input to [PgGenerationSettle.Exec].
 type GenerationSettleRequest struct {
 	ID uuid.UUID
-	// Attempt is the attempt the caller observed. The settle applies only while the generation still
-	// carries it.
-	Attempt int16
-	// StartRequestedAt is the start the caller observed. An earlier release could start a generation
-	// again with the same attempt and an empty call, so only the start tells the two apart.
+	// StartRequestedAt is the start the caller observed. The settle applies only while the generation
+	// still carries it.
 	StartRequestedAt *time.Time
-	// ProviderCallID is the call the caller observed, nil when it observed none.
+	// ProviderCallID is the call the caller observed, nil when it observed none. The settle applies only
+	// while the generation still carries it.
 	ProviderCallID *string
 	// Status is the terminal state to land in. The terminal-fields constraint rejects any other.
 	Status GenerationStatus
@@ -44,8 +42,8 @@ type GenerationSettleRequest struct {
 
 // PgGenerationSettle records a terminal outcome.
 //
-// It does not record the attempt's answer. A transition without it loses what the attempt consumed,
-// so the caller wraps both in one transaction. See [PgGenerationAttemptInsert].
+// It does not record the call's answer. A transition without it loses what the call consumed, so the
+// caller wraps both in one transaction. See [PgGenerationAttemptInsert].
 type PgGenerationSettle struct{}
 
 // NewPgGenerationSettle returns a new PgGenerationSettle dao.
@@ -67,7 +65,6 @@ func (dao *PgGenerationSettle) Exec(ctx context.Context, request *GenerationSett
 	err = db.NewRaw(
 		generationSettleQuery,
 		request.ID,
-		request.Attempt,
 		request.ProviderCallID,
 		string(request.Status),
 		request.Error,

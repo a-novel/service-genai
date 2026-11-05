@@ -20,48 +20,35 @@ func TestPgGenerationRecordProviderCall(t *testing.T) {
 		name string
 
 		// state is how far the seeded generation goes before the record.
-		state   string
-		attempt int16
+		state string
 
 		expectErr error
 	}{
 		{
 			name: "Success",
 
-			state:   "starting",
-			attempt: 1,
-		},
-		{
-			name: "Error/OtherAttempt",
-
-			state:   "starting",
-			attempt: 2,
-
-			expectErr: dao.ErrGenerationChanged,
+			state: "starting",
 		},
 		{
 			name: "Error/NeverStarted",
 
-			state:   "pending",
-			attempt: 0,
+			state: "pending",
 
 			expectErr: dao.ErrGenerationChanged,
 		},
 		{
 			name: "Error/AlreadyRecorded",
 
-			state:   "running",
-			attempt: 1,
+			state: "running",
 
 			expectErr: dao.ErrGenerationChanged,
 		},
 		{
-			// Another check settled the attempt as unknown while this start was in flight. The
-			// refusal is how the caller learns its accepted call is an orphan.
+			// Another check settled the start as unknown while it was in flight. The refusal is how the
+			// caller learns its accepted call is an orphan.
 			name: "Error/SettledWhileStarting",
 
-			state:   "settled",
-			attempt: 1,
+			state: "settled",
 
 			expectErr: dao.ErrGenerationChanged,
 		},
@@ -92,7 +79,7 @@ func TestPgGenerationRecordProviderCall(t *testing.T) {
 				}
 
 				recorded, err := daoRecord.Exec(ctx, &dao.GenerationRecordProviderCallRequest{
-					ID: generation.ID, Attempt: testCase.attempt, ProviderCallID: "resp_new",
+					ID: generation.ID, ProviderCallID: "resp_new",
 				})
 				require.ErrorIs(t, err, testCase.expectErr)
 
@@ -102,7 +89,7 @@ func TestPgGenerationRecordProviderCall(t *testing.T) {
 
 				require.Equal(t, dao.GenerationStatusRunning, recorded.Status)
 				require.Equal(t, "resp_new", *recorded.ProviderCallID)
-				require.Equal(t, testCase.attempt, recorded.Attempt)
+				require.Equal(t, generation.StartRequestedAt, recorded.StartRequestedAt)
 				// A check that stops the call at once measures its ages from the write.
 				require.Equal(t, recorded.UpdatedAt, recorded.ReadAt)
 			})

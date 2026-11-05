@@ -26,7 +26,6 @@ var ErrGenerationUsageExists = errors.New("usage already recorded for this attem
 // GenerationUsageInsertRequest is the input to [PgGenerationUsageInsert.Exec].
 type GenerationUsageInsertRequest struct {
 	GenerationID uuid.UUID
-	Attempt      int16
 	OwnerID      uuid.UUID
 	Purpose      string
 	Provider     string
@@ -65,7 +64,6 @@ func (dao *PgGenerationUsageInsert) Exec(
 	defer span.End()
 
 	span.SetAttributes(
-		attribute.Int("generation.attempt", int(request.Attempt)),
 		attribute.Int64("usage.input_tokens", request.InputTokens),
 		attribute.Int64("usage.output_tokens", request.OutputTokens),
 	)
@@ -80,7 +78,6 @@ func (dao *PgGenerationUsageInsert) Exec(
 	err = db.NewRaw(
 		generationUsageInsertQuery,
 		request.GenerationID,
-		request.Attempt,
 		request.OwnerID,
 		request.Purpose,
 		request.Provider,

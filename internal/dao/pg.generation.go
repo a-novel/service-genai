@@ -12,7 +12,7 @@ import (
 type GenerationStatus string
 
 const (
-	// GenerationStatusPending means no provider call has been accepted for the current attempt yet.
+	// GenerationStatusPending means the provider has not accepted the generation's call yet.
 	GenerationStatusPending GenerationStatus = "pending"
 	// GenerationStatusRunning means the provider accepted the call and it has not settled yet.
 	GenerationStatusRunning GenerationStatus = "running"
@@ -44,6 +44,8 @@ const (
 // Generation is the durable record of one provider call.
 //
 // Its attempts hold user content, so the row is purged on a retention schedule and they go with it.
+// Every statement names the columns it reads, so a migration can drop a column no running release
+// names.
 type Generation struct {
 	bun.BaseModel `bun:"table:generations,alias:generations"`
 
@@ -61,20 +63,11 @@ type Generation struct {
 	// that failed before failures were classified.
 	Failure *GenerationFailure `bun:"failure,nullzero"`
 
-	Status      GenerationStatus `bun:"status"`
-	Attempt     int16            `bun:"attempt"`
-	MaxAttempts int16            `bun:"max_attempts"`
-	// RunAt is the earliest time the next start may be sent.
-	RunAt time.Time `bun:"run_at"`
+	Status GenerationStatus `bun:"status"`
 	// StartRequestedAt records that paid work may exist even before its provider ID is durable.
-	StartRequestedAt *time.Time `bun:"start_requested_at,nullzero"`
-	// FirstStartRequestedAt is when the attempt's first start was requested: the submit records it with
-	// the start intent.
-	FirstStartRequestedAt *time.Time `bun:"first_start_requested_at,nullzero"`
-	ProviderCallID        *string    `bun:"provider_call_id,nullzero"`
-	CancelRequestedAt     *time.Time `bun:"cancel_requested_at,nullzero"`
-	// CheckedAt is when a check last looked at the generation, by the database clock.
-	CheckedAt time.Time `bun:"checked_at"`
+	StartRequestedAt  *time.Time `bun:"start_requested_at,nullzero"`
+	ProviderCallID    *string    `bun:"provider_call_id,nullzero"`
+	CancelRequestedAt *time.Time `bun:"cancel_requested_at,nullzero"`
 	// ReadAt is the database clock when the statement read the row, so a check measures every age on
 	// one clock. Only the reads that feed a check fill it.
 	ReadAt time.Time `bun:"read_at,scanonly"`

@@ -42,7 +42,7 @@ func TestGenerationStream(t *testing.T) {
 			name: "Success",
 
 			request: &core.GenerationStreamRequest{ID: testGenerationID, OwnerID: testOwner, StartingAfter: new(int64(2))},
-			daoMock: &daoMock{resp: streamed(withProvider(runningGeneration(1), testStreamer))},
+			daoMock: &daoMock{resp: streamed(withProvider(runningGeneration(), testStreamer))},
 			events: []*connectors.StreamEvent{
 				{Sequence: 3, Data: delta}, {Sequence: 4, Data: completed, Terminal: true},
 			},
@@ -54,7 +54,7 @@ func TestGenerationStream(t *testing.T) {
 			name: "Error/StreamUnavailable",
 
 			request:   &core.GenerationStreamRequest{ID: testGenerationID, OwnerID: testOwner},
-			daoMock:   &daoMock{resp: streamed(withProvider(runningGeneration(1), testStreamer))},
+			daoMock:   &daoMock{resp: streamed(withProvider(runningGeneration(), testStreamer))},
 			events:    []*connectors.StreamEvent{{Sequence: 3, Data: delta}},
 			streamErr: connectors.ErrStreamUnavailable,
 
@@ -65,7 +65,7 @@ func TestGenerationStream(t *testing.T) {
 			name: "Error/NotStreamed",
 
 			request: &core.GenerationStreamRequest{ID: testGenerationID, OwnerID: testOwner},
-			daoMock: &daoMock{resp: withProvider(runningGeneration(1), testStreamer)},
+			daoMock: &daoMock{resp: withProvider(runningGeneration(), testStreamer)},
 
 			expectErr: core.ErrGenerationNotStreamed,
 		},
@@ -82,7 +82,7 @@ func TestGenerationStream(t *testing.T) {
 			name: "Error/ModeUnsupported",
 
 			request: &core.GenerationStreamRequest{ID: testGenerationID, OwnerID: testOwner},
-			daoMock: &daoMock{resp: streamed(runningGeneration(1))},
+			daoMock: &daoMock{resp: streamed(runningGeneration())},
 
 			expectErr: connectors.ErrModeUnsupported,
 		},

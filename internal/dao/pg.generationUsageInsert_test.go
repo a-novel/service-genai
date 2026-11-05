@@ -92,7 +92,6 @@ func TestPgGenerationUsageInsert(t *testing.T) {
 
 				request := *testCase.usage
 				request.GenerationID = generation.ID
-				request.Attempt = generation.Attempt
 				request.OwnerID = generation.OwnerID
 				request.Purpose = generation.Purpose
 				request.Provider = generation.Provider

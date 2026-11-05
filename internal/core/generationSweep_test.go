@@ -23,11 +23,11 @@ func TestGenerationSweep(t *testing.T) {
 
 	sweep := config.Sweep{Interval: time.Minute, BatchSize: 2, Concurrency: 8}
 
-	first := runningGeneration(1)
+	first := runningGeneration()
 	first.ID = uuid.MustParse("01999999-0000-7000-8000-000000000011")
 	second := startingGeneration(time.Second)
 	second.ID = uuid.MustParse("01999999-0000-7000-8000-000000000012")
-	third := runningGeneration(1)
+	third := runningGeneration()
 	third.ID = uuid.MustParse("01999999-0000-7000-8000-000000000013")
 
 	type batchMock struct {

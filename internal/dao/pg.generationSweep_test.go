@@ -92,7 +92,6 @@ func TestPgGenerationSweep(t *testing.T) {
 					})
 					require.NoError(t, err)
 					require.Equal(t, generation.UpdatedAt, stored.UpdatedAt)
-					require.Equal(t, generation.CheckedAt, stored.CheckedAt)
 				}
 
 				require.Equal(t, testCase.expect, read)

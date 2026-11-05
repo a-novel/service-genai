@@ -49,7 +49,7 @@ func TestGenerationNotify(t *testing.T) {
 
 			request:          &core.GenerationNotifyRequest{Provider: testNotifier, Body: []byte("{}")},
 			notificationMock: &notificationMock{resp: &connectors.Notification{CallID: testCallID}},
-			daoMock:          &daoMock{resp: runningGeneration(1)},
+			daoMock:          &daoMock{resp: runningGeneration()},
 			checkMock:        new(error),
 
 			expect: &core.GenerationNotifyResult{},
@@ -87,7 +87,7 @@ func TestGenerationNotify(t *testing.T) {
 
 			request:          &core.GenerationNotifyRequest{Provider: testNotifier, Body: []byte("{}")},
 			notificationMock: &notificationMock{resp: &connectors.Notification{CallID: testCallID}},
-			daoMock:          &daoMock{resp: runningGeneration(1)},
+			daoMock:          &daoMock{resp: runningGeneration()},
 			checkMock:        &errCheck,
 
 			expectErr: errCheck,

@@ -102,12 +102,11 @@ func TestPgGenerationGet(t *testing.T) {
 // pendingFixture is a pending generation of the owner, as inserted directly.
 func pendingFixture(id, ownerID uuid.UUID) *dao.Generation {
 	return &dao.Generation{
-		ID:          id,
-		OwnerID:     ownerID,
-		Purpose:     "studio.generation",
-		Provider:    "openai",
-		RequestKey:  []byte("key-" + id.String()),
-		Status:      dao.GenerationStatusPending,
-		MaxAttempts: 1,
+		ID:         id,
+		OwnerID:    ownerID,
+		Purpose:    "studio.generation",
+		Provider:   "openai",
+		RequestKey: []byte("key-" + id.String()),
+		Status:     dao.GenerationStatusPending,
 	}
 }

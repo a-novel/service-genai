@@ -56,7 +56,6 @@ func TestGenerationCheck(t *testing.T) {
 
 	// settle describes the settle a case expects; the runner fills in the id and retention.
 	type settle struct {
-		attempt int16
 		callID  *string
 		status  dao.GenerationStatus
 		reason  *string
@@ -155,7 +154,7 @@ func TestGenerationCheck(t *testing.T) {
 
 			expectSend: true,
 			expectSettle: &settle{
-				attempt: 1, callID: &callID, status: dao.GenerationStatusCancelled, reason: &cancelledReason,
+				callID: &callID, status: dao.GenerationStatusCancelled, reason: &cancelledReason,
 			},
 			expectAttempt: testResponse,
 			expectUsage:   true,
@@ -174,7 +173,7 @@ func TestGenerationCheck(t *testing.T) {
 
 			expectSend: true,
 			expectSettle: &settle{
-				attempt: 1, callID: &callID, status: dao.GenerationStatusCancelled, reason: &cancelledReason,
+				callID: &callID, status: dao.GenerationStatusCancelled, reason: &cancelledReason,
 			},
 			expectAttempt: testResponse,
 			expectUsage:   true,
@@ -194,7 +193,7 @@ func TestGenerationCheck(t *testing.T) {
 
 			expectSend: true,
 			expectSettle: &settle{
-				attempt: 1, callID: &callID, status: dao.GenerationStatusCancelled, reason: &cancelledReason,
+				callID: &callID, status: dao.GenerationStatusCancelled, reason: &cancelledReason,
 			},
 			expectErr: errFoo,
 		},
@@ -209,7 +208,7 @@ func TestGenerationCheck(t *testing.T) {
 
 			expectSend: true,
 			expectSettle: &settle{
-				attempt: 1, status: dao.GenerationStatusFailed, reason: &startFailedMessage, failure: notStarted,
+				status: dao.GenerationStatusFailed, reason: &startFailedMessage, failure: notStarted,
 			},
 			expectStatus: dao.GenerationStatusFailed,
 		},
@@ -223,7 +222,7 @@ func TestGenerationCheck(t *testing.T) {
 
 			expectSend: true,
 			expectSettle: &settle{
-				attempt: 1, status: dao.GenerationStatusFailed, reason: &rejectedMessage, failure: rejected,
+				status: dao.GenerationStatusFailed, reason: &rejectedMessage, failure: rejected,
 			},
 			expectAttempt: rejectionBody,
 			expectStatus:  dao.GenerationStatusFailed,
@@ -239,7 +238,7 @@ func TestGenerationCheck(t *testing.T) {
 
 			expectSend: true,
 			expectSettle: &settle{
-				attempt: 1, status: dao.GenerationStatusFailed, reason: &rejectedMessage, failure: rejected,
+				status: dao.GenerationStatusFailed, reason: &rejectedMessage, failure: rejected,
 			},
 			expectErr: errFoo,
 		},
@@ -252,7 +251,7 @@ func TestGenerationCheck(t *testing.T) {
 
 			expectSend: true,
 			expectSettle: &settle{
-				attempt: 1, status: dao.GenerationStatusFailed, reason: &startFailedMessage, failure: notStarted,
+				status: dao.GenerationStatusFailed, reason: &startFailedMessage, failure: notStarted,
 			},
 			expectStatus: dao.GenerationStatusFailed,
 		},
@@ -267,7 +266,7 @@ func TestGenerationCheck(t *testing.T) {
 
 			expectSend: true,
 			expectSettle: &settle{
-				attempt: 1, status: dao.GenerationStatusFailed, reason: &unknownMessage, failure: unknown,
+				status: dao.GenerationStatusFailed, reason: &unknownMessage, failure: unknown,
 				outcomeUnknown: true,
 			},
 			expectStatus: dao.GenerationStatusFailed,
@@ -282,7 +281,7 @@ func TestGenerationCheck(t *testing.T) {
 			intentAge:  30 * time.Second,
 
 			expectSettle: &settle{
-				attempt: 1, status: dao.GenerationStatusFailed, reason: &startFailedMessage, failure: notStarted,
+				status: dao.GenerationStatusFailed, reason: &startFailedMessage, failure: notStarted,
 			},
 			expectStatus: dao.GenerationStatusFailed,
 		},
@@ -308,7 +307,7 @@ func TestGenerationCheck(t *testing.T) {
 			start:      true,
 
 			expectSettle: &settle{
-				attempt: 1, status: dao.GenerationStatusFailed, reason: &unavailableMessage, failure: notStarted,
+				status: dao.GenerationStatusFailed, reason: &unavailableMessage, failure: notStarted,
 			},
 			expectStatus: dao.GenerationStatusFailed,
 		},
@@ -316,10 +315,10 @@ func TestGenerationCheck(t *testing.T) {
 			// The call runs on out of this service's reach: it may still be paid for.
 			name: "Success/ProviderUnavailableWhileRunning",
 
-			generation: withProvider(runningGeneration(1), "gone"),
+			generation: withProvider(runningGeneration(), "gone"),
 
 			expectSettle: &settle{
-				attempt: 1, callID: &callID, status: dao.GenerationStatusFailed, reason: &unavailableMessage,
+				callID: &callID, status: dao.GenerationStatusFailed, reason: &unavailableMessage,
 				failure: unknown,
 			},
 			expectStatus: dao.GenerationStatusFailed,
@@ -363,7 +362,7 @@ func TestGenerationCheck(t *testing.T) {
 			generation: startingGeneration(3 * time.Minute),
 
 			expectSettle: &settle{
-				attempt: 1, status: dao.GenerationStatusFailed, reason: &unknownMessage, failure: unknown,
+				status: dao.GenerationStatusFailed, reason: &unknownMessage, failure: unknown,
 				outcomeUnknown: true,
 			},
 			expectStatus: dao.GenerationStatusFailed,
@@ -371,7 +370,7 @@ func TestGenerationCheck(t *testing.T) {
 		{
 			name: "Success/StillRunning",
 
-			generation: runningGeneration(1),
+			generation: runningGeneration(),
 			observe:    providerCall(connectors.CallRunning),
 
 			expectStatus: dao.GenerationStatusRunning,
@@ -379,10 +378,10 @@ func TestGenerationCheck(t *testing.T) {
 		{
 			name: "Success/Succeeded",
 
-			generation: runningGeneration(1),
+			generation: runningGeneration(),
 			observe:    providerCall(connectors.CallSucceeded),
 
-			expectSettle:  &settle{attempt: 1, callID: &callID, status: dao.GenerationStatusSucceeded},
+			expectSettle:  &settle{callID: &callID, status: dao.GenerationStatusSucceeded},
 			expectAttempt: testResponse,
 			expectUsage:   true,
 			expectStatus:  dao.GenerationStatusSucceeded,
@@ -391,11 +390,11 @@ func TestGenerationCheck(t *testing.T) {
 			// A cancelled call is not a free one: its answer is recorded.
 			name: "Success/Cancelled",
 
-			generation: withCancel(runningGeneration(1)),
+			generation: withCancel(runningGeneration()),
 			observe:    providerCall(connectors.CallCancelled),
 
 			expectSettle: &settle{
-				attempt: 1, callID: &callID, status: dao.GenerationStatusCancelled, reason: &cancelledReason,
+				callID: &callID, status: dao.GenerationStatusCancelled, reason: &cancelledReason,
 			},
 			expectAttempt: testResponse,
 			expectUsage:   true,
@@ -405,14 +404,15 @@ func TestGenerationCheck(t *testing.T) {
 			// Another check stopped the call on its owner's request after this one read the generation.
 			name: "Success/CancelledMeanwhile",
 
-			generation:   runningGeneration(1),
+			generation:   runningGeneration(),
 			observe:      providerCall(connectors.CallCancelled),
 			expectReread: true,
-			// Moved on since: the settle stays fenced on the call this check observed.
-			rereadAs: withCancel(runningGeneration(2)),
+			// The re-read carries another start: the settle stays fenced on the start and the call this
+			// check observed, and takes only the cancel request from the re-read.
+			rereadAs: withCancel(startedAgo(runningGeneration(), time.Hour)),
 
 			expectSettle: &settle{
-				attempt: 1, callID: &callID, status: dao.GenerationStatusCancelled, reason: &cancelledReason,
+				callID: &callID, status: dao.GenerationStatusCancelled, reason: &cancelledReason,
 			},
 			expectAttempt: testResponse,
 			expectUsage:   true,
@@ -421,11 +421,11 @@ func TestGenerationCheck(t *testing.T) {
 		{
 			name: "Success/ProviderFailed",
 
-			generation: runningGeneration(1),
+			generation: runningGeneration(),
 			observe:    failedCall(false),
 
 			expectSettle: &settle{
-				attempt: 1, callID: &callID, status: dao.GenerationStatusFailed, reason: &callFailedMessage,
+				callID: &callID, status: dao.GenerationStatusFailed, reason: &callFailedMessage,
 				failure: providerFailed,
 			},
 			expectAttempt: testResponse,
@@ -437,11 +437,11 @@ func TestGenerationCheck(t *testing.T) {
 			// caller resends it.
 			name: "Success/RetryableFailure",
 
-			generation: runningGeneration(1),
+			generation: runningGeneration(),
 			observe:    failedCall(true),
 
 			expectSettle: &settle{
-				attempt: 1, callID: &callID, status: dao.GenerationStatusFailed, reason: &callFailedMessage,
+				callID: &callID, status: dao.GenerationStatusFailed, reason: &callFailedMessage,
 				failure: providerFailed,
 			},
 			expectAttempt: testResponse,
@@ -453,11 +453,11 @@ func TestGenerationCheck(t *testing.T) {
 			// leave the answer for the next one to read again.
 			name: "Success/CallerGone",
 
-			generation: runningGeneration(1),
+			generation: runningGeneration(),
 			observe:    providerCall(connectors.CallSucceeded),
 			callerGone: true,
 
-			expectSettle:  &settle{attempt: 1, callID: &callID, status: dao.GenerationStatusSucceeded},
+			expectSettle:  &settle{callID: &callID, status: dao.GenerationStatusSucceeded},
 			expectAttempt: testResponse,
 			expectUsage:   true,
 			expectStatus:  dao.GenerationStatusSucceeded,
@@ -466,12 +466,12 @@ func TestGenerationCheck(t *testing.T) {
 			// Past the run ceiling, the call is stopped and the generation fails with what it consumed.
 			name: "Success/Overdue",
 
-			generation: startedAgo(runningGeneration(1), 3*time.Hour),
+			generation: startedAgo(runningGeneration(), 3*time.Hour),
 			observe:    providerCall(connectors.CallCancelled),
 			expectStop: true,
 
 			expectSettle: &settle{
-				attempt: 1, callID: &callID, status: dao.GenerationStatusFailed, reason: &overdueMessage,
+				callID: &callID, status: dao.GenerationStatusFailed, reason: &overdueMessage,
 				failure: providerFailed,
 			},
 			expectAttempt: testResponse,
@@ -482,11 +482,11 @@ func TestGenerationCheck(t *testing.T) {
 			// The call finished before the stop reached it: its result stands.
 			name: "Success/OverdueFinishedMeanwhile",
 
-			generation: startedAgo(runningGeneration(1), 3*time.Hour),
+			generation: startedAgo(runningGeneration(), 3*time.Hour),
 			observe:    providerCall(connectors.CallSucceeded),
 			expectStop: true,
 
-			expectSettle:  &settle{attempt: 1, callID: &callID, status: dao.GenerationStatusSucceeded},
+			expectSettle:  &settle{callID: &callID, status: dao.GenerationStatusSucceeded},
 			expectAttempt: testResponse,
 			expectUsage:   true,
 			expectStatus:  dao.GenerationStatusSucceeded,
@@ -496,12 +496,12 @@ func TestGenerationCheck(t *testing.T) {
 			// The call may still run, so the generation keeps its slot a while, as for an unknown start.
 			name: "Success/OverdueUnreachable",
 
-			generation: startedAgo(runningGeneration(1), 3*time.Hour),
+			generation: startedAgo(runningGeneration(), 3*time.Hour),
 			observeErr: connectors.ErrRetryable,
 			expectStop: true,
 
 			expectSettle: &settle{
-				attempt: 1, callID: &callID, status: dao.GenerationStatusFailed, reason: &notStoppedMessage,
+				callID: &callID, status: dao.GenerationStatusFailed, reason: &notStoppedMessage,
 				failure: unknown, outcomeUnknown: true,
 			},
 			expectStatus: dao.GenerationStatusFailed,
@@ -510,7 +510,7 @@ func TestGenerationCheck(t *testing.T) {
 			// Just past the ceiling, a stop that fails is asked again before the call is given up on.
 			name: "Success/OverdueStopRetried",
 
-			generation: startedAgo(runningGeneration(1), runCeilingForTest+time.Minute),
+			generation: startedAgo(runningGeneration(), runCeilingForTest+time.Minute),
 			observeErr: connectors.ErrRetryable,
 			expectStop: true,
 
@@ -520,12 +520,12 @@ func TestGenerationCheck(t *testing.T) {
 			// A stop the provider never applies ends the generation too, which keeps its slot a while.
 			name: "Success/OverdueStopNotApplied",
 
-			generation: startedAgo(runningGeneration(1), 3*time.Hour),
+			generation: startedAgo(runningGeneration(), 3*time.Hour),
 			observe:    providerCall(connectors.CallRunning),
 			expectStop: true,
 
 			expectSettle: &settle{
-				attempt: 1, callID: &callID, status: dao.GenerationStatusFailed, reason: &notStoppedMessage,
+				callID: &callID, status: dao.GenerationStatusFailed, reason: &notStoppedMessage,
 				failure: unknown, outcomeUnknown: true,
 			},
 			expectStatus: dao.GenerationStatusFailed,
@@ -534,7 +534,7 @@ func TestGenerationCheck(t *testing.T) {
 			// A stuck streamed call the stop has not reached yet is asked again by the next check.
 			name: "Success/StreamedStuckQueuedStopNotApplied",
 
-			generation: streamed(startedAgo(runningGeneration(1), 10*time.Minute)),
+			generation: streamed(startedAgo(runningGeneration(), 10*time.Minute)),
 			observe:    providerCall(connectors.CallQueued),
 			stopped:    providerCall(connectors.CallQueued),
 
@@ -545,12 +545,12 @@ func TestGenerationCheck(t *testing.T) {
 			// call the stop never reaches is given up on around 15 minutes.
 			name: "Success/StreamedStuckQueuedGivenUp",
 
-			generation: streamed(startedAgo(runningGeneration(1), 20*time.Minute)),
+			generation: streamed(startedAgo(runningGeneration(), 20*time.Minute)),
 			observe:    providerCall(connectors.CallQueued),
 			stopped:    providerCall(connectors.CallQueued),
 
 			expectSettle: &settle{
-				attempt: 1, callID: &callID, status: dao.GenerationStatusFailed, reason: &notStoppedMessage,
+				callID: &callID, status: dao.GenerationStatusFailed, reason: &notStoppedMessage,
 				failure: unknown, outcomeUnknown: true,
 			},
 			expectStatus: dao.GenerationStatusFailed,
@@ -560,11 +560,11 @@ func TestGenerationCheck(t *testing.T) {
 			// the run ceiling.
 			name: "Success/CancelGivenUp",
 
-			generation: cancelledAgo(startedAgo(runningGeneration(1), 30*time.Minute), 20*time.Minute),
+			generation: cancelledAgo(startedAgo(runningGeneration(), 30*time.Minute), 20*time.Minute),
 			observeErr: connectors.ErrRetryable,
 
 			expectSettle: &settle{
-				attempt: 1, callID: &callID, status: dao.GenerationStatusFailed, reason: &notStoppedMessage,
+				callID: &callID, status: dao.GenerationStatusFailed, reason: &notStoppedMessage,
 				failure: unknown, outcomeUnknown: true,
 			},
 			expectStatus: dao.GenerationStatusFailed,
@@ -573,11 +573,11 @@ func TestGenerationCheck(t *testing.T) {
 			// The ceiling bounds a call its owner cancelled too: a stop that keeps failing ends there.
 			name: "Success/CancelledPastCeilingUnreachable",
 
-			generation: withCancel(startedAgo(runningGeneration(1), 3*time.Hour)),
+			generation: withCancel(startedAgo(runningGeneration(), 3*time.Hour)),
 			observeErr: connectors.ErrRetryable,
 
 			expectSettle: &settle{
-				attempt: 1, callID: &callID, status: dao.GenerationStatusFailed, reason: &notStoppedMessage,
+				callID: &callID, status: dao.GenerationStatusFailed, reason: &notStoppedMessage,
 				failure: unknown, outcomeUnknown: true,
 			},
 			expectStatus: dao.GenerationStatusFailed,
@@ -586,7 +586,7 @@ func TestGenerationCheck(t *testing.T) {
 			// Within the ceiling, a stop that fails is asked again by the next check.
 			name: "Success/CancelRetried",
 
-			generation: withCancel(runningGeneration(1)),
+			generation: withCancel(runningGeneration()),
 			observeErr: connectors.ErrRetryable,
 
 			expectStatus: dao.GenerationStatusRunning,
@@ -596,12 +596,12 @@ func TestGenerationCheck(t *testing.T) {
 			// ceiling, it is stopped like an overdue one.
 			name: "Success/StreamedStuckQueued",
 
-			generation: streamed(startedAgo(runningGeneration(1), 10*time.Minute)),
+			generation: streamed(startedAgo(runningGeneration(), 10*time.Minute)),
 			observe:    providerCall(connectors.CallQueued),
 			stopped:    providerCall(connectors.CallCancelled),
 
 			expectSettle: &settle{
-				attempt: 1, callID: &callID, status: dao.GenerationStatusFailed, reason: &overdueMessage,
+				callID: &callID, status: dao.GenerationStatusFailed, reason: &overdueMessage,
 				failure: providerFailed,
 			},
 			expectAttempt: testResponse,
@@ -611,7 +611,7 @@ func TestGenerationCheck(t *testing.T) {
 		{
 			name: "Success/StreamedQueuedWithinCeiling",
 
-			generation: streamed(startedAgo(runningGeneration(1), time.Minute)),
+			generation: streamed(startedAgo(runningGeneration(), time.Minute)),
 			observe:    providerCall(connectors.CallQueued),
 
 			expectStatus: dao.GenerationStatusRunning,
@@ -620,7 +620,7 @@ func TestGenerationCheck(t *testing.T) {
 			// Only a streamed creation risks the early-disconnect bug; a polled call may queue a while.
 			name: "Success/PolledQueuedLong",
 
-			generation: startedAgo(runningGeneration(1), 10*time.Minute),
+			generation: startedAgo(runningGeneration(), 10*time.Minute),
 			observe:    providerCall(connectors.CallQueued),
 
 			expectStatus: dao.GenerationStatusRunning,
@@ -629,7 +629,7 @@ func TestGenerationCheck(t *testing.T) {
 			// The next check asks again; a provider hiccup is not the generation's failure.
 			name: "Success/TransientObservationFailure",
 
-			generation: runningGeneration(1),
+			generation: runningGeneration(),
 			observeErr: connectors.ErrRetryable,
 
 			expectStatus: dao.GenerationStatusRunning,
@@ -638,11 +638,11 @@ func TestGenerationCheck(t *testing.T) {
 			// Gone past the provider's retention window. Starting again would pay twice.
 			name: "Success/CallLost",
 
-			generation: runningGeneration(1),
+			generation: runningGeneration(),
 			observeErr: errFoo,
 
 			expectSettle: &settle{
-				attempt: 1, callID: &callID, status: dao.GenerationStatusFailed, reason: &lostMessage,
+				callID: &callID, status: dao.GenerationStatusFailed, reason: &lostMessage,
 				failure: providerFailed,
 			},
 			expectStatus: dao.GenerationStatusFailed,
@@ -651,11 +651,11 @@ func TestGenerationCheck(t *testing.T) {
 			// No read can ever get the call's answer, nor tell whether it still runs: the slot stays held.
 			name: "Success/ResponseTooLarge",
 
-			generation: runningGeneration(1),
+			generation: runningGeneration(),
 			observeErr: fmt.Errorf("%w: %w", connectors.ErrResponseTooLarge, errFoo),
 
 			expectSettle: &settle{
-				attempt: 1, callID: &callID, status: dao.GenerationStatusFailed, reason: &tooLargeMessage,
+				callID: &callID, status: dao.GenerationStatusFailed, reason: &tooLargeMessage,
 				failure: unknown, outcomeUnknown: true,
 			},
 			expectStatus: dao.GenerationStatusFailed,
@@ -663,11 +663,11 @@ func TestGenerationCheck(t *testing.T) {
 		{
 			name: "Success/SettledByAnotherCheck",
 
-			generation: runningGeneration(1),
+			generation: runningGeneration(),
 			observe:    providerCall(connectors.CallSucceeded),
 			settleErr:  dao.ErrGenerationChanged,
 
-			expectSettle: &settle{attempt: 1, callID: &callID, status: dao.GenerationStatusSucceeded},
+			expectSettle: &settle{callID: &callID, status: dao.GenerationStatusSucceeded},
 			expectReread: true,
 			expectStatus: dao.GenerationStatusSucceeded,
 		},
@@ -696,7 +696,7 @@ func TestGenerationCheck(t *testing.T) {
 
 			expectSend:   true,
 			expectReread: true,
-			rereadAs:     runningGeneration(1),
+			rereadAs:     runningGeneration(),
 			expectStatus: dao.GenerationStatusRunning,
 		},
 		{
@@ -711,7 +711,7 @@ func TestGenerationCheck(t *testing.T) {
 
 			expectSend:   true,
 			expectReread: true,
-			rereadAs:     runningGeneration(1),
+			rereadAs:     runningGeneration(),
 			expectStatus: dao.GenerationStatusRunning,
 		},
 		{
@@ -763,11 +763,11 @@ func TestGenerationCheck(t *testing.T) {
 		{
 			name: "Error/Settle",
 
-			generation: runningGeneration(1),
+			generation: runningGeneration(),
 			observe:    providerCall(connectors.CallSucceeded),
 			settleErr:  errFoo,
 
-			expectSettle: &settle{attempt: 1, callID: &callID, status: dao.GenerationStatusSucceeded},
+			expectSettle: &settle{callID: &callID, status: dao.GenerationStatusSucceeded},
 			expectErr:    errFoo,
 		},
 		{
@@ -775,11 +775,11 @@ func TestGenerationCheck(t *testing.T) {
 			// counted once.
 			name: "Success/UsageAlreadyRecorded",
 
-			generation: runningGeneration(1),
+			generation: runningGeneration(),
 			observe:    providerCall(connectors.CallSucceeded),
 			usageErr:   dao.ErrGenerationUsageExists,
 
-			expectSettle:  &settle{attempt: 1, callID: &callID, status: dao.GenerationStatusSucceeded},
+			expectSettle:  &settle{callID: &callID, status: dao.GenerationStatusSucceeded},
 			expectAttempt: testResponse,
 			expectUsage:   true,
 			expectStatus:  dao.GenerationStatusSucceeded,
@@ -788,11 +788,11 @@ func TestGenerationCheck(t *testing.T) {
 			// A billed call nothing counts would leak past every cap: the settle waits for its usage.
 			name: "Error/Usage",
 
-			generation: runningGeneration(1),
+			generation: runningGeneration(),
 			observe:    providerCall(connectors.CallSucceeded),
 			usageErr:   errFoo,
 
-			expectSettle:  &settle{attempt: 1, callID: &callID, status: dao.GenerationStatusSucceeded},
+			expectSettle:  &settle{callID: &callID, status: dao.GenerationStatusSucceeded},
 			expectAttempt: testResponse,
 			expectUsage:   true,
 			expectErr:     errFoo,
@@ -802,15 +802,15 @@ func TestGenerationCheck(t *testing.T) {
 			// provider keeps it. It fails without the answer at the age a failing stop is given up on.
 			name: "Success/AnswerNotRecorded",
 
-			generation: startedAgo(runningGeneration(1), 3*time.Hour),
+			generation: startedAgo(runningGeneration(), 3*time.Hour),
 			observe:    providerCall(connectors.CallSucceeded),
 			expectStop: true,
 			attemptErr: errors.Join(errFoo, dao.ErrRefused),
 
-			expectSettle:  &settle{attempt: 1, callID: &callID, status: dao.GenerationStatusSucceeded},
+			expectSettle:  &settle{callID: &callID, status: dao.GenerationStatusSucceeded},
 			expectAttempt: testResponse,
 			expectNotRecorded: &settle{
-				attempt: 1, callID: &callID, status: dao.GenerationStatusFailed, reason: &notRecordedMessage,
+				callID: &callID, status: dao.GenerationStatusFailed, reason: &notRecordedMessage,
 				failure: providerFailed,
 			},
 			expectStatus: dao.GenerationStatusFailed,
@@ -820,12 +820,12 @@ func TestGenerationCheck(t *testing.T) {
 			// next check, however long the call ran.
 			name: "Error/AnswerNotRecordedYet",
 
-			generation: startedAgo(runningGeneration(1), 3*time.Hour),
+			generation: startedAgo(runningGeneration(), 3*time.Hour),
 			observe:    providerCall(connectors.CallSucceeded),
 			expectStop: true,
 			attemptErr: errFoo,
 
-			expectSettle:  &settle{attempt: 1, callID: &callID, status: dao.GenerationStatusSucceeded},
+			expectSettle:  &settle{callID: &callID, status: dao.GenerationStatusSucceeded},
 			expectAttempt: testResponse,
 			expectErr:     errFoo,
 		},
@@ -833,11 +833,11 @@ func TestGenerationCheck(t *testing.T) {
 			// The settle and its answer commit together, or not at all.
 			name: "Error/Attempt",
 
-			generation: runningGeneration(1),
+			generation: runningGeneration(),
 			observe:    providerCall(connectors.CallSucceeded),
 			attemptErr: errFoo,
 
-			expectSettle:  &settle{attempt: 1, callID: &callID, status: dao.GenerationStatusSucceeded},
+			expectSettle:  &settle{callID: &callID, status: dao.GenerationStatusSucceeded},
 			expectAttempt: testResponse,
 			expectErr:     errFoo,
 		},
@@ -877,11 +877,11 @@ func TestGenerationCheck(t *testing.T) {
 
 			if testCase.started != nil {
 				recordRequest := &dao.GenerationRecordProviderCallRequest{
-					ID: generation.ID, Attempt: generation.Attempt, ProviderCallID: testCallID,
+					ID: generation.ID, ProviderCallID: testCallID,
 				}
 
-				// The intent's attempt, now running its call.
-				recorded := runningGeneration(generation.Attempt)
+				// The intent, now running its call.
+				recorded := runningGeneration()
 				recorded.StartRequestedAt = generation.StartRequestedAt
 
 				if testCase.cancelledInFlight {
@@ -933,8 +933,7 @@ func TestGenerationCheck(t *testing.T) {
 				}
 
 				settleRequest := &dao.GenerationSettleRequest{
-					ID:      generation.ID,
-					Attempt: expected.settle.attempt,
+					ID: generation.ID,
 					// A settle is fenced on the start it read.
 					StartRequestedAt: generation.StartRequestedAt,
 					ProviderCallID:   expected.settle.callID,
@@ -953,7 +952,7 @@ func TestGenerationCheck(t *testing.T) {
 			if testCase.expectAttempt != nil {
 				attempt.EXPECT().
 					Exec(mock.Anything, &dao.GenerationAttemptInsertRequest{
-						GenerationID: generation.ID, Attempt: generation.Attempt, Response: testCase.expectAttempt,
+						GenerationID: generation.ID, Response: testCase.expectAttempt,
 					}).
 					Return(&dao.GenerationAttempt{}, testCase.attemptErr)
 			}
@@ -1017,18 +1016,17 @@ func TestGenerationCheck(t *testing.T) {
 	}
 }
 
-// usageOf is the Usage Record of a call answered for an attempt. The test provider reports no start,
-// so the call is timed from when it was sent.
-func usageOf(attempt *dao.Generation, call *connectors.Call) *dao.GenerationUsageInsertRequest {
+// usageOf is the Usage Record of a generation's answered call. The test provider reports no start, so
+// the call is timed from when it was sent.
+func usageOf(generation *dao.Generation, call *connectors.Call) *dao.GenerationUsageInsertRequest {
 	return &dao.GenerationUsageInsertRequest{
-		GenerationID:      attempt.ID,
-		Attempt:           attempt.Attempt,
-		OwnerID:           attempt.OwnerID,
-		Purpose:           attempt.Purpose,
-		Provider:          attempt.Provider,
+		GenerationID:      generation.ID,
+		OwnerID:           generation.OwnerID,
+		Purpose:           generation.Purpose,
+		Provider:          generation.Provider,
 		Model:             call.Model,
 		Class:             call.Class,
-		StartedAt:         *attempt.StartRequestedAt,
+		StartedAt:         *generation.StartRequestedAt,
 		InputTokens:       call.Usage.InputTokens,
 		CachedInputTokens: call.Usage.CachedInputTokens,
 		OutputTokens:      call.Usage.OutputTokens,
