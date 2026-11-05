@@ -154,7 +154,6 @@ func restDefaults() httpf.ServerConfig {
 	defaults.Timeouts.Shutdown = TimeoutShutdownDefault
 	defaults.Timeouts.Request = TimeoutRequestDefault
 	defaults.Timeouts.Write = TimeoutWriteDefault
-	defaults.RateLimit = config.Must(httpf.ParseRate("500/1s"))
 	defaults.Cors.AllowedMethods = []string{http.MethodHead, http.MethodGet, http.MethodPost}
 
 	return defaults

@@ -215,7 +215,7 @@ REST server (image `sweep`):
 | `REST_CLIENT_IP_HEADER`     | Header a trusted proxy sets to the visitor IP. Set it only when every request comes through that proxy.                                       | TCP peer        |
 | `REST_LIVENESS_PATH`        | Path that still answers during a planned downtime and skips the rate limit. The server answers its ping at `/ping`, so keep it there.         | `/ping`         |
 | `REST_RATE_LIMITS_ENABLED`  | Rate-limit each visitor on every route but `/ping`. Turn off only in test stacks.                                                             | `true`          |
-| `REST_RATE_LIMIT`           | Requests each visitor sends to each route, as `<requests>/<window>`.                                                                          | `500/1s`        |
+| `REST_RATE_LIMIT`           | Requests each visitor sends to each route, as `<requests>/<window>`.                                                                          | `5/1s`          |
 | `REST_CORS_ALLOWED_METHODS` | CORS allowed methods, comma-separated.                                                                                                        | `HEAD,GET,POST` |
 | `REST_TIMEOUT_READ`         | Read timeout.                                                                                                                                 | `15s`           |
 | `REST_TIMEOUT_READ_HEADER`  | Header read timeout.                                                                                                                          | `3s`            |
