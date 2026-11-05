@@ -57,16 +57,11 @@ type OpenAIConfig struct {
 	BaseURL string
 	// APIKey authenticates the connector against the endpoint.
 	APIKey string
-	// WebhookSecret is the signing secret of the webhook endpoint OpenAI notifies. When it is empty,
-	// the connector refuses every notification as [ErrModeUnsupported].
-	WebhookSecret string
 }
 
-// OpenAI runs calls on the Responses API. It offers the Async and Streaming modes, and reads
-// OpenAI's webhook notifications once given their signing secret.
+// OpenAI runs calls on the Responses API. It offers the Async and Streaming modes.
 type OpenAI struct {
-	client        openai.Client
-	webhookSecret string
+	client openai.Client
 }
 
 // NewOpenAI refuses an incomplete configuration, so a bad revision fails at startup instead of on
@@ -83,7 +78,7 @@ func NewOpenAI(config OpenAIConfig, opts ...option.RequestOption) (*OpenAI, erro
 		option.WithBaseURL(config.BaseURL), option.WithAPIKey(config.APIKey), option.WithHTTPClient(healthCheckedClient()),
 	}, opts...)
 
-	return &OpenAI{client: openai.NewClient(opts...), webhookSecret: config.WebhookSecret}, nil
+	return &OpenAI{client: openai.NewClient(opts...)}, nil
 }
 
 // capResponse stops reading a response past [ResponseSizeCeiling].
@@ -189,14 +184,6 @@ func (provider *OpenAI) Stream(ctx context.Context, request *StreamRequest) iter
 			yield(nil, otel.ReportError(span, err))
 		}
 	}
-}
-
-// endedEvents are the webhook events that report a response ended, whichever way.
-var endedEvents = map[string]bool{
-	"response.completed":  true,
-	"response.failed":     true,
-	"response.cancelled":  true,
-	"response.incomplete": true,
 }
 
 // terminalEvents end an operation's stream. A cancelled operation has none: its stream just ends.
@@ -338,32 +325,6 @@ func (provider *OpenAI) Cancel(ctx context.Context, id string) (*Call, error) {
 	}
 
 	return call, nil
-}
-
-// Notification verifies one of OpenAI's webhook events with the endpoint's signing secret, and names
-// the response it reports ended.
-func (provider *OpenAI) Notification(ctx context.Context, request *NotificationRequest) (*Notification, error) {
-	_, span := otel.Tracer().Start(ctx, "connectors.OpenAI.Notification")
-	defer span.End()
-
-	if provider.webhookSecret == "" {
-		return nil, otel.ReportError(span, fmt.Errorf("%w: no webhook signing secret", ErrModeUnsupported))
-	}
-
-	event, err := provider.client.Webhooks.Unwrap(
-		request.Body, http.Header(request.Header), option.WithWebhookSecret(provider.webhookSecret),
-	)
-	if err != nil {
-		return nil, otel.ReportError(span, fmt.Errorf("%w: %w", ErrNotificationInvalid, err))
-	}
-
-	span.SetAttributes(attribute.String("notification.type", event.Type))
-
-	if !endedEvents[event.Type] {
-		return nil, otel.ReportError(span, fmt.Errorf("%w: %s", ErrNotificationIgnored, event.Type))
-	}
-
-	return &Notification{CallID: event.Data.ID}, nil
 }
 
 // holdStream creates the operation in streaming mode and reads its stream until the provider begins
@@ -519,7 +480,6 @@ func providerCallOf(raw json.RawMessage) (*Call, error) {
 	case responses.ResponseStatusFailed:
 		call.State = CallFailed
 		call.Reason = response.Error.Message
-		call.Retryable = retryableFailure(response.Error.Code)
 	case responses.ResponseStatusCancelled:
 		call.State = CallCancelled
 	case responses.ResponseStatusQueued:
@@ -569,18 +529,6 @@ func unixTime(seconds float64) time.Time {
 	whole, fraction := math.Modf(seconds)
 
 	return time.Unix(int64(whole), int64(fraction*float64(time.Second))).UTC()
-}
-
-// retryableFailure reports whether another attempt at a failed call is worth paying for.
-func retryableFailure(code responses.ResponseErrorCode) bool {
-	switch code {
-	case responses.ResponseErrorCodeServerError,
-		responses.ResponseErrorCodeRateLimitExceeded,
-		responses.ResponseErrorCodeVectorStoreTimeout:
-		return true
-	default:
-		return false
-	}
 }
 
 // classifyOpenAIStartError separates definitive rejection from a response that may have been lost.

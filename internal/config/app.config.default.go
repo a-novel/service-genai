@@ -70,9 +70,8 @@ var AppPresetDefault = App{
 		Ticker:      env.SweepTicker,
 	},
 	OpenAI: OpenAI{
-		APIKey:        env.OpenAIAPIKey,
-		BaseURL:       env.OpenAIBaseURL,
-		WebhookSecret: env.OpenAIWebhookSecret,
+		APIKey:  env.OpenAIAPIKey,
+		BaseURL: env.OpenAIBaseURL,
 	},
 	Purposes: PurposesDefault,
 

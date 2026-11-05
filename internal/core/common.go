@@ -23,6 +23,3 @@ var ErrModeUnsupported = connectors.ErrModeUnsupported
 // ErrProviderRetryable is returned when the provider failed transiently, so the same request may
 // succeed again: a stream it dropped resumes after the last event received.
 var ErrProviderRetryable = connectors.ErrRetryable
-
-// ErrNotificationInvalid is returned for a notification that fails its provider's verification.
-var ErrNotificationInvalid = connectors.ErrNotificationInvalid

@@ -1,6 +1,5 @@
 // Command grpc serves the generation API, internal only, and its calls in flight to an autoscaler.
-// cmd/rest receives the providers' notifications, cmd/sweep checks the generations nobody polled, and
-// cmd/migrations applies the database schema.
+// cmd/sweep checks the generations nobody polled, and cmd/migrations applies the database schema.
 package main
 
 import (

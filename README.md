@@ -38,24 +38,23 @@ Six rules shape the contract.
 
 The [purposes file](./internal/config/purposes.config.yaml) declares each purpose a caller may submit, and the service refuses any other. The file is built into the image, so every change to it is reviewed.
 
-Callers are other services, which reach the generation API over **gRPC** on the internal network. The server admits only the callers its service tokens allow, and refuses to start without a token issuer unless a local stack opts out. The optional `rest` server is public and serves no generation. It only receives the providers' notifications that their calls ended.
+Callers are other services, which reach the generation API over **gRPC** on the internal network. The server admits only the callers its service tokens allow, and refuses to start without a token issuer unless a local stack opts out.
 
 ## Deploying
 
 The service runs as published OCI images plus a PostgreSQL database. All state lives in Postgres, so the server scales to as many replicas as you need. Replicas coordinate through conditional writes on each generation row.
 
-> **OpenTofu modules are the planned canonical deployment path.** Until they land, deploy the images with any container orchestrator — the composition below is the reference for which images to run, how they wire together, and the environment they expect.
+> **OpenTofu modules are the planned canonical deployment path.** Until they land, deploy the images with any container orchestrator. The composition below is the reference for which images to run, how they wire together, and the environment they expect.
 
 | Image                           | Role                                                                        |
 | ------------------------------- | --------------------------------------------------------------------------- |
 | `service-genai/grpc`            | The generation API. Internal network only.                                  |
 | `service-genai/sweep`           | Checks the generations nobody polled, on a schedule. Private.               |
-| `service-genai/rest`            | Receives the provider's notifications that a call ended. Public.            |
 | `service-genai/jobs/migrations` | One-shot schema migration job; runs to completion before the server starts. |
 | `service-genai/database`        | PostgreSQL with `pg_cron` and pgBackRest, or bring your own Postgres.       |
 | `service-genai/standalone-grpc` | Server plus migrations in one image. Local development only.                |
 
-Pin every image to the same release tag, from the [latest release](https://github.com/a-novel/service-genai/releases/latest). A production deployment starts `database` and runs the migrations job to completion. It then runs any number of `grpc` replicas, the `sweep` server, and optionally `rest` replicas. Provide the required [configuration](#configuration) through the orchestrator.
+Pin every image to the same release tag, from the [latest release](https://github.com/a-novel/service-genai/releases/latest). A production deployment starts `database` and runs the migrations job to completion. It then runs any number of `grpc` replicas and the `sweep` server. Provide the required [configuration](#configuration) through the orchestrator.
 
 A caller controls the whole payload, including the model and the provider's built-in tools. Grant invocation to calling services only, and restrict the OpenAI key to the Responses endpoints.
 
@@ -147,18 +146,6 @@ Run it privately, and have a scheduler `POST /sweep` every `SWEEP_INTERVAL`. On 
 
 On a platform that keeps the server's CPU between requests, such as Kubernetes, set `SWEEP_TICKER` instead. The server then sweeps every `SWEEP_INTERVAL` on its own and needs no scheduler. On SIGTERM, a run starts no new check and waits for those it started, a minute at most. Give the process at least 75 seconds between SIGTERM and SIGKILL. From `DOWNTIME_START` on, the server starts no run.
 
-### Provider notifications
-
-The `rest` image checks a generation the moment its provider reports the call ended, instead of on the next poll or sweep. It serves `POST /webhooks/{provider}`, `/ping` and `/healthcheck`. It reuses the database and the migrations, and needs the same variables as `grpc` plus `OPENAI_WEBHOOK_SECRET`.
-
-To enable it for OpenAI:
-
-1. Expose the `rest` server publicly.
-2. In the OpenAI project's settings, create a webhook endpoint pointing at `https://<host>/webhooks/openai`. Subscribe it to `response.completed`, `response.failed`, `response.cancelled` and `response.incomplete`.
-3. Store the endpoint's signing secret as `OPENAI_WEBHOOK_SECRET`.
-
-Polls and the sweep keep working for a notification that never comes.
-
 ### Database image
 
 The database image packages PostgreSQL, `pg_cron` and pgBackRest on Wolfi. apko assembles its [package manifest](./builds/database.apko.yaml) during the container build, pinned by its [lock file](./builds/database.apko.lock.json), so an unchanged image rebuilds to the same digest. Docker and Podman users need no additional host tools. PostgreSQL keeps its standard `POSTGRES_*` initialization variables and its volume at `/var/lib/postgresql`. On first start, it installs `pg_cron` in the `POSTGRES_DB` database, where the migrations job schedules the [retention purge](./CONTRIBUTING.md#retention-purge). Backup scheduling and repository credentials remain the operator's responsibility.
@@ -169,17 +156,16 @@ Wolfi's package repository rolls forward, so an old package manifest may stop re
 
 Every variable is read from the process environment. `SERVICE_GENAI_ENV_PREFIX` prefixes every name, which avoids collisions when another project embeds this service.
 
-| Name                    | Description                                                                                                                           | Images      |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
-| `POSTGRES_HOST`         | PostgreSQL hostname or IP address. Selects the discrete connection fields. **Required for deployments.**                              | all         |
-| `POSTGRES_PORT`         | PostgreSQL port. Defaults to `5432`.                                                                                                  | all         |
-| `POSTGRES_USER`         | PostgreSQL login role. **Required when `POSTGRES_HOST` is set.**                                                                      | all         |
-| `POSTGRES_PASSWORD`     | PostgreSQL login password. **Required when `POSTGRES_HOST` is set; inject it as a secret.**                                           | all         |
-| `POSTGRES_DATABASE`     | PostgreSQL database name. **Required when `POSTGRES_HOST` is set.**                                                                   | all         |
-| `POSTGRES_TLS_ENABLED`  | Encrypt the PostgreSQL connection. Defaults to `true`; disable only when another trusted boundary protects the database link.         | all         |
-| `POSTGRES_DSN`          | Connection URL, read only when `POSTGRES_HOST` is empty. Local development uses it.                                                   | all         |
-| `OPENAI_API_KEY`        | OpenAI credential. **Required; inject it as a secret.** The server refuses to start without it. No caller holds one.                  | all servers |
-| `OPENAI_WEBHOOK_SECRET` | Signing secret of the OpenAI webhook endpoint, `whsec_…`. **Inject it as a secret.** Without it, OpenAI's notifications answer `404`. | `rest`      |
+| Name                   | Description                                                                                                                   | Images      |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| `POSTGRES_HOST`        | PostgreSQL hostname or IP address. Selects the discrete connection fields. **Required for deployments.**                      | all         |
+| `POSTGRES_PORT`        | PostgreSQL port. Defaults to `5432`.                                                                                          | all         |
+| `POSTGRES_USER`        | PostgreSQL login role. **Required when `POSTGRES_HOST` is set.**                                                              | all         |
+| `POSTGRES_PASSWORD`    | PostgreSQL login password. **Required when `POSTGRES_HOST` is set; inject it as a secret.**                                   | all         |
+| `POSTGRES_DATABASE`    | PostgreSQL database name. **Required when `POSTGRES_HOST` is set.**                                                           | all         |
+| `POSTGRES_TLS_ENABLED` | Encrypt the PostgreSQL connection. Defaults to `true`; disable only when another trusted boundary protects the database link. | all         |
+| `POSTGRES_DSN`         | Connection URL, read only when `POSTGRES_HOST` is empty. Local development uses it.                                           | all         |
+| `OPENAI_API_KEY`       | OpenAI credential. **Required; inject it as a secret.** The server refuses to start without it. No caller holds one.          | all servers |
 
 <details>
 <summary>Optional configuration</summary>
@@ -220,16 +206,16 @@ Service tokens (image `grpc`). The server refuses a call unless its `X-Service-A
 | `SERVICE_TOKEN_CALLERS`   | Service accounts allowed to call, comma-separated, each as `system:serviceaccount:<namespace>:<name>`. In production, the GenAI smoke check.                                                                                                                                |         |
 | `SERVICE_ISSUER_OPTIONAL` | Start without `SERVICE_TOKEN_ISSUER`, and then take every call. For a local or test stack only: the `standalone-grpc` image sets it, and an issuer keeps the check on.                                                                                                      | `false` |
 
-REST servers (images `rest` and `sweep`). Every notification comes from the provider's few addresses, so the rate limit is sized for the provider's bursts.
+REST server (image `sweep`):
 
 | Name                        | Description                                                                                                                                   | Default         |
 | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | --------------- |
 | `REST_PORT`                 | Port the server listens on.                                                                                                                   | `8080`          |
-| `REST_MAX_REQUEST_SIZE`     | Maximum request body size, in bytes. A notification carries an event, not the result.                                                         | `16384` (16KiB) |
+| `REST_MAX_REQUEST_SIZE`     | Maximum request body size, in bytes.                                                                                                          | `16384` (16KiB) |
 | `REST_CLIENT_IP_HEADER`     | Header a trusted proxy sets to the visitor IP. Set it only when every request comes through that proxy.                                       | TCP peer        |
-| `REST_LIVENESS_PATH`        | Path that still answers during a planned downtime and skips the rate limit. The servers answer their ping at `/ping`, so keep it there.       | `/ping`         |
+| `REST_LIVENESS_PATH`        | Path that still answers during a planned downtime and skips the rate limit. The server answers its ping at `/ping`, so keep it there.         | `/ping`         |
 | `REST_RATE_LIMITS_ENABLED`  | Rate-limit each visitor on every route but `/ping`. Turn off only in test stacks.                                                             | `true`          |
-| `REST_RATE_LIMIT`           | Requests each visitor sends to each route, as `<requests>/<window>`.                                                                          | `500/1s`        |
+| `REST_RATE_LIMIT`           | Requests each visitor sends to each route, as `<requests>/<window>`.                                                                          | `5/1s`          |
 | `REST_CORS_ALLOWED_METHODS` | CORS allowed methods, comma-separated.                                                                                                        | `HEAD,GET,POST` |
 | `REST_TIMEOUT_READ`         | Read timeout.                                                                                                                                 | `15s`           |
 | `REST_TIMEOUT_READ_HEADER`  | Header read timeout.                                                                                                                          | `3s`            |
@@ -253,7 +239,7 @@ Planned downtime (server images):
 | ---------------- | -------------------------------------------- | ------- |
 | `DOWNTIME_START` | When a planned downtime starts, in RFC 3339. |         |
 
-From `DOWNTIME_START` until the variable is removed, even past the announced end, the servers answer `503` / `UNAVAILABLE`. Ping, gRPC health and echo still answer, and the servers start without the database. A request already running still finishes, a sweep up to `REST_TIMEOUT_REQUEST` later, so stop the database only once that has passed. The provider delivers the notifications it could not send once the downtime ends. Calls already sent keep running at the provider. OpenAI keeps a finished background response it does not store for about 10 minutes. A call that finishes more than 10 minutes before the downtime ends therefore settles failed, its result lost. Keep a downtime short while generations run.
+From `DOWNTIME_START` until the variable is removed, even past the announced end, the servers answer `503` / `UNAVAILABLE`. Ping, gRPC health and echo still answer, and the servers start without the database. A request already running still finishes, a sweep up to `REST_TIMEOUT_REQUEST` later, so stop the database only once that has passed. Calls already sent keep running at the provider. OpenAI keeps a finished background response it does not store for about 10 minutes. A call that finishes more than 10 minutes before the downtime ends therefore settles failed, its result lost. Keep a downtime short while generations run.
 
 Logs and tracing (all server images). OpenTelemetry exports to stdout, or over OTLP/HTTP once an endpoint is set.
 
@@ -292,9 +278,9 @@ import (
 func main() {
 	ctx := context.Background()
 
-	// The server has no application-layer auth, so transport security alone protects it from a
-	// network adversary. In production, replace insecure.NewCredentials() with a TLS or mTLS
-	// credential.
+	// A local stack without a token issuer takes plaintext calls with no service token. In
+	// production, dial with the options of golib's grpcf.ServiceTokenCredentialsProvider: it sends
+	// the caller's service token with every call, over TLS once its TLS field is set.
 	client, err := servicegenai.NewClient(
 		"service-genai:8080",
 		grpc.WithTransportCredentials(insecure.NewCredentials()),

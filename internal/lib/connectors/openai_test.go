@@ -1,9 +1,6 @@
 package connectors_test
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -159,7 +156,6 @@ func TestOpenAI(t *testing.T) {
 		expectClass     string
 		expectCompleted bool
 		expectReason    string
-		expectRetryable bool
 		expectErr       error
 		// expectHidden is text of the provider's answer the error must leave out.
 		expectHidden string
@@ -238,17 +234,6 @@ func TestOpenAI(t *testing.T) {
 			)},
 
 			expectState: connectors.CallSucceeded,
-		},
-		{
-			name: "Success/RetryableFailure",
-
-			script: &scriptedProvider{status: http.StatusOK, body: response(
-				"failed", `"error": {"code": "server_error", "message": "the model failed"}`,
-			)},
-
-			expectState:     connectors.CallFailed,
-			expectReason:    "the model failed",
-			expectRetryable: true,
 		},
 		{
 			name: "Success/PolicyFailure",
@@ -402,7 +387,6 @@ func TestOpenAI(t *testing.T) {
 			require.Equal(t, "resp_1", call.ID)
 			require.Equal(t, testCase.expectState, call.State)
 			require.Equal(t, testCase.expectReason, call.Reason)
-			require.Equal(t, testCase.expectRetryable, call.Retryable)
 
 			require.Equal(t, testCase.expectUsage, call.Usage)
 			require.Equal(t, testCase.expectTier, call.Tier)
@@ -906,81 +890,6 @@ func TestOpenAI(t *testing.T) {
 		}
 	})
 
-	// Notifications are verified with the endpoint's signing secret, as the Standard Webhooks
-	// specification signs them, before they name any call.
-	t.Run("Notification", func(t *testing.T) {
-		t.Parallel()
-
-		key := []byte("test-signing-key-of-32-bytes-long")
-		secret := "whsec_" + base64.StdEncoding.EncodeToString(key)
-
-		testCases := []struct {
-			name string
-
-			secret string
-			body   string
-			header map[string][]string
-
-			expect    *connectors.Notification
-			expectErr error
-		}{
-			{
-				name: "Success",
-
-				secret: secret,
-				body:   webhookEvent("response.completed"),
-				header: signWebhook(key, webhookEvent("response.completed")),
-
-				expect: &connectors.Notification{CallID: "resp_1"},
-			},
-			{
-				// The endpoint may be subscribed to more than responses.
-				name: "Error/Ignored",
-
-				secret: secret,
-				body:   webhookEvent("batch.completed"),
-				header: signWebhook(key, webhookEvent("batch.completed")),
-
-				expectErr: connectors.ErrNotificationIgnored,
-			},
-			{
-				name: "Error/BadSignature",
-
-				secret: secret,
-				body:   webhookEvent("response.completed"),
-				header: signWebhook(key, webhookEvent("response.failed")),
-
-				expectErr: connectors.ErrNotificationInvalid,
-			},
-			{
-				// Without the signing secret, nothing can be verified, so nothing is read.
-				name: "Error/NoSecret",
-
-				body:   webhookEvent("response.completed"),
-				header: signWebhook(key, webhookEvent("response.completed")),
-
-				expectErr: connectors.ErrModeUnsupported,
-			},
-		}
-
-		for _, testCase := range testCases {
-			t.Run(testCase.name, func(t *testing.T) {
-				t.Parallel()
-
-				provider, err := connectors.NewOpenAI(connectors.OpenAIConfig{
-					BaseURL: "https://provider.test/v1", APIKey: "test-key", WebhookSecret: testCase.secret,
-				})
-				require.NoError(t, err)
-
-				notification, err := provider.Notification(t.Context(), &connectors.NotificationRequest{
-					Body: []byte(testCase.body), Header: testCase.header,
-				})
-				require.ErrorIs(t, err, testCase.expectErr)
-				require.Equal(t, testCase.expect, notification)
-			})
-		}
-	})
-
 	// Conformance checks the connectors the server builds against the Async mode's requirements in
 	// docs/providers.md. It calls the provider and costs money, so it runs only when PROVIDER_CONFORMANCE
 	// is true. Run it before changing a connector or the account it reaches.
@@ -1205,26 +1114,6 @@ func listenSilently(t *testing.T) string {
 	}()
 
 	return listener.Addr().String()
-}
-
-// webhookEvent is an OpenAI webhook event of the given type about the response resp_1.
-func webhookEvent(kind string) string {
-	return `{"id": "evt_1", "object": "event", "created_at": 1760000000, "type": "` + kind +
-		`", "data": {"id": "resp_1"}}`
-}
-
-// signWebhook returns the headers OpenAI sends with a body, signed with the endpoint's key.
-func signWebhook(key []byte, body string) map[string][]string {
-	id, timestamp := "evt_1", strconv.FormatInt(time.Now().Unix(), 10)
-
-	mac := hmac.New(sha256.New, key)
-	mac.Write([]byte(id + "." + timestamp + "." + body))
-
-	return map[string][]string{
-		"Webhook-Id":        {id},
-		"Webhook-Timestamp": {timestamp},
-		"Webhook-Signature": {"v1," + base64.StdEncoding.EncodeToString(mac.Sum(nil))},
-	}
 }
 
 // conformancePayload is what a caller sends: its own model, effort, schema and privacy fields. The

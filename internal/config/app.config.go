@@ -62,8 +62,6 @@ type OpenAI struct {
 	BaseURL string `json:"baseURL" yaml:"baseURL"`
 	// APIKey authenticates against OpenAI. It is the only credential this service holds.
 	APIKey string `json:"-" yaml:"-"`
-	// WebhookSecret verifies OpenAI's webhook notifications. When it is empty, the service reads none.
-	WebhookSecret string `json:"-" yaml:"-"`
 }
 
 // App is the complete configuration consumed by the service at startup.
@@ -74,7 +72,7 @@ type App struct {
 	Grpc grpcf.ServerConfig `json:"grpc" yaml:"grpc"`
 	// Metrics holds the configuration of the server that reports the gRPC server's calls in flight.
 	Metrics httpf.ServerConfig `json:"metrics" yaml:"metrics"`
-	// Rest holds the configuration of the REST servers: the notification server and the sweep.
+	// Rest holds the configuration of the sweep's REST server.
 	Rest httpf.ServerConfig `json:"rest" yaml:"rest"`
 	// ServiceToken names the service tokens the gRPC server accepts. Without an issuer, the server
 	// refuses to start unless ServiceIssuerOptional is set.
@@ -93,8 +91,8 @@ type App struct {
 	Purposes []string `json:"purposes" yaml:"purposes"`
 	// Otel configures the OpenTelemetry exporter for traces and metrics.
 	Otel otel.Config `json:"otel" yaml:"otel"`
-	// Logger is the base application logger: checks log provider failures to it, and the REST handlers
-	// their errors.
+	// Logger is the base application logger: checks log provider failures to it, and the REST handler
+	// its errors.
 	Logger logging.Log `json:"logger" yaml:"logger"`
 	// GrpcLogger configures the gRPC request logging middleware.
 	GrpcLogger logging.RPCConfig `json:"grpclogger" yaml:"grpclogger"`
