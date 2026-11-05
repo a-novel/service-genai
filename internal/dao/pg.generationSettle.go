@@ -23,8 +23,8 @@ type GenerationSettleRequest struct {
 	// Attempt is the attempt the caller observed. The settle applies only while the generation still
 	// carries it.
 	Attempt int16
-	// StartRequestedAt is the start the caller observed. A start released and taken again keeps the
-	// attempt and the empty call, so only the start tells the two apart.
+	// StartRequestedAt is the start the caller observed. An earlier release could start a generation
+	// again with the same attempt and an empty call, so only the start tells the two apart.
 	StartRequestedAt *time.Time
 	// ProviderCallID is the call the caller observed, nil when it observed none.
 	ProviderCallID *string
@@ -32,6 +32,9 @@ type GenerationSettleRequest struct {
 	Status GenerationStatus
 	// Error names the cause of a failure or cancellation. Empty on success.
 	Error *string
+	// Failure classifies a failure's cause. Nil for any other status: the failure constraint refuses a
+	// class on it.
+	Failure *GenerationFailure
 	// Retention is how long the settled row survives before the purge takes it.
 	Retention time.Duration
 	// OutcomeUnknown marks a failure after which the provider may still run the call: a start it may
@@ -71,6 +74,7 @@ func (dao *PgGenerationSettle) Exec(ctx context.Context, request *GenerationSett
 		request.Retention.Seconds(),
 		request.StartRequestedAt,
 		request.OutcomeUnknown,
+		request.Failure,
 	).Scan(ctx, entity)
 	if errors.Is(err, sql.ErrNoRows) {
 		err = errors.Join(err, ErrGenerationChanged)

@@ -15,24 +15,24 @@ func TestAppPresetDefault(t *testing.T) {
 	testCases := []struct {
 		name string
 
-		checkInterval string
+		retention string
 
-		expectCheckInterval string
-		expectErr           string
+		expectRetention string
+		expectErr       string
 	}{
 		{
-			name:                "Success/Default",
-			expectCheckInterval: "2s",
+			name:            "Success/Default",
+			expectRetention: "6h0m0s",
 		},
 		{
-			name:                "Success",
-			checkInterval:       "5s",
-			expectCheckInterval: "5s",
+			name:            "Success",
+			retention:       "1h",
+			expectRetention: "1h0m0s",
 		},
 		{
-			name:          "Error/InvalidCheckInterval",
-			checkInterval: "invalid",
-			expectErr:     `time: invalid duration "invalid"`,
+			name:      "Error/InvalidRetention",
+			retention: "invalid",
+			expectErr: `time: invalid duration "invalid"`,
 		},
 	}
 
@@ -45,8 +45,8 @@ func TestAppPresetDefault(t *testing.T) {
 			command.Env = append(os.Environ(),
 				"GOWORK=off",
 				"SERVICE_GENAI_ENV_PREFIX=TEST_",
-				"CHECK_INTERVAL=invalid",
-				"TEST_CHECK_INTERVAL="+testCase.checkInterval,
+				"RETENTION=invalid",
+				"TEST_RETENTION="+testCase.retention,
 			)
 
 			output, err := command.CombinedOutput()
@@ -58,7 +58,7 @@ func TestAppPresetDefault(t *testing.T) {
 			}
 
 			require.NoError(t, err, string(output))
-			require.Equal(t, testCase.expectCheckInterval, strings.TrimSpace(string(output)))
+			require.Equal(t, testCase.expectRetention, strings.TrimSpace(string(output)))
 		})
 	}
 }

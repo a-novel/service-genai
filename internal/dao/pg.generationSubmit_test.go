@@ -37,7 +37,6 @@ func (sub submission) build() *dao.GenerationSubmitRequest {
 		Purpose:     "studio.generation",
 		Provider:    "openai",
 		RequestKey:  []byte("the-request-key"),
-		MaxAttempts: 1,
 		Traceparent: new("00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"),
 		Streamed:    sub.streamed,
 	}
@@ -57,9 +56,14 @@ func settleTo(ctx context.Context, t *testing.T, generation *dao.Generation, sta
 	case dao.GenerationStatusFailed:
 		settleGeneration(ctx, t, generation)
 	case dao.GenerationStatusCancelled:
-		_, err := dao.NewPgGenerationRequestCancel().Exec(ctx, &dao.GenerationRequestCancelRequest{
-			ID: generation.ID, OwnerID: generation.OwnerID, Error: "generation cancelled", Retention: testRetention,
-		})
+		settleRequest := &dao.GenerationSettleRequest{
+			ID: generation.ID, Attempt: generation.Attempt, StartRequestedAt: generation.StartRequestedAt,
+			Status:    dao.GenerationStatusCancelled,
+			Error:     new("generation cancelled"),
+			Retention: testRetention,
+		}
+
+		_, err := dao.NewPgGenerationSettle().Exec(ctx, settleRequest)
 		if err != nil {
 			panic(err)
 		}
@@ -181,7 +185,12 @@ func TestPgGenerationSubmit(t *testing.T) {
 					if sub.expectCreated {
 						require.Equalf(t, request.ID, result.Generation.ID, "submission %d", index+1)
 						require.Equal(t, dao.GenerationStatusPending, result.Generation.Status)
-						require.Zero(t, result.Generation.Attempt)
+						// The submit sends the call once it commits: the generation carries its start intent,
+						// on its one attempt, from the insert.
+						require.Equal(t, int16(1), result.Generation.Attempt)
+						require.NotNil(t, result.Generation.StartRequestedAt)
+						require.Equal(t, result.Generation.StartRequestedAt, result.Generation.FirstStartRequestedAt)
+						require.Nil(t, result.Generation.ProviderCallID)
 						require.Equal(t, request.Purpose, result.Generation.Purpose)
 						require.Equal(t, request.Provider, result.Generation.Provider)
 						// The trace context and the mode are stored as sent.

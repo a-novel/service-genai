@@ -21,10 +21,6 @@ var ErrInvalidConfig = errors.New("invalid configuration")
 // well inside that window.
 const SweepIntervalCeiling = 5 * time.Minute
 
-// MaxAttemptsCeiling bounds the provider calls a generation gets. A generation carries each answered
-// call's response, at most 24 MiB, so two of them fit the 64 MiB message a client receives.
-const MaxAttemptsCeiling = 2
-
 // UnknownOutcomeHold is how long a generation that failed with its call's outcome unknown keeps its
 // purpose's concurrency slot. The provider may still run a call that nothing tracks or meters, and
 // the hold keeps a resend from multiplying that spend. The retention must outlast it, since the purge
@@ -42,8 +38,7 @@ type Main struct {
 
 // Sweep holds the settings of the sweep that checks generations nobody polled.
 type Sweep struct {
-	// Interval is how often the sweep runs. Each run checks every generation nobody checked within
-	// half of it.
+	// Interval is how often the sweep runs. Each run checks every unsettled generation.
 	Interval time.Duration `json:"interval" yaml:"interval"`
 	// BatchSize caps the generations one batch of a sweep takes.
 	BatchSize int `json:"batchSize" yaml:"batchSize"`
@@ -54,13 +49,8 @@ type Sweep struct {
 	Ticker bool `json:"ticker" yaml:"ticker"`
 }
 
-// Generations holds how generations are run and kept.
+// Generations holds how generations are kept.
 type Generations struct {
-	// CheckInterval is how long a check stays fresh: a polled generation reaches the provider at most
-	// once per interval.
-	CheckInterval time.Duration `json:"checkInterval" yaml:"checkInterval"`
-	// MaxAttempts caps the provider calls a generation gets when a call fails retryably.
-	MaxAttempts int16 `json:"maxAttempts" yaml:"maxAttempts"`
 	// Retention is how long a settled generation's user content survives before the purge.
 	Retention time.Duration `json:"retention" yaml:"retention"`
 }
@@ -98,8 +88,10 @@ type App struct {
 	Sweep Sweep `json:"sweep" yaml:"sweep"`
 	// OpenAI configures the OpenAI connector.
 	OpenAI OpenAI `json:"openAi" yaml:"openAi"`
-	// Caps is the usage policy every submit answers to.
+	// Caps is the usage policy a submit without caps of its own answers to.
 	Caps Caps `json:"caps" yaml:"caps"`
+	// Ceiling bounds one user across every purpose when a submit carries caps of its own.
+	Ceiling Cap `json:"ceiling" yaml:"ceiling"`
 	// Otel configures the OpenTelemetry exporter for traces and metrics.
 	Otel otel.Config `json:"otel" yaml:"otel"`
 	// Logger is the base application logger: checks log provider failures to it, and the REST handlers
@@ -116,10 +108,6 @@ type App struct {
 // Validate refuses a configuration the service could not run with, so a bad value fails startup.
 func (app App) Validate() error {
 	switch {
-	case app.Generations.CheckInterval <= 0:
-		return fmt.Errorf("%w: the check interval must be positive", ErrInvalidConfig)
-	case app.Generations.MaxAttempts < 1 || app.Generations.MaxAttempts > MaxAttemptsCeiling:
-		return fmt.Errorf("%w: max attempts must be between 1 and %d", ErrInvalidConfig, MaxAttemptsCeiling)
 	case app.Generations.Retention < UnknownOutcomeHold:
 		return fmt.Errorf("%w: the retention must be at least %s", ErrInvalidConfig, UnknownOutcomeHold)
 	case app.Sweep.Interval <= 0 || app.Sweep.Interval > SweepIntervalCeiling:
@@ -133,6 +121,11 @@ func (app App) Validate() error {
 	err := app.Caps.Validate()
 	if err != nil {
 		return fmt.Errorf("caps: %w", err)
+	}
+
+	err = app.Ceiling.validateCeiling()
+	if err != nil {
+		return fmt.Errorf("ceiling: %w", err)
 	}
 
 	return nil

@@ -2,7 +2,6 @@ package dao_test
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 
 	"github.com/google/uuid"
@@ -93,8 +92,8 @@ func TestPgGenerationGet(t *testing.T) {
 				require.Equal(t, testCase.request.OwnerID, result.OwnerID)
 				require.Equal(t, dao.GenerationStatusPending, result.Status)
 				require.Equal(t, "openai", result.Provider)
-				// Polls read the generation often; only a start needs its payload.
-				require.Nil(t, result.Payload)
+				// The check that follows a poll measures ages from the read's own clock.
+				require.False(t, result.ReadAt.IsZero())
 			})
 		})
 	}
@@ -108,7 +107,6 @@ func pendingFixture(id, ownerID uuid.UUID) *dao.Generation {
 		Purpose:     "studio.generation",
 		Provider:    "openai",
 		RequestKey:  []byte("key-" + id.String()),
-		Payload:     json.RawMessage(`{"model": "a-model"}`),
 		Status:      dao.GenerationStatusPending,
 		MaxAttempts: 1,
 	}

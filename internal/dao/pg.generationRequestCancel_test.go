@@ -32,7 +32,8 @@ func TestPgGenerationRequestCancel(t *testing.T) {
 		expectErr    error
 	}{
 		{
-			// Nothing was sent, so there is no call to stop and the generation settles at once.
+			// Nothing was sent, as for a generation an earlier release left pending between two starts.
+			// There is no call to stop, so the generation settles at once.
 			name: "Success/NeverStarted",
 
 			state: "pending",
@@ -93,11 +94,15 @@ func TestPgGenerationRequestCancel(t *testing.T) {
 			postgrestest.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
 				t.Helper()
 
-				generation := seedGeneration(ctx, t, 1)
+				// A submitted generation is starting: its start intent is recorded.
+				seed := seedGeneration
+				if testCase.state == "pending" {
+					seed = seedUnstarted
+				}
+
+				generation := seed(ctx, t)
 
 				switch testCase.state {
-				case "starting":
-					startGeneration(ctx, t, generation.ID)
 				case "running":
 					runGeneration(ctx, t, generation.ID)
 				case "settled":
@@ -126,6 +131,8 @@ func TestPgGenerationRequestCancel(t *testing.T) {
 
 				require.Equal(t, testCase.expectStatus, cancelled.Status)
 				require.NotNil(t, cancelled.CancelRequestedAt)
+				// The check that stops the call measures its ages from the cancel.
+				require.Equal(t, cancelled.UpdatedAt, cancelled.ReadAt)
 
 				if testCase.expectStatus == dao.GenerationStatusCancelled {
 					require.Equal(t, reason, *cancelled.Error)

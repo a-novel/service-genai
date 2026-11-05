@@ -68,26 +68,9 @@ func (caps TierCaps) validate() error {
 	}
 
 	for tier, capOfTier := range caps {
-		if capOfTier.Forbidden {
-			continue
-		}
-
-		if len(capOfTier.Windows) == 0 && capOfTier.Concurrency == nil {
-			return fmt.Errorf("%w: tier %q declares neither a window nor a concurrency", ErrInvalidConfig, tier)
-		}
-
-		if lo.FromPtr(capOfTier.Concurrency) < -1 {
-			return fmt.Errorf("%w: tier %q allows a concurrency below -1", ErrInvalidConfig, tier)
-		}
-
-		for window, limit := range capOfTier.Windows {
-			if limit.InputTokens == nil && limit.OutputTokens == nil {
-				return fmt.Errorf("%w: tier %q limits nothing over %s", ErrInvalidConfig, tier, window)
-			}
-
-			if lo.FromPtr(limit.InputTokens) < 0 || lo.FromPtr(limit.OutputTokens) < 0 {
-				return fmt.Errorf("%w: tier %q has a negative limit over %s", ErrInvalidConfig, tier, window)
-			}
+		err := capOfTier.validate()
+		if err != nil {
+			return fmt.Errorf("tier %q: %w", tier, err)
 		}
 	}
 
@@ -158,6 +141,48 @@ func (capOfTier *Cap) UnmarshalYAML(unmarshal func(any) error) error {
 		}
 
 		capOfTier.Windows[window] = limit
+	}
+
+	return nil
+}
+
+// validate refuses a cap that limits nothing it declares.
+func (capOfTier Cap) validate() error {
+	if capOfTier.Forbidden {
+		return nil
+	}
+
+	if len(capOfTier.Windows) == 0 && capOfTier.Concurrency == nil {
+		return fmt.Errorf("%w: neither a window nor a concurrency", ErrInvalidConfig)
+	}
+
+	if lo.FromPtr(capOfTier.Concurrency) < -1 {
+		return fmt.Errorf("%w: a concurrency below -1", ErrInvalidConfig)
+	}
+
+	for window, limit := range capOfTier.Windows {
+		if limit.InputTokens == nil && limit.OutputTokens == nil {
+			return fmt.Errorf("%w: no limit over %s", ErrInvalidConfig, window)
+		}
+
+		if lo.FromPtr(limit.InputTokens) < 0 || lo.FromPtr(limit.OutputTokens) < 0 {
+			return fmt.Errorf("%w: a negative limit over %s", ErrInvalidConfig, window)
+		}
+	}
+
+	return nil
+}
+
+// validateCeiling refuses a ceiling that leaves one user unbounded: like the global default tier, it
+// sets a concurrency unless it allows no usage.
+func (capOfTier Cap) validateCeiling() error {
+	err := capOfTier.validate()
+	if err != nil {
+		return err
+	}
+
+	if capOfTier.Concurrency == nil && !capOfTier.Forbidden {
+		return fmt.Errorf("%w: no concurrency", ErrInvalidConfig)
 	}
 
 	return nil

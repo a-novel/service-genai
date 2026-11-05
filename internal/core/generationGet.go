@@ -10,18 +10,12 @@ import (
 
 	"github.com/a-novel-kit/golib/otel"
 
-	"github.com/a-novel/service-genai/internal/config"
 	"github.com/a-novel/service-genai/internal/dao"
 )
 
 // GenerationGetDao reads the generation.
 type GenerationGetDao interface {
 	Exec(ctx context.Context, request *dao.GenerationGetRequest) (*dao.Generation, error)
-}
-
-// GenerationGetDaoElectCheck elects this read to check a stale generation.
-type GenerationGetDaoElectCheck interface {
-	Exec(ctx context.Context, request *dao.GenerationElectCheckRequest) (*dao.Generation, error)
 }
 
 // GenerationGetDaoAttemptList reads the provider's answers to the generation's attempts.
@@ -42,32 +36,23 @@ type GenerationGetRequest struct {
 	OwnerID uuid.UUID `validate:"required"`
 }
 
-// A GenerationGet reads one of an owner's generations, checking it first when it is stale.
+// A GenerationGet reads one of an owner's generations, checking it with the provider first while it
+// is unsettled.
 //
-// A caller's polls keep its generation fresh, and the sweep checks the generations nobody polls.
+// Every poll of an unsettled generation asks the provider, so a poll made after the provider finished
+// returns the settled generation. A check writes only to settle, so polling costs the row nothing. The
+// caller bounds how often it polls, and the sweep checks the generations nobody polls.
 type GenerationGet struct {
 	dao            GenerationGetDao
-	daoElectCheck  GenerationGetDaoElectCheck
 	daoAttemptList GenerationGetDaoAttemptList
 	serviceCheck   GenerationGetServiceCheck
-	generations    config.Generations
 }
 
 // NewGenerationGet returns a new GenerationGet service.
 func NewGenerationGet(
-	dao GenerationGetDao,
-	daoElectCheck GenerationGetDaoElectCheck,
-	daoAttemptList GenerationGetDaoAttemptList,
-	serviceCheck GenerationGetServiceCheck,
-	generations config.Generations,
+	dao GenerationGetDao, daoAttemptList GenerationGetDaoAttemptList, serviceCheck GenerationGetServiceCheck,
 ) *GenerationGet {
-	return &GenerationGet{
-		dao:            dao,
-		daoElectCheck:  daoElectCheck,
-		daoAttemptList: daoAttemptList,
-		serviceCheck:   serviceCheck,
-		generations:    generations,
-	}
+	return &GenerationGet{dao: dao, daoAttemptList: daoAttemptList, serviceCheck: serviceCheck}
 }
 
 func (service *GenerationGet) Exec(ctx context.Context, request *GenerationGetRequest) (*Generation, error) {
@@ -84,27 +69,18 @@ func (service *GenerationGet) Exec(ctx context.Context, request *GenerationGetRe
 		return nil, otel.ReportError(span, errors.Join(err, ErrInvalidRequest))
 	}
 
-	// Electing first spares a read: an elected poll gets the generation from the election itself.
-	generation, err := service.daoElectCheck.Exec(ctx, &dao.GenerationElectCheckRequest{
-		ID: request.ID, OwnerID: request.OwnerID, Interval: service.generations.CheckInterval,
-	})
+	generation, err := service.dao.Exec(ctx, &dao.GenerationGetRequest{ID: request.ID, OwnerID: request.OwnerID})
+	if err != nil {
+		return nil, otel.ReportError(span, fmt.Errorf("get generation: %w", err))
+	}
 
-	switch {
-	case err == nil:
-		// A check that failed, such as on a lock a migration holds, is redone by a later poll or the
-		// sweep: the caller gets the generation as elected. The check's own span holds the failure.
+	// A check that failed, such as on a provider hiccup, is redone by the next poll or the sweep: the
+	// caller gets the generation as read. The check's own span holds the failure.
+	if generation.SettledAt == nil {
 		checked, checkErr := service.serviceCheck.Exec(ctx, &GenerationCheckRequest{Generation: generation})
 		if checkErr == nil {
 			generation = checked
 		}
-	case errors.Is(err, dao.ErrGenerationCheckNotDue):
-		// Checked within the interval, settled, or not this owner's: the read answers.
-		generation, err = service.dao.Exec(ctx, &dao.GenerationGetRequest{ID: request.ID, OwnerID: request.OwnerID})
-		if err != nil {
-			return nil, otel.ReportError(span, fmt.Errorf("get generation: %w", err))
-		}
-	default:
-		return nil, otel.ReportError(span, fmt.Errorf("elect check: %w", err))
 	}
 
 	var attempts []*dao.GenerationAttempt

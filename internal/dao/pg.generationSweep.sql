@@ -1,29 +1,15 @@
--- Takes the generations nobody checked within the interval, stalest first, and marks them checked.
--- SKIP LOCKED gives concurrent sweeps disjoint batches instead of queueing them behind each other.
--- The cutoff is stable, so the index scan stops at it.
-WITH
-  due AS (
-    SELECT
-      id
-    FROM
-      generations
-    WHERE
-      status IN ('pending', 'running')
-      AND checked_at <= CURRENT_TIMESTAMP - make_interval(secs => ?0)
-    ORDER BY
-      checked_at,
-      id
-    LIMIT
-      ?1
-    FOR UPDATE
-      SKIP LOCKED
-  )
-UPDATE generations
-SET
-  checked_at = clock_timestamp()
+-- One page of the unsettled generations, in id order from after the given one, so a sweep reads each
+-- once however many pages it takes. The read takes no lock and writes nothing: a check writes only to
+-- settle. Each row carries the database clock, which its check measures the generation's ages from.
+SELECT
+  *,
+  clock_timestamp() AS read_at
 FROM
-  due
+  generations
 WHERE
-  generations.id = due.id
-RETURNING
-  generations.*;
+  status IN ('pending', 'running')
+  AND id > ?0
+ORDER BY
+  id
+LIMIT
+  ?1;

@@ -56,12 +56,9 @@ func main() {
 	// =================================================================================================================
 
 	daoAttemptInsert := dao.NewPgGenerationAttemptInsert()
-	daoBeginStart := dao.NewPgGenerationBeginStart()
 	daoGet := dao.NewPgGenerationGet()
 	daoGetByCall := dao.NewPgGenerationGetByCall()
 	daoRecordProviderCall := dao.NewPgGenerationRecordProviderCall()
-	daoReleaseStart := dao.NewPgGenerationReleaseStart()
-	daoRequeue := dao.NewPgGenerationRequeue()
 	daoSettle := dao.NewPgGenerationSettle()
 	daoUsageInsert := dao.NewPgGenerationUsageInsert()
 
@@ -72,11 +69,8 @@ func main() {
 	registry := lo.Must(connectors.NewRegistry(connectors.OpenAIConfig(cfg.OpenAI)))
 
 	serviceCheck := core.NewGenerationCheck(
-		daoBeginStart,
-		daoReleaseStart,
 		daoRecordProviderCall,
 		daoSettle,
-		daoRequeue,
 		daoAttemptInsert,
 		daoUsageInsert,
 		daoGet,

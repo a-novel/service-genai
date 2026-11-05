@@ -59,22 +59,27 @@ func TestSweepRun(t *testing.T) {
 			t.Parallel()
 
 			daoSweep := coremocks.NewMockGenerationSweepDao(t)
+			daoLock := coremocks.NewMockGenerationSweepDaoLock(t)
+			daoUnlock := coremocks.NewMockGenerationSweepDaoUnlock(t)
 			serviceCheck := coremocks.NewMockGenerationSweepServiceCheck(t)
 
 			if testCase.daoMock != nil {
+				lock := &dao.GenerationSweepLock{}
+
+				daoLock.EXPECT().Exec(mock.Anything, &dao.GenerationSweepLockRequest{}).Return(lock, nil)
 				daoSweep.EXPECT().
-					Exec(mock.Anything, &dao.GenerationSweepRequest{Interval: sweep.Interval / 2, Limit: sweep.BatchSize}).
+					Exec(mock.Anything, &dao.GenerationSweepRequest{Limit: sweep.BatchSize}).
 					Return(nil, testCase.daoMock.err)
+				daoUnlock.EXPECT().Exec(mock.Anything, &dao.GenerationSweepUnlockRequest{Lock: lock}).Return(nil)
 			}
 
-			service := core.NewGenerationSweep(daoSweep, serviceCheck, sweep)
+			service := core.NewGenerationSweep(daoSweep, daoLock, daoUnlock, serviceCheck, sweep)
 
 			worked, err := sweepRun(service, testCase.downtimeStart)(t.Context())
 			require.ErrorIs(t, err, testCase.expectErr)
 			require.False(t, worked)
 
-			daoSweep.AssertExpectations(t)
-			serviceCheck.AssertExpectations(t)
+			mock.AssertExpectationsForObjects(t, daoSweep, daoLock, daoUnlock, serviceCheck)
 		})
 	}
 }

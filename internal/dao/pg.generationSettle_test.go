@@ -28,14 +28,12 @@ func TestPgGenerationSettle(t *testing.T) {
 		// recordAfterRead lands the provider call id after the caller's read, as a concurrent start
 		// would.
 		recordAfterRead bool
-		// requeueAfterRead records the call and requeues the attempt after the caller's read, which
-		// keeps the attempt number and clears the start.
-		requeueAfterRead bool
 
 		attempt int16
 		callID  *string
 		status  dao.GenerationStatus
 		error   *string
+		failure *dao.GenerationFailure
 		// outcomeUnknown marks a failure whose start the provider may have accepted.
 		outcomeUnknown bool
 
@@ -57,9 +55,21 @@ func TestPgGenerationSettle(t *testing.T) {
 			attempt:        1,
 			status:         dao.GenerationStatusFailed,
 			error:          &failure,
+			failure:        new(dao.GenerationFailureOutcomeUnknown),
 			outcomeUnknown: true,
 		},
 		{
+			name: "Success/ProviderFailed",
+
+			state:   "running",
+			attempt: 1,
+			callID:  &callID,
+			status:  dao.GenerationStatusFailed,
+			error:   &failure,
+			failure: new(dao.GenerationFailureProviderFailed),
+		},
+		{
+			// An earlier release left the generation pending between two starts.
 			name: "Success/CancelledBeforeStart",
 
 			state:  "pending",
@@ -99,20 +109,6 @@ func TestPgGenerationSettle(t *testing.T) {
 			expectErr: dao.ErrGenerationChanged,
 		},
 		{
-			// A check read a start in flight, then the call landed and failed retryably, and its attempt
-			// went back to the queue. Settling the read as unknown would fail a generation about to
-			// start again.
-			name: "Error/RequeuedSinceRead",
-
-			state:            "starting",
-			requeueAfterRead: true,
-			attempt:          1,
-			status:           dao.GenerationStatusFailed,
-			error:            &failure,
-
-			expectErr: dao.ErrGenerationChanged,
-		},
-		{
 			// Only a failure can leave a call running untracked: the values break a constraint, which no
 			// retry changes.
 			name: "Error/Refused",
@@ -122,6 +118,18 @@ func TestPgGenerationSettle(t *testing.T) {
 			callID:         &callID,
 			status:         dao.GenerationStatusSucceeded,
 			outcomeUnknown: true,
+
+			expectErr: dao.ErrRefused,
+		},
+		{
+			// Only a failure has a class.
+			name: "Error/FailureClassOnSuccess",
+
+			state:   "running",
+			attempt: 1,
+			callID:  &callID,
+			status:  dao.GenerationStatusSucceeded,
+			failure: new(dao.GenerationFailureProviderFailed),
 
 			expectErr: dao.ErrRefused,
 		},
@@ -146,14 +154,18 @@ func TestPgGenerationSettle(t *testing.T) {
 			postgrestest.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
 				t.Helper()
 
-				generation := seedGeneration(ctx, t, 1)
+				// A submitted generation is starting: its start intent is recorded.
+				seed := seedGeneration
+				if testCase.state == "pending" {
+					seed = seedUnstarted
+				}
+
+				generation := seed(ctx, t)
 
 				// read is the generation as the settling check last saw it.
 				read := generation
 
 				switch testCase.state {
-				case "starting":
-					read = startGeneration(ctx, t, generation.ID)
 				case "running":
 					read = runGeneration(ctx, t, generation.ID)
 				case "settled":
@@ -167,18 +179,6 @@ func TestPgGenerationSettle(t *testing.T) {
 					require.NoError(t, err)
 				}
 
-				if testCase.requeueAfterRead {
-					_, err := dao.NewPgGenerationRecordProviderCall().Exec(ctx, &dao.GenerationRecordProviderCallRequest{
-						ID: generation.ID, Attempt: 1, ProviderCallID: testCallID,
-					})
-					require.NoError(t, err)
-
-					_, err = dao.NewPgGenerationRequeue().Exec(ctx, &dao.GenerationRequeueRequest{
-						ID: generation.ID, Attempt: 1, ProviderCallID: testCallID,
-					})
-					require.NoError(t, err)
-				}
-
 				settleRequest := &dao.GenerationSettleRequest{
 					ID:               generation.ID,
 					Attempt:          testCase.attempt,
@@ -186,6 +186,7 @@ func TestPgGenerationSettle(t *testing.T) {
 					ProviderCallID:   testCase.callID,
 					Status:           testCase.status,
 					Error:            testCase.error,
+					Failure:          testCase.failure,
 					Retention:        testRetention,
 					OutcomeUnknown:   testCase.outcomeUnknown,
 				}
@@ -199,6 +200,7 @@ func TestPgGenerationSettle(t *testing.T) {
 
 				require.Equal(t, testCase.status, settled.Status)
 				require.Equal(t, testCase.error, settled.Error)
+				require.Equal(t, testCase.failure, settled.Failure)
 				require.NotNil(t, settled.SettledAt)
 				require.NotNil(t, settled.ExpiresAt)
 				require.Equal(t, testRetention, settled.ExpiresAt.Sub(*settled.SettledAt))

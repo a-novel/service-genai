@@ -28,8 +28,7 @@ type GenerationSubmitRequest struct {
 	Provider string
 	// RequestKey identifies the request: another submission with the same key is a replay while its
 	// generation is pending, running or succeeded.
-	RequestKey  []byte
-	MaxAttempts int16
+	RequestKey []byte
 	// Traceparent is the W3C trace context of the submitting request, if it runs in a trace.
 	Traceparent *string
 	// Streamed creates the generation's provider call in streaming mode.
@@ -73,7 +72,6 @@ func (dao *PgGenerationSubmit) Exec(
 		request.Purpose,
 		request.Provider,
 		request.RequestKey,
-		request.MaxAttempts,
 		request.Traceparent,
 		request.Streamed,
 	).Scan(ctx, entity)

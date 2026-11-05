@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math/rand/v2"
 	"time"
 
 	"github.com/samber/lo"
@@ -27,16 +26,6 @@ type GenerationCheckLogger interface {
 	Err(ctx context.Context, msg string, fields ...any)
 }
 
-// GenerationCheckDaoBeginStart takes the next attempt.
-type GenerationCheckDaoBeginStart interface {
-	Exec(ctx context.Context, request *dao.GenerationBeginStartRequest) (*dao.Generation, error)
-}
-
-// GenerationCheckDaoReleaseStart gives back an attempt the provider never accepted.
-type GenerationCheckDaoReleaseStart interface {
-	Exec(ctx context.Context, request *dao.GenerationReleaseStartRequest) (*dao.Generation, error)
-}
-
 // GenerationCheckDaoRecordProviderCall attaches the accepted provider operation.
 type GenerationCheckDaoRecordProviderCall interface {
 	Exec(ctx context.Context, request *dao.GenerationRecordProviderCallRequest) (*dao.Generation, error)
@@ -45,11 +34,6 @@ type GenerationCheckDaoRecordProviderCall interface {
 // GenerationCheckDaoSettle records a terminal outcome.
 type GenerationCheckDaoSettle interface {
 	Exec(ctx context.Context, request *dao.GenerationSettleRequest) (*dao.Generation, error)
-}
-
-// GenerationCheckDaoRequeue returns a retryably failed attempt to the queue.
-type GenerationCheckDaoRequeue interface {
-	Exec(ctx context.Context, request *dao.GenerationRequeueRequest) (*dao.Generation, error)
 }
 
 // GenerationCheckDaoAttemptInsert records the provider's answer to one attempt.
@@ -71,35 +55,44 @@ type GenerationCheckDaoGet interface {
 type GenerationCheckRequest struct {
 	// Generation is the generation as the caller last read it.
 	Generation *dao.Generation
+	// Start sends the provider call of a generation whose start intent the caller just recorded. Only
+	// the submit that recorded the intent holds it. Without it, a check leaves the start to that
+	// submit, and settles the generation once its start can no longer be in flight.
+	Start *GenerationCheckStart
 }
 
-// A GenerationCheck looks at one generation and applies whatever transition is due: start its
-// provider call, or ask the provider once and record what changed.
+// GenerationCheckStart is what a check needs to send a generation's provider call.
+type GenerationCheckStart struct {
+	// Payload is the provider's own request, held in memory: this service never stores it.
+	Payload json.RawMessage
+	// IntentAt is when the caller began recording the start intent, by this process's clock. The send
+	// and the write of its call id are timed from it.
+	IntentAt time.Time
+}
+
+// A GenerationCheck looks at one generation and applies whatever transition is due: send the call
+// its submit holds, or ask the provider once and settle the generation when the call ended.
 //
-// No process owns a generation. Every transition is a conditional write fenced by what the check
-// read, so concurrent checks are safe and a check interrupted at any point is redone by the next.
+// A run writes its generation twice after the insert: the call id once the provider accepts the call,
+// and the settle. A check that finds nothing to settle writes nothing. No process owns a generation:
+// every write is fenced by what the check read, so concurrent checks are safe, and a check interrupted
+// at any point is redone by the next.
 type GenerationCheck struct {
-	daoBeginStart   GenerationCheckDaoBeginStart
-	daoReleaseStart GenerationCheckDaoReleaseStart
-	daoRecord       GenerationCheckDaoRecordProviderCall
-	daoSettle       GenerationCheckDaoSettle
-	daoRequeue      GenerationCheckDaoRequeue
-	daoAttempt      GenerationCheckDaoAttemptInsert
-	daoUsage        GenerationCheckDaoUsageInsert
-	daoGet          GenerationCheckDaoGet
-	registry        connectors.Registry
-	transactor      transaction.Transactor
-	logger          GenerationCheckLogger
-	generations     config.Generations
+	daoRecord   GenerationCheckDaoRecordProviderCall
+	daoSettle   GenerationCheckDaoSettle
+	daoAttempt  GenerationCheckDaoAttemptInsert
+	daoUsage    GenerationCheckDaoUsageInsert
+	daoGet      GenerationCheckDaoGet
+	registry    connectors.Registry
+	transactor  transaction.Transactor
+	logger      GenerationCheckLogger
+	generations config.Generations
 }
 
 // NewGenerationCheck returns a new GenerationCheck service.
 func NewGenerationCheck(
-	daoBeginStart GenerationCheckDaoBeginStart,
-	daoReleaseStart GenerationCheckDaoReleaseStart,
 	daoRecord GenerationCheckDaoRecordProviderCall,
 	daoSettle GenerationCheckDaoSettle,
-	daoRequeue GenerationCheckDaoRequeue,
 	daoAttempt GenerationCheckDaoAttemptInsert,
 	daoUsage GenerationCheckDaoUsageInsert,
 	daoGet GenerationCheckDaoGet,
@@ -109,18 +102,15 @@ func NewGenerationCheck(
 	generations config.Generations,
 ) *GenerationCheck {
 	return &GenerationCheck{
-		daoBeginStart:   daoBeginStart,
-		daoReleaseStart: daoReleaseStart,
-		daoRecord:       daoRecord,
-		daoSettle:       daoSettle,
-		daoRequeue:      daoRequeue,
-		daoAttempt:      daoAttempt,
-		daoUsage:        daoUsage,
-		daoGet:          daoGet,
-		registry:        registry,
-		transactor:      transactor,
-		logger:          logger,
-		generations:     generations,
+		daoRecord:   daoRecord,
+		daoSettle:   daoSettle,
+		daoAttempt:  daoAttempt,
+		daoUsage:    daoUsage,
+		daoGet:      daoGet,
+		registry:    registry,
+		transactor:  transactor,
+		logger:      logger,
+		generations: generations,
 	}
 }
 
@@ -144,10 +134,11 @@ func (service *GenerationCheck) Exec(
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck", options...)
 	defer span.End()
 
-	// A check outlives the call that triggered it. The poll that elected it already stamped the
-	// generation as checked, so nothing else checks it until it goes stale again. From a start's intent
-	// on, the provider may also hold paid work whose id must be recorded.
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), checkTimeout)
+	// A check outlives the call that triggered it: the provider may hold paid work whose id or answer
+	// must be recorded. A start waits out the write of its call id.
+	ctx, cancel := context.WithTimeout(
+		context.WithoutCancel(ctx), lo.Ternary(request.Start != nil, startCheckTimeout, checkTimeout),
+	)
 	defer cancel()
 
 	span.SetAttributes(attribute.String("generation.id", generation.ID.String()))
@@ -162,12 +153,18 @@ func (service *GenerationCheck) Exec(
 		return generation, nil
 	case generation.ProviderCallID != nil:
 		checked, err = service.observe(ctx, generation)
+	case generation.StartRequestedAt != nil && request.Start != nil:
+		checked, err = service.start(ctx, generation, request.Start)
 	case generation.StartRequestedAt != nil:
 		checked, err = service.resolveStart(ctx, generation)
 	case generation.CancelRequestedAt != nil:
 		checked, err = service.settle(ctx, generation, &connectors.Call{State: connectors.CallCancelled})
 	default:
-		checked, err = service.start(ctx, generation)
+		// An earlier release left the generation pending between two starts, its payload out of reach.
+		// The caller resends its request to run it.
+		checked, err = service.settleFailure(
+			ctx, generation, failureStartFailed, dao.GenerationFailureNotStarted, "no start intent to send", nil,
+		)
 	}
 
 	if errors.Is(err, dao.ErrGenerationChanged) {
@@ -184,16 +181,20 @@ func (service *GenerationCheck) Exec(
 	return checked, nil
 }
 
-// start sends the provider call for the next attempt, and stops it at once when its owner asked to
-// cancel meanwhile.
-func (service *GenerationCheck) start(ctx context.Context, generation *dao.Generation) (*dao.Generation, error) {
+// start sends the provider call of a start intent the submit just recorded, and stops the call at
+// once when its owner asked to cancel meanwhile.
+func (service *GenerationCheck) start(
+	ctx context.Context, intent *dao.Generation, start *GenerationCheckStart,
+) (*dao.Generation, error) {
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(start)")
 	defer span.End()
 
-	// A deployment that dropped the provider leaves the generation unable to progress.
-	connector, err := service.registry.Async(generation.Provider)
+	// A deployment that dropped the provider leaves the generation unable to run.
+	connector, err := service.registry.Async(intent.Provider)
 	if err != nil {
-		settled, settleErr := service.settleFailure(ctx, generation, failureProviderUnavailable, err.Error(), nil)
+		settled, settleErr := service.settleFailure(
+			ctx, intent, failureProviderUnavailable, dao.GenerationFailureNotStarted, err.Error(), nil,
+		)
 		if settleErr != nil {
 			return nil, otel.ReportError(span, settleErr)
 		}
@@ -201,30 +202,22 @@ func (service *GenerationCheck) start(ctx context.Context, generation *dao.Gener
 		return settled, nil
 	}
 
-	// Taken before the intent is recorded, so it can only overstate the intent's age.
-	began := time.Now()
+	// A process frozen since recording the intent may find it already settled as unknown by another
+	// check. Sending it now would pay for a call nothing reads.
+	if time.Since(start.IntentAt) >= startTimeout {
+		settled, settleErr := service.settleFailure(
+			ctx, intent, failureStartFailed, dao.GenerationFailureNotStarted, "start intent too old to send", nil,
+		)
+		if settleErr != nil {
+			return nil, otel.ReportError(span, fmt.Errorf("settle stale start: %w", settleErr))
+		}
 
-	intent, err := service.daoBeginStart.Exec(ctx, &dao.GenerationBeginStartRequest{ID: generation.ID})
-	if err != nil {
-		return nil, otel.ReportError(span, fmt.Errorf("begin start: %w", err))
+		return settled, nil
 	}
-
-	span.SetAttributes(attribute.Int("generation.attempt", int(intent.Attempt)))
 
 	// A streamed start waits for the provider to begin the call, which takes its queue time.
 	startCtx, cancelStart := context.WithTimeout(ctx, lo.Ternary(intent.Streamed, streamStartTimeout, startTimeout))
 	defer cancelStart()
-
-	// A process frozen since recording intent may find the attempt already settled as unknown by
-	// another check. Sending it now would pay for a call nothing reads.
-	if time.Since(began) >= startTimeout {
-		released, releaseErr := service.releaseStart(ctx, intent, 0)
-		if releaseErr != nil {
-			return nil, otel.ReportError(span, fmt.Errorf("release stale start: %w", releaseErr))
-		}
-
-		return released, nil
-	}
 
 	// A streamed start names its call before the provider begins it. Recorded then, the call stays
 	// tracked by a process stopped during the rest of the hold.
@@ -234,13 +227,13 @@ func (service *GenerationCheck) start(ctx context.Context, generation *dao.Gener
 	)
 
 	record := func(call *connectors.Call) error {
-		recorded, recordErr = service.recordCall(ctx, connector, intent, call.ID)
+		recorded, recordErr = service.recordCall(ctx, connector, intent, start.IntentAt, call.ID)
 
 		return recordErr
 	}
 
 	call, err := connector.Start(startCtx, &connectors.AsyncStartRequest{
-		Payload: intent.Payload, Stream: intent.Streamed, Accepted: record,
+		Payload: start.Payload, Stream: intent.Streamed, Accepted: record,
 	})
 
 	switch {
@@ -274,11 +267,15 @@ func (service *GenerationCheck) start(ctx context.Context, generation *dao.Gener
 	return stopped, nil
 }
 
-// recordCall attaches an accepted call to its attempt. The generation may have settled while the
+// recordCall attaches an accepted call to its intent. The generation may have settled while the
 // start was in flight, or the write may have failed without landing. A call the generation does not
 // carry then belongs to nothing, so it is stopped.
+//
+// The write is patient. A migration holding a lock, or a lost connection, delays it, so it goes on
+// with a growing pause until recordPatience after the intent. A check may settle the intent as
+// unknown only once startOutcomeUnknownAfter has passed, which outlasts every write.
 func (service *GenerationCheck) recordCall(
-	ctx context.Context, connector connectors.Async, intent *dao.Generation, callID string,
+	ctx context.Context, connector connectors.Async, intent *dao.Generation, intentAt time.Time, callID string,
 ) (*dao.Generation, error) {
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(recordCall)")
 	defer span.End()
@@ -296,19 +293,29 @@ func (service *GenerationCheck) recordCall(
 	movedOn := errors.Is(err, dao.ErrGenerationChanged)
 
 	// A write that failed without an answer may still commit: the database finishes a statement its
-	// client gave up on. A second write waits behind it on the row, then lands itself if the first never
-	// did.
-	if err != nil && !movedOn {
+	// client gave up on. The next write waits behind it on the row, then lands itself if the first never
+	// did. A write that finds the generation moved on ends the retries.
+	deadline := intentAt.Add(recordPatience)
+	pause := recordPause
+
+	for err != nil && !errors.Is(err, dao.ErrGenerationChanged) && time.Now().Add(pause).Before(deadline) {
+		select {
+		case <-time.After(pause):
+		case <-ctx.Done():
+			return nil, otel.ReportError(span, errors.Join(err, ctx.Err()))
+		}
+
 		recorded, err = write()
+		pause = min(pause+pause, recordPauseCeiling)
 	}
 
 	if err == nil {
 		return recorded, nil
 	}
 
-	// Either write may have landed after all, and the second one then finds the generation moved on.
-	// When both time out, the read may still miss a write about to land. The call is then stopped, and
-	// the generation fails once that write lands.
+	// Any write may have landed after all, and a later one then finds the generation moved on. When the
+	// last write times out, the read may still miss it about to land. The call is then stopped, and the
+	// generation fails once that write lands.
 	if !movedOn {
 		getCtx, cancel := context.WithTimeout(ctx, persistenceTimeout)
 		current, getErr := service.daoGet.Exec(getCtx, &dao.GenerationGetRequest{ID: intent.ID, OwnerID: intent.OwnerID})
@@ -329,47 +336,16 @@ func (service *GenerationCheck) recordCall(
 	return nil, otel.ReportError(span, err)
 }
 
-// releaseStart gives back an attempt the provider never accepted. It runs detached, so it carries its
-// own deadline: a stalled database must not hold the process past shutdown.
-func (service *GenerationCheck) releaseStart(
-	ctx context.Context, intent *dao.Generation, delay time.Duration,
-) (*dao.Generation, error) {
-	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(releaseStart)")
-	defer span.End()
-
-	releaseCtx, cancel := context.WithTimeout(ctx, persistenceTimeout)
-	defer cancel()
-
-	released, err := service.daoReleaseStart.Exec(releaseCtx, &dao.GenerationReleaseStartRequest{
-		ID: intent.ID, Attempt: intent.Attempt, Delay: delay,
-	})
-	if err != nil {
-		return nil, otel.ReportError(span, err)
-	}
-
-	return released, nil
-}
-
-// failStart decides what a rejected start costs. Only a definitive refusal gives the attempt back.
+// failStart settles a start the provider never accepted, on its first outcome. Nothing sends it
+// again: the caller reads the failure class and decides whether to resend its request.
 func (service *GenerationCheck) failStart(
 	ctx context.Context, intent *dao.Generation, cause error,
 ) (*dao.Generation, error) {
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(failStart)")
 	defer span.End()
 
-	// BeginStart sets the attempt's first start along with its intent.
-	retrying := intent.StartRequestedAt.Sub(*intent.FirstStartRequestedAt)
-
-	if errors.Is(cause, connectors.ErrRetryable) && retrying < startRetryCeiling {
-		released, err := service.releaseStart(ctx, intent, retryAfter())
-		if err != nil {
-			return nil, otel.ReportError(span, fmt.Errorf("release start: %w", err))
-		}
-
-		return released, nil
-	}
-
-	failure := failureStartFailed
+	// A start never sent, or turned away before the provider accepted it, ran nothing.
+	message, class := failureStartFailed, dao.GenerationFailureNotStarted
 
 	var (
 		rejection *connectors.RejectionError
@@ -378,12 +354,12 @@ func (service *GenerationCheck) failStart(
 
 	switch {
 	case errors.As(cause, &rejection):
-		failure, response = failureRejected, rejection.Response
+		message, class, response = failureRejected, dao.GenerationFailureRejected, rejection.Response
 	case errors.Is(cause, connectors.ErrStartAmbiguous):
-		failure = failureOutcomeUnknown
+		message, class = failureOutcomeUnknown, dao.GenerationFailureOutcomeUnknown
 	}
 
-	settled, err := service.settleFailure(ctx, intent, failure, cause.Error(), response)
+	settled, err := service.settleFailure(ctx, intent, message, class, cause.Error(), response)
 	if err != nil {
 		return nil, otel.ReportError(span, err)
 	}
@@ -391,8 +367,8 @@ func (service *GenerationCheck) failStart(
 	return settled, nil
 }
 
-// resolveStart settles an attempt whose start never recorded an id, once that start cannot still
-// be in flight. The provider may have accepted it, so nothing starts the attempt again.
+// resolveStart settles a start intent that never recorded an id, once its start cannot still be in
+// flight. The provider may have accepted the call, so nothing sends it again.
 func (service *GenerationCheck) resolveStart(
 	ctx context.Context, generation *dao.Generation,
 ) (*dao.Generation, error) {
@@ -400,12 +376,13 @@ func (service *GenerationCheck) resolveStart(
 	defer span.End()
 
 	// Both timestamps come from the database clock.
-	if generation.CheckedAt.Sub(*generation.StartRequestedAt) < startOutcomeUnknownAfter {
+	if generation.ReadAt.Sub(*generation.StartRequestedAt) < startOutcomeUnknownAfter {
 		return generation, nil
 	}
 
 	settled, err := service.settleFailure(
-		ctx, generation, failureOutcomeUnknown, "start intent recorded without a provider call id", nil,
+		ctx, generation, failureOutcomeUnknown, dao.GenerationFailureOutcomeUnknown,
+		"start intent recorded without a provider call id", nil,
 	)
 	if err != nil {
 		return nil, otel.ReportError(span, err)
@@ -419,9 +396,12 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(observe)")
 	defer span.End()
 
+	// The call runs on, out of this service's reach: it may still be paid for.
 	connector, err := service.registry.Async(generation.Provider)
 	if err != nil {
-		settled, settleErr := service.settleFailure(ctx, generation, failureProviderUnavailable, err.Error(), nil)
+		settled, settleErr := service.settleFailure(
+			ctx, generation, failureProviderUnavailable, dao.GenerationFailureOutcomeUnknown, err.Error(), nil,
+		)
 		if settleErr != nil {
 			return nil, otel.ReportError(span, settleErr)
 		}
@@ -435,29 +415,33 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 	}
 
 	// A call this check cannot follow fails its generation: starting another call would pay twice.
-	var failure, reason string
+	var (
+		message, reason string
+		class           dao.GenerationFailure
+	)
 
 	switch {
 	case err == nil && call.State.Terminal():
-		// Settled or requeued below.
+		// Settled below.
 	case errors.Is(err, connectors.ErrResponseTooLarge):
-		failure, reason = failureResponseTooLarge, err.Error()
+		message, class, reason = failureResponseTooLarge, dao.GenerationFailureOutcomeUnknown, err.Error()
 	case err != nil && !errors.Is(err, connectors.ErrRetryable):
 		// Unreadable, typically gone past the provider's retention window.
-		failure, reason = failureResultLost, err.Error()
-	case stopSince == nil || generation.CheckedAt.Sub(*stopSince) < stopRetryWindow:
+		message, class, reason = failureResultLost, dao.GenerationFailureProviderFailed, err.Error()
+	case stopSince == nil || generation.ReadAt.Sub(*stopSince) < stopRetryWindow:
 		// A transient failure, or a stop the provider has not applied yet: the next check asks again.
 		return generation, nil
 	case err != nil:
 		// A stop still failing a while after it was first wanted is given up on. The call may still
 		// run, so the generation keeps its slot a while.
-		failure, reason = failureNotStopped, err.Error()
+		message, class, reason = failureNotStopped, dao.GenerationFailureOutcomeUnknown, err.Error()
 	default:
-		failure, reason = failureNotStopped, fmt.Sprintf("the stop left the call %s", call.State)
+		message, class = failureNotStopped, dao.GenerationFailureOutcomeUnknown
+		reason = fmt.Sprintf("the stop left the call %s", call.State)
 	}
 
-	if failure != "" {
-		settled, settleErr := service.settleFailure(ctx, generation, failure, reason, nil)
+	if message != "" {
+		settled, settleErr := service.settleFailure(ctx, generation, message, class, reason, nil)
 		if settleErr != nil {
 			return nil, otel.ReportError(span, settleErr)
 		}
@@ -479,24 +463,18 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 		generation = &labeled
 	}
 
-	var recorded *dao.Generation
-
-	// A streamed generation is one call: its stream's cursor counts that call's events, and a fresh call
-	// would number its own from zero. Its caller resends it to run it again.
-	if call.State == connectors.CallFailed && call.Retryable && !generation.Streamed &&
-		generation.Attempt < generation.MaxAttempts && generation.CancelRequestedAt == nil {
-		recorded, err = service.requeue(ctx, generation, call)
-	} else {
-		recorded, err = service.settle(ctx, generation, call)
-	}
+	// A failed call settles on its first outcome, retryable or not: the caller decides whether to resend.
+	recorded, err := service.settle(ctx, generation, call)
 
 	// The database refuses the same answer on every check, such as usage that breaks a constraint. Once
 	// the call is older than the run ceiling and the stop retry window together, the generation fails
 	// without the answer. Any other failure, such as a lock wait or a lost connection, is retried by the
 	// next check.
 	if errors.Is(err, dao.ErrRefused) &&
-		generation.CheckedAt.Sub(*generation.StartRequestedAt) >= runCeiling+stopRetryWindow {
-		recorded, err = service.settleFailure(ctx, generation, failureNotRecorded, err.Error(), nil)
+		generation.ReadAt.Sub(*generation.StartRequestedAt) >= runCeiling+stopRetryWindow {
+		recorded, err = service.settleFailure(
+			ctx, generation, failureNotRecorded, dao.GenerationFailureProviderFailed, err.Error(), nil,
+		)
 	}
 
 	if err != nil {
@@ -521,7 +499,7 @@ func (service *GenerationCheck) ask(
 	// Every timestamp here comes from the database clock. A recorded call always has its start.
 	start := *generation.StartRequestedAt
 	since := generation.CancelRequestedAt
-	age := generation.CheckedAt.Sub(start)
+	age := generation.ReadAt.Sub(start)
 
 	if ceiling := start.Add(runCeiling); age >= runCeiling && (since == nil || ceiling.Before(*since)) {
 		since = &ceiling
@@ -550,46 +528,6 @@ func (service *GenerationCheck) ask(
 	return call, since, nil
 }
 
-// requeue records the failed attempt's answer and usage, and authorizes a fresh call, together.
-func (service *GenerationCheck) requeue(
-	ctx context.Context, generation *dao.Generation, call *connectors.Call,
-) (*dao.Generation, error) {
-	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(requeue)")
-	defer span.End()
-
-	service.logger.Err(ctx, failureLog(generation, call.Reason))
-
-	var requeued *dao.Generation
-
-	err := service.transactor.WithinTx(ctx, func(ctx context.Context) error {
-		var err error
-
-		daoRequest := &dao.GenerationRequeueRequest{
-			ID:             generation.ID,
-			Attempt:        generation.Attempt,
-			ProviderCallID: *generation.ProviderCallID,
-			Delay:          retryAfter(),
-		}
-
-		requeued, err = service.daoRequeue.Exec(ctx, daoRequest)
-		if err != nil {
-			return fmt.Errorf("requeue generation: %w", err)
-		}
-
-		err = service.recordAttempt(ctx, generation, call.Response)
-		if err != nil {
-			return err
-		}
-
-		return service.recordUsage(ctx, generation, call)
-	})
-	if err != nil {
-		return nil, otel.ReportError(span, err)
-	}
-
-	return requeued, nil
-}
-
 // settle records a terminal provider state as the generation's outcome.
 func (service *GenerationCheck) settle(
 	ctx context.Context, generation *dao.Generation, call *connectors.Call,
@@ -601,14 +539,18 @@ func (service *GenerationCheck) settle(
 
 	span.SetAttributes(attribute.String("generation.status", string(status)))
 
-	// Only a failed call carries the provider's reason. One this service stopped is explained by the
-	// outcome.
+	// The provider ran the call, so what failed it was the provider's: a failed call, or one stopped
+	// past its ceiling. Only a failed call carries the provider's reason. One this service stopped is
+	// explained by the outcome.
+	var class *dao.GenerationFailure
+
 	if status == dao.GenerationStatusFailed {
+		class = new(dao.GenerationFailureProviderFailed)
 		reason := lo.Ternary(call.State == connectors.CallFailed, call.Reason, *message)
 		service.logger.Err(ctx, failureLog(generation, reason))
 	}
 
-	settled, err := service.commit(ctx, generation, status, message, call)
+	settled, err := service.commit(ctx, generation, status, message, class, call)
 	if err != nil {
 		return nil, otel.ReportError(span, err)
 	}
@@ -616,11 +558,12 @@ func (service *GenerationCheck) settle(
 	return settled, nil
 }
 
-// settleFailure records a terminal failure in this service's words, with the provider's answer when
-// it gave one, and logs its cause for operators. It takes a deadline of its own, so a check that spent
-// its budget on a slow start still records the failure.
+// settleFailure records a terminal failure in this service's words with its class, and the provider's
+// answer when it gave one, then logs its cause for operators. It takes a deadline of its own, so a
+// check that spent its budget on a slow start still records the failure.
 func (service *GenerationCheck) settleFailure(
-	ctx context.Context, generation *dao.Generation, message, cause string, response json.RawMessage,
+	ctx context.Context, generation *dao.Generation, message string, class dao.GenerationFailure, cause string,
+	response json.RawMessage,
 ) (*dao.Generation, error) {
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(settleFailure)")
 	defer span.End()
@@ -631,7 +574,7 @@ func (service *GenerationCheck) settleFailure(
 	defer cancel()
 
 	settled, err := service.commit(
-		settleCtx, generation, dao.GenerationStatusFailed, &message, &connectors.Call{Response: response},
+		settleCtx, generation, dao.GenerationStatusFailed, &message, &class, &connectors.Call{Response: response},
 	)
 	if err != nil {
 		return nil, otel.ReportError(span, err)
@@ -647,7 +590,7 @@ func (service *GenerationCheck) settleFailure(
 // provider answers.
 func (service *GenerationCheck) commit(
 	ctx context.Context, generation *dao.Generation, status dao.GenerationStatus, message *string,
-	call *connectors.Call,
+	class *dao.GenerationFailure, call *connectors.Call,
 ) (*dao.Generation, error) {
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(commit)")
 	defer span.End()
@@ -664,6 +607,7 @@ func (service *GenerationCheck) commit(
 			ProviderCallID:   generation.ProviderCallID,
 			Status:           status,
 			Error:            message,
+			Failure:          class,
 			Retention:        service.generations.Retention,
 			OutcomeUnknown:   outcomeUnknown[lo.FromPtr(message)],
 		}
@@ -786,12 +730,6 @@ func failureLog(generation *dao.Generation, reason string) string {
 	return fmt.Sprintf("generation %s failed: %s", generation.ID, cmp.Or(reason, "provider returned no failure reason"))
 }
 
-// retryAfter draws a retry's delay between half and one and a half retryDelay, so the calls one burst
-// turned away come back spread out.
-func retryAfter() time.Duration {
-	return retryDelay/2 + rand.N(retryDelay) //nolint:gosec // Spreading retries needs no secrecy.
-}
-
 // settleOutcomeOf maps a terminal provider state onto the status to land in, with the message a
 // caller reads.
 //
@@ -829,22 +767,24 @@ const (
 	streamStartTimeout = 30 * time.Second
 	// streamQueuedCeiling is how long a streamed call may stay queued before it is stopped.
 	streamQueuedCeiling = 5 * time.Minute
+	// recordPatience is how long after its intent a start keeps writing its call id. A migration's
+	// lock then costs the call latency instead of the call itself.
+	recordPatience = 2 * time.Minute
+	// recordPause is the first pause between two writes of a call id, doubled after each write up to
+	// recordPauseCeiling.
+	recordPause        = 250 * time.Millisecond
+	recordPauseCeiling = 5 * time.Second
 	// startOutcomeUnknownAfter is how old a start intent without an id must be before no start can
-	// still be in flight for it. A start leaves within startTimeout of its intent, then lasts at most
-	// streamStartTimeout plus its writes, which stays under it.
-	startOutcomeUnknownAfter = time.Minute
-	// checkTimeout bounds a whole check, detached from its caller. A start takes as long as bounded
-	// above, followed by a stop when its owner cancelled meanwhile. A read takes up to the connector's
+	// still be in flight for it. A start leaves within startTimeout of its intent, and its last write
+	// begins before recordPatience and lasts persistenceTimeout, which stays under it.
+	startOutcomeUnknownAfter = 3 * time.Minute
+	// checkTimeout bounds a whole check, detached from its caller. A read takes up to the connector's
 	// ten seconds, three times for a stuck streamed call whose stop finds it finished. The commit comes
-	// on top of either.
+	// on top.
 	checkTimeout = time.Minute
-	// retryDelay is how long a fresh call waits on average after a rate limit or a retryable provider
-	// failure.
-	retryDelay = 15 * time.Second
-	// startRetryCeiling bounds how long an attempt keeps retrying a start the provider turns away,
-	// measured from its first start. Past it the generation fails, so a request the provider never
-	// accepts cannot hold a concurrency slot forever.
-	startRetryCeiling = 10 * time.Minute
+	// startCheckTimeout bounds a check that sends a call: the writes of its call id until
+	// recordPatience, then a check of the recorded call when its owner cancelled meanwhile.
+	startCheckTimeout = recordPatience + checkTimeout
 	// stopRetryWindow is how long a stop that fails, or that the provider has not applied, is asked
 	// again from when it was first wanted, before the call is given up on.
 	stopRetryWindow = 10 * time.Minute

@@ -1,9 +1,11 @@
 package dao
 
 import (
+	"database/sql/driver"
 	"errors"
 	"strings"
 
+	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/driver/pgdriver"
 )
 
@@ -32,6 +34,17 @@ func refused(err error) error {
 		if strings.HasPrefix(pgErr.Field('C'), class) {
 			return errors.Join(err, ErrRefused)
 		}
+	}
+
+	return err
+}
+
+// discard closes a session for good, rather than returning it to the pool, so every lock it may hold
+// ends with it.
+func discard(conn bun.Conn) error {
+	err := conn.Raw(func(any) error { return driver.ErrBadConn })
+	if errors.Is(err, driver.ErrBadConn) {
+		return nil
 	}
 
 	return err

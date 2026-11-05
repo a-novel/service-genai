@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -25,9 +26,33 @@ import (
 	"github.com/a-novel/service-genai/internal/lib/connectors"
 )
 
-// ErrUsageCapReached is returned when the user already reached a limit the submit answers to. Its
-// message names the limit.
+// ErrUsageCapReached is returned when the user already reached a limit the submit answers to. A
+// [UsageCapError] wraps it, and its message names the limit.
 var ErrUsageCapReached = errors.New("usage cap reached")
+
+// A UsageCapError refuses a submit past one of the limits it answers to. It wraps [ErrUsageCapReached].
+type UsageCapError struct {
+	// Scope names the limits that refused: `purpose "<name>"`, `ceiling` or `global`.
+	Scope string
+	// Limit names the limit that refused, such as `concurrency 2` or `input tokens over 5h`.
+	Limit string
+	// RetryAfter is how long until the refusing window frees usage: its oldest Usage Record then leaves
+	// it. Zero when no known time frees it, as for a concurrency.
+	RetryAfter time.Duration
+
+	// Reason words the refusal after the sentinel's message, as admission writes it.
+	Reason string
+}
+
+// Error names the scope and the limit that refused.
+func (err *UsageCapError) Error() string {
+	return ErrUsageCapReached.Error() + ": " + err.Reason
+}
+
+// Unwrap returns [ErrUsageCapReached].
+func (err *UsageCapError) Unwrap() error {
+	return ErrUsageCapReached
+}
 
 // GenerationSubmitDao records the generation.
 type GenerationSubmitDao interface {
@@ -49,12 +74,7 @@ type GenerationSubmitDaoCountLive interface {
 	Exec(ctx context.Context, request *dao.GenerationCountLiveRequest) (*dao.GenerationLiveCount, error)
 }
 
-// GenerationSubmitDaoPayloadInsert stores the payload of a newly admitted generation.
-type GenerationSubmitDaoPayloadInsert interface {
-	Exec(ctx context.Context, request *dao.GenerationPayloadInsertRequest) (*dao.GenerationPayload, error)
-}
-
-// GenerationSubmitServiceCheck starts a newly recorded generation.
+// GenerationSubmitServiceCheck sends the provider call of a newly recorded generation.
 type GenerationSubmitServiceCheck interface {
 	Exec(ctx context.Context, request *GenerationCheckRequest) (*dao.Generation, error)
 }
@@ -65,7 +85,8 @@ type GenerationSubmitRequest struct {
 	OwnerID uuid.UUID `validate:"required"`
 	// Purpose is why the caller makes the call, up to 255 characters. It must be declared in the caps.
 	Purpose string `validate:"required,notblank,max=255"`
-	// UserTier selects the caps the user answers to. Empty or unrecognized, it selects the default.
+	// UserTier selects the caps file's tier the user answers to, without Caps. Empty or unrecognized, it
+	// selects the default.
 	UserTier string `validate:"max=255"`
 	// Provider names the service to run the call on. It must have a connector offering the Async
 	// mode.
@@ -78,6 +99,29 @@ type GenerationSubmitRequest struct {
 	// Stream creates the provider call in streaming mode, so [GenerationStream] can read its events
 	// while it runs. The provider must offer the Streaming mode.
 	Stream bool
+	// Caps are the limits the caller sets for its user on the purpose. Set, the submit answers to them
+	// and to the ceiling, and UserTier is ignored. Nil answers to the caps file.
+	Caps *GenerationCaps
+}
+
+// GenerationCaps limits one user's generations of a purpose, as the caller sets them.
+type GenerationCaps struct {
+	// Concurrency caps the generations of the purpose the user may have in flight at once, the
+	// submitted one included. Nil sets no limit.
+	Concurrency *int `validate:"omitnil,gte=0"`
+	// Windows cap the tokens the user consumed over rolling windows, one window per duration. Empty sets
+	// no limit.
+	Windows []GenerationCapWindow `validate:"max=10,unique=Duration,dive"`
+}
+
+// GenerationCapWindow caps the tokens one user consumed over a rolling window.
+type GenerationCapWindow struct {
+	// Duration is how far back the window reaches, up to a year.
+	Duration time.Duration `validate:"gt=0,lte=8760h"`
+	// InputTokens caps the input tokens, cached ones included. Nil sets no limit.
+	InputTokens *int64 `validate:"omitnil,gte=0"`
+	// OutputTokens caps the output tokens, reasoning ones included. Nil sets no limit.
+	OutputTokens *int64 `validate:"omitnil,gte=0"`
 }
 
 // GenerationSubmitResult reports the stored generation and how it got there.
@@ -88,23 +132,26 @@ type GenerationSubmitResult struct {
 	Created bool
 }
 
-// A GenerationSubmit records a generation and starts its provider call in the Async mode.
+// A GenerationSubmit records a generation and sends its provider call in the Async mode.
 //
 // The generation is identified by a key derived from the request and the owner, so a caller that
 // lost track of it recovers by resending the same request. A replay returns the recorded generation
 // as it stands, without checking it: the caller polls it next, and the poll checks it. A failed or
 // cancelled generation does not count, so resending its request runs it again.
+//
+// The submit holds the payload in memory and sends it itself, once the generation is recorded: the
+// payload is never stored. A call fails on its first outcome, and the caller decides whether to
+// resend.
 type GenerationSubmit struct {
-	dao              GenerationSubmitDao
-	daoAttemptList   GenerationSubmitDaoAttemptList
-	daoUsageSum      GenerationSubmitDaoUsageSum
-	daoCountLive     GenerationSubmitDaoCountLive
-	daoPayloadInsert GenerationSubmitDaoPayloadInsert
-	serviceCheck     GenerationSubmitServiceCheck
-	registry         connectors.Registry
-	transactor       transaction.Transactor
-	generations      config.Generations
-	caps             config.Caps
+	dao            GenerationSubmitDao
+	daoAttemptList GenerationSubmitDaoAttemptList
+	daoUsageSum    GenerationSubmitDaoUsageSum
+	daoCountLive   GenerationSubmitDaoCountLive
+	serviceCheck   GenerationSubmitServiceCheck
+	registry       connectors.Registry
+	transactor     transaction.Transactor
+	caps           config.Caps
+	ceiling        config.Cap
 }
 
 // NewGenerationSubmit returns a new GenerationSubmit service.
@@ -113,24 +160,22 @@ func NewGenerationSubmit(
 	daoAttemptList GenerationSubmitDaoAttemptList,
 	daoUsageSum GenerationSubmitDaoUsageSum,
 	daoCountLive GenerationSubmitDaoCountLive,
-	daoPayloadInsert GenerationSubmitDaoPayloadInsert,
 	serviceCheck GenerationSubmitServiceCheck,
 	registry connectors.Registry,
 	transactor transaction.Transactor,
-	generations config.Generations,
 	caps config.Caps,
+	ceiling config.Cap,
 ) *GenerationSubmit {
 	return &GenerationSubmit{
-		dao:              dao,
-		daoAttemptList:   daoAttemptList,
-		daoUsageSum:      daoUsageSum,
-		daoCountLive:     daoCountLive,
-		daoPayloadInsert: daoPayloadInsert,
-		serviceCheck:     serviceCheck,
-		registry:         registry,
-		transactor:       transactor,
-		generations:      generations,
-		caps:             caps,
+		dao:            dao,
+		daoAttemptList: daoAttemptList,
+		daoUsageSum:    daoUsageSum,
+		daoCountLive:   daoCountLive,
+		serviceCheck:   serviceCheck,
+		registry:       registry,
+		transactor:     transactor,
+		caps:           caps,
+		ceiling:        ceiling,
 	}
 }
 
@@ -169,7 +214,6 @@ func (service *GenerationSubmit) Exec(
 		Purpose:     request.Purpose,
 		Provider:    request.Provider,
 		RequestKey:  key,
-		MaxAttempts: service.generations.MaxAttempts,
 		Traceparent: lo.EmptyableToPtr(carrier.Get("traceparent")),
 		Streamed:    request.Stream,
 	}
@@ -179,8 +223,11 @@ func (service *GenerationSubmit) Exec(
 		refusal error
 	)
 
+	// Taken before the start intent is recorded, so it can only overstate the intent's age.
+	intentAt := time.Now()
+
 	// Recording and admission commit together, so a generation is never recorded unless admitted:
-	// nothing can start one that was refused, or left behind by a failure.
+	// nothing sends one that was refused, or left behind by a failure.
 	err = service.transactor.WithinTx(ctx, func(ctx context.Context) error {
 		var err error
 
@@ -194,19 +241,8 @@ func (service *GenerationSubmit) Exec(
 		}
 
 		refusal = service.admit(ctx, request)
-		if refusal != nil {
-			return refusal
-		}
 
-		// Stored only once admitted, so neither a replay nor a refusal sends the payload over.
-		_, err = service.daoPayloadInsert.Exec(ctx, &dao.GenerationPayloadInsertRequest{
-			GenerationID: result.Generation.ID, Payload: request.Payload,
-		})
-		if err != nil {
-			return fmt.Errorf("store payload: %w", err)
-		}
-
-		return nil
+		return refusal
 	})
 	// The caller reads a refusal's message to tell its user which limit was reached: it goes out as
 	// admission wrote it, without the transaction's wrapping.
@@ -222,11 +258,14 @@ func (service *GenerationSubmit) Exec(
 
 	generation := result.Generation
 
-	// The generation is admitted and recorded. A start that failed, such as on a lock a migration
-	// holds, is redone by the next poll or the sweep, so the caller gets the generation to follow
-	// either way. The check's own span holds the failure.
+	// The generation is admitted and recorded, so its call goes out now, outside the transaction. A
+	// replay sends nothing: its generation had its own start. A check that failed leaves the start
+	// intent for a later check to settle, so the caller gets the generation to follow either way. The
+	// check's own span holds the failure.
 	if result.Created {
-		checked, checkErr := service.serviceCheck.Exec(ctx, &GenerationCheckRequest{Generation: generation})
+		checked, checkErr := service.serviceCheck.Exec(ctx, &GenerationCheckRequest{
+			Generation: generation, Start: &GenerationCheckStart{Payload: request.Payload, IntentAt: intentAt},
+		})
 		if checkErr == nil {
 			generation = checked
 		}
@@ -288,38 +327,65 @@ func (service *GenerationSubmit) validateRequest(request *GenerationSubmitReques
 	return nil
 }
 
-// admit refuses a newly created generation whose user already reached one of its limits. It checks
-// the purpose's caps, then the global ones, and counts live generations before it sums usage. Nothing
-// is reserved: a call admitted under a cap runs to the end past it. The concurrency limits bound how
-// many can.
+// admissionScope is one set of limits a submit answers to.
+type admissionScope struct {
+	// name says which limits refused: `purpose "<name>"`, `ceiling` or `global`.
+	name string
+	// purpose restricts the scope to one purpose; nil covers every purpose.
+	purpose *string
+	limits  config.Cap
+	// unknownHold is how long a generation failed with its outcome unknown still counts toward the
+	// concurrency.
+	unknownHold time.Duration
+}
+
+// admissionScopes lists the limits a submit answers to, purpose first. With caps, the caller's caps
+// limit the purpose and the ceiling every purpose. Without, the caps file's tier limits both.
 //
 // A generation whose call may still run untracked counts toward its purpose's concurrency only, so
 // an uncertain call never holds back the user's other purposes.
+func (service *GenerationSubmit) admissionScopes(request *GenerationSubmitRequest) []admissionScope {
+	purpose := admissionScope{
+		name:        fmt.Sprintf("purpose %q", request.Purpose),
+		purpose:     &request.Purpose,
+		unknownHold: config.UnknownOutcomeHold,
+	}
+
+	if request.Caps == nil {
+		purpose.limits = service.caps.Purposes[request.Purpose].For(request.UserTier)
+
+		return []admissionScope{purpose, {name: "global", limits: service.caps.Global.For(request.UserTier)}}
+	}
+
+	purpose.limits = config.Cap{
+		Concurrency: request.Caps.Concurrency,
+		Windows:     make(map[time.Duration]config.Limit, len(request.Caps.Windows)),
+	}
+
+	for _, window := range request.Caps.Windows {
+		purpose.limits.Windows[window.Duration] = config.Limit{
+			InputTokens: window.InputTokens, OutputTokens: window.OutputTokens,
+		}
+	}
+
+	return []admissionScope{purpose, {name: "ceiling", limits: service.ceiling}}
+}
+
+// admit refuses a newly created generation whose user already reached one of its limits. It checks
+// each scope in turn, and counts live generations before it sums usage. Nothing is reserved: a call
+// admitted under a cap runs to the end past it. The concurrency limits bound how many can.
 func (service *GenerationSubmit) admit(ctx context.Context, request *GenerationSubmitRequest) error {
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationSubmit(admit)")
 	defer span.End()
 
-	scopes := []struct {
-		name        string
-		purpose     *string
-		capOfTier   config.Cap
-		unknownHold time.Duration
-	}{
-		{
-			name:        fmt.Sprintf("purpose %q", request.Purpose),
-			purpose:     &request.Purpose,
-			capOfTier:   service.caps.Purposes[request.Purpose].For(request.UserTier),
-			unknownHold: config.UnknownOutcomeHold,
-		},
-		{name: "global", capOfTier: service.caps.Global.For(request.UserTier)},
-	}
-
-	for _, scope := range scopes {
-		if scope.capOfTier.Forbidden {
-			return otel.ReportError(span, fmt.Errorf("%w: %s allows no usage", ErrUsageCapReached, scope.name))
+	for _, scope := range service.admissionScopes(request) {
+		if scope.limits.Forbidden {
+			return otel.ReportError(span, &UsageCapError{
+				Scope: scope.name, Limit: "no usage", Reason: scope.name + " allows no usage",
+			})
 		}
 
-		if limit := scope.capOfTier.Concurrency; limit != nil && *limit >= 0 {
+		if limit := scope.limits.Concurrency; limit != nil && *limit >= 0 {
 			live, err := service.daoCountLive.Exec(ctx, &dao.GenerationCountLiveRequest{
 				OwnerID: request.OwnerID, Purpose: scope.purpose, UnknownOutcomeWindow: scope.unknownHold,
 			})
@@ -329,14 +395,15 @@ func (service *GenerationSubmit) admit(ctx context.Context, request *GenerationS
 
 			// The count includes the generation this submit just created.
 			if live.Count > int64(*limit) {
-				return otel.ReportError(span, fmt.Errorf(
-					"%w: %s concurrency: %d generations already in flight",
-					ErrUsageCapReached, scope.name, live.Count-1,
-				))
+				return otel.ReportError(span, &UsageCapError{
+					Scope:  scope.name,
+					Limit:  fmt.Sprintf("concurrency %d", *limit),
+					Reason: fmt.Sprintf("%s concurrency: %d generations already in flight", scope.name, live.Count-1),
+				})
 			}
 		}
 
-		windows := slices.Sorted(maps.Keys(scope.capOfTier.Windows))
+		windows := slices.Sorted(maps.Keys(scope.limits.Windows))
 		if len(windows) == 0 {
 			continue
 		}
@@ -349,10 +416,9 @@ func (service *GenerationSubmit) admit(ctx context.Context, request *GenerationS
 		}
 
 		for index, window := range windows {
-			limit, totals := scope.capOfTier.Windows[window], used[index]
-
-			if reached(limit.InputTokens, totals.InputTokens) || reached(limit.OutputTokens, totals.OutputTokens) {
-				return otel.ReportError(span, fmt.Errorf("%w: %s over %s", ErrUsageCapReached, scope.name, window))
+			refusal := windowRefusal(scope.name, window, scope.limits.Windows[window], used[index])
+			if refusal != nil {
+				return otel.ReportError(span, refusal)
 			}
 		}
 	}
@@ -360,9 +426,55 @@ func (service *GenerationSubmit) admit(ctx context.Context, request *GenerationS
 	return nil
 }
 
+// windowRefusal refuses a scope's window whose usage reached one of its limits, input first. It
+// returns nil when the window has room left.
+func windowRefusal(
+	scope string, window time.Duration, limit config.Limit, used *dao.GenerationUsageTotals,
+) *UsageCapError {
+	var tokens string
+
+	switch {
+	case reached(limit.InputTokens, used.InputTokens):
+		tokens = "input"
+	case reached(limit.OutputTokens, used.OutputTokens):
+		tokens = "output"
+	default:
+		return nil
+	}
+
+	refusal := &UsageCapError{
+		Scope:  scope,
+		Limit:  fmt.Sprintf("%s tokens over %s", tokens, formatWindow(window)),
+		Reason: fmt.Sprintf("%s over %s", scope, window),
+	}
+
+	// The window frees usage once its oldest record leaves it.
+	if used.OldestAt != nil {
+		refusal.RetryAfter = max(time.Until(used.OldestAt.Add(window)), 0)
+	}
+
+	return refusal
+}
+
 // reached reports whether the usage met the limit. A nil limit is never reached.
 func reached(limit *int64, used int64) bool {
 	return limit != nil && used >= *limit
+}
+
+// formatWindow writes a window as the caps file does, such as 5h or 90m, without the zero minutes and
+// seconds [time.Duration.String] adds.
+func formatWindow(window time.Duration) string {
+	written := window.String()
+
+	if strings.HasSuffix(written, "m0s") {
+		written = strings.TrimSuffix(written, "0s")
+	}
+
+	if strings.HasSuffix(written, "h0m") {
+		written = strings.TrimSuffix(written, "0m")
+	}
+
+	return written
 }
 
 // requestKeyTag versions what the request key covers. Changing the construction changes the tag, so

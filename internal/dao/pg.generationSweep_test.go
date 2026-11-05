@@ -3,7 +3,6 @@ package dao_test
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -18,28 +17,36 @@ import (
 func TestPgGenerationSweep(t *testing.T) {
 	t.Parallel()
 
-	const interval = time.Minute
-
 	testCases := []struct {
 		name string
 
+		// after names the generation the page follows; empty starts the first page.
+		after string
 		limit int
 
-		// expect lists, by name, the generations swept, stalest first.
+		// expect lists, by name, the generations read, in id order.
 		expect []string
 	}{
 		{
-			// A fresh generation is someone's poll away from a check, and a settled one needs none.
+			// Every unsettled generation, whatever its state; a settled one needs no check.
 			name: "Success",
 
 			limit:  10,
-			expect: []string{"stalest", "stale"},
+			expect: []string{"starting", "running", "unstarted"},
 		},
 		{
 			name: "Success/Limit",
 
-			limit:  1,
-			expect: []string{"stalest"},
+			limit:  2,
+			expect: []string{"starting", "running"},
+		},
+		{
+			// The next page follows the last generation of the one before.
+			name: "Success/After",
+
+			after:  "running",
+			limit:  2,
+			expect: []string{"unstarted"},
 		},
 	}
 
@@ -52,44 +59,43 @@ func TestPgGenerationSweep(t *testing.T) {
 			postgrestest.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
 				t.Helper()
 
-				ids := map[uuid.UUID]string{}
+				// Seeded one after the other, so their uuidv7 ids follow the same order.
+				seeded := map[string]*dao.Generation{"starting": seedGeneration(ctx, t)}
+				seeded["settled"] = settleGeneration(ctx, t, runGeneration(ctx, t, seedGeneration(ctx, t).ID))
+				seeded["running"] = runGeneration(ctx, t, seedGeneration(ctx, t).ID)
+				seeded["unstarted"] = seedUnstarted(ctx, t)
 
-				stalest := runGeneration(ctx, t, seedGeneration(ctx, t, 1).ID)
-				setCheckedAt(ctx, t, stalest.ID, -time.Hour)
-				ids[stalest.ID] = "stalest"
+				names := make(map[uuid.UUID]string, len(seeded))
+				for name, generation := range seeded {
+					names[generation.ID] = name
+				}
 
-				stale := seedGeneration(ctx, t, 1)
-				setCheckedAt(ctx, t, stale.ID, -2*interval)
-				ids[stale.ID] = "stale"
+				var after uuid.UUID
+				if testCase.after != "" {
+					after = seeded[testCase.after].ID
+				}
 
-				fresh := seedGeneration(ctx, t, 1)
-				ids[fresh.ID] = "fresh"
-
-				settled := settleGeneration(ctx, t, runGeneration(ctx, t, seedGeneration(ctx, t, 1).ID))
-				setCheckedAt(ctx, t, settled.ID, -time.Hour)
-				ids[settled.ID] = "settled"
-
-				swept, err := daoSweep.Exec(ctx, &dao.GenerationSweepRequest{
-					Interval: interval, Limit: testCase.limit,
-				})
+				swept, err := daoSweep.Exec(ctx, &dao.GenerationSweepRequest{After: after, Limit: testCase.limit})
 				require.NoError(t, err)
 
-				names := make([]string, 0, len(swept))
+				read := make([]string, 0, len(swept))
+
 				for _, generation := range swept {
-					names = append(names, ids[generation.ID])
+					read = append(read, names[generation.ID])
+
+					// Each row carries the database clock, which its check measures ages from.
+					require.False(t, generation.ReadAt.Before(generation.UpdatedAt))
+
+					// The read writes nothing: the row stands as it was seeded.
+					stored, err := dao.NewPgGenerationGet().Exec(ctx, &dao.GenerationGetRequest{
+						ID: generation.ID, OwnerID: generation.OwnerID,
+					})
+					require.NoError(t, err)
+					require.Equal(t, generation.UpdatedAt, stored.UpdatedAt)
+					require.Equal(t, generation.CheckedAt, stored.CheckedAt)
 				}
 
-				require.ElementsMatch(t, testCase.expect, names)
-
-				// Swept generations are marked checked, so the next sweep does not take them again.
-				again, err := daoSweep.Exec(ctx, &dao.GenerationSweepRequest{
-					Interval: interval, Limit: testCase.limit,
-				})
-				require.NoError(t, err)
-
-				for _, generation := range again {
-					require.NotContains(t, testCase.expect, ids[generation.ID])
-				}
+				require.Equal(t, testCase.expect, read)
 			})
 		})
 	}

@@ -66,16 +66,11 @@ func main() {
 
 	daoAttemptInsert := dao.NewPgGenerationAttemptInsert()
 	daoAttemptList := dao.NewPgGenerationAttemptList()
-	daoBeginStart := dao.NewPgGenerationBeginStart()
 	daoCountLive := dao.NewPgGenerationCountLive()
-	daoElectCheck := dao.NewPgGenerationElectCheck()
 	daoGet := dao.NewPgGenerationGet()
-	daoPayloadInsert := dao.NewPgGenerationPayloadInsert()
 	daoQueueDepth := dao.NewPgGenerationQueueDepth()
 	daoRecordProviderCall := dao.NewPgGenerationRecordProviderCall()
-	daoReleaseStart := dao.NewPgGenerationReleaseStart()
 	daoRequestCancel := dao.NewPgGenerationRequestCancel()
-	daoRequeue := dao.NewPgGenerationRequeue()
 	daoSettle := dao.NewPgGenerationSettle()
 	daoSubmit := dao.NewPgGenerationSubmit()
 	daoUsageInsert := dao.NewPgGenerationUsageInsert()
@@ -90,11 +85,8 @@ func main() {
 	transactor := postgres.NewTransactor(nil)
 
 	serviceCheck := core.NewGenerationCheck(
-		daoBeginStart,
-		daoReleaseStart,
 		daoRecordProviderCall,
 		daoSettle,
-		daoRequeue,
 		daoAttemptInsert,
 		daoUsageInsert,
 		daoGet,
@@ -108,14 +100,13 @@ func main() {
 		daoAttemptList,
 		daoUsageSum,
 		daoCountLive,
-		daoPayloadInsert,
 		serviceCheck,
 		registry,
 		transactor,
-		cfg.Generations,
 		cfg.Caps,
+		cfg.Ceiling,
 	)
-	serviceGet := core.NewGenerationGet(daoGet, daoElectCheck, daoAttemptList, serviceCheck, cfg.Generations)
+	serviceGet := core.NewGenerationGet(daoGet, daoAttemptList, serviceCheck)
 	serviceCancel := core.NewGenerationCancel(daoRequestCancel, daoGet, daoAttemptList, serviceCheck, cfg.Generations)
 	serviceStream := core.NewGenerationStream(daoGet, registry)
 	serviceQueueDepth := core.NewGenerationQueueDepth(daoQueueDepth)

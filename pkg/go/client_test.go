@@ -193,8 +193,9 @@ func TestClient(t *testing.T) {
 		require.True(t, refused.Load())
 	})
 
-	// The submit contract against a running service: a resend of the same request replays it, any other
-	// request creates, and a cancelled generation is rerun rather than served.
+	// The submit contract against a running service. This stack's provider refuses every start, and
+	// the submit settles a refused start at once: a resend of the failed request runs it again, rather
+	// than serving the failure.
 	t.Run("GenerationSubmit", func(t *testing.T) {
 		t.Parallel()
 
@@ -205,12 +206,14 @@ func TestClient(t *testing.T) {
 		created, err := client.GenerationSubmit(t.Context(), submitRequest(owner))
 		require.NoError(t, err)
 		require.True(t, created.GetCreated())
+		require.Equal(t, servicegenai.GenerationStatusFailed, created.GetGeneration().GetStatus())
+		require.NotNil(t, created.GetGeneration().GetSettledAt())
 
-		// A caller that lost the answer resends the request: it holds no key, and pays nothing more.
-		replayed, err := client.GenerationSubmit(t.Context(), submitRequest(owner))
+		// The caller decides to resend: the request runs from scratch, as another generation.
+		rerun, err := client.GenerationSubmit(t.Context(), submitRequest(owner))
 		require.NoError(t, err)
-		require.False(t, replayed.GetCreated())
-		require.Equal(t, created.GetGeneration().GetId(), replayed.GetGeneration().GetId())
+		require.True(t, rerun.GetCreated())
+		require.NotEqual(t, created.GetGeneration().GetId(), rerun.GetGeneration().GetId())
 
 		// Another variant of the same request is another generation.
 		regenerate := submitRequest(owner)
@@ -218,17 +221,6 @@ func TestClient(t *testing.T) {
 		variant, err := client.GenerationSubmit(t.Context(), regenerate)
 		require.NoError(t, err)
 		require.True(t, variant.GetCreated())
-
-		// A cancelled generation is not served again: resending its request runs it from scratch.
-		_, err = client.GenerationCancel(t.Context(), &servicegenai.GenerationCancelRequest{
-			Id: created.GetGeneration().GetId(), OwnerId: owner,
-		})
-		require.NoError(t, err)
-
-		rerun, err := client.GenerationSubmit(t.Context(), submitRequest(owner))
-		require.NoError(t, err)
-		require.True(t, rerun.GetCreated())
-		require.NotEqual(t, created.GetGeneration().GetId(), rerun.GetGeneration().GetId())
 
 		// A purpose the caps do not declare cannot be spent on: the embedded caps reach the image.
 		undeclared := submitRequest(owner)
@@ -287,7 +279,8 @@ func TestClient(t *testing.T) {
 		require.Equal(t, codes.NotFound, status.Code(err))
 	})
 
-	// A generation whose start never reached the provider is cancelled at once: there is no call to stop.
+	// A cancel that comes after the generation settled, as every one does in this stack, succeeds with
+	// the generation as it stands.
 	t.Run("GenerationCancel", func(t *testing.T) {
 		t.Parallel()
 
@@ -300,51 +293,21 @@ func TestClient(t *testing.T) {
 			Id: generation.GetId(), OwnerId: owner,
 		})
 		require.NoError(t, err)
-		require.Equal(t, servicegenai.GenerationStatusCancelled, cancelled.GetGeneration().GetStatus())
-		require.NotNil(t, cancelled.GetGeneration().GetSettledAt())
+		require.Equal(t, servicegenai.GenerationStatusFailed, cancelled.GetGeneration().GetStatus())
+		require.Equal(t, generation.GetSettledAt().AsTime(), cancelled.GetGeneration().GetSettledAt().AsTime())
 
-		// A retry after a lost answer succeeds, with the generation as it stands.
+		// A retry after a lost answer succeeds the same way.
 		again, err := client.GenerationCancel(t.Context(), &servicegenai.GenerationCancelRequest{
 			Id: generation.GetId(), OwnerId: owner,
 		})
 		require.NoError(t, err)
-		require.Equal(t, servicegenai.GenerationStatusCancelled, again.GetGeneration().GetStatus())
-		require.Equal(t, cancelled.GetGeneration().GetSettledAt().AsTime(), again.GetGeneration().GetSettledAt().AsTime())
+		require.Equal(t, servicegenai.GenerationStatusFailed, again.GetGeneration().GetStatus())
 
 		// Another owner cannot stop it, and is told the same thing as if it did not exist.
 		_, err = client.GenerationCancel(t.Context(), &servicegenai.GenerationCancelRequest{
 			Id: generation.GetId(), OwnerId: uuid.Must(uuid.NewV7()).String(),
 		})
 		require.Equal(t, codes.NotFound, status.Code(err))
-	})
-
-	// Over a limit, the caller reads which one, in admission's own words.
-	t.Run("UsageCapReached", func(t *testing.T) {
-		t.Parallel()
-
-		client := newClient(t)
-
-		owner := uuid.Must(uuid.NewV7()).String()
-
-		// Starts never reach a provider in this stack, so both generations stay pending: the
-		// purpose's two concurrent slots are taken.
-		for variant := range uint32(2) {
-			request := submitRequest(owner)
-			request.Variant = variant
-
-			_, err := client.GenerationSubmit(t.Context(), request)
-			require.NoError(t, err)
-		}
-
-		over := submitRequest(owner)
-		over.Variant = 2
-
-		_, err := client.GenerationSubmit(t.Context(), over)
-		require.Equal(t, codes.ResourceExhausted, status.Code(err))
-		require.Equal(t,
-			`usage cap reached: purpose "studio.generation" concurrency: 2 generations already in flight`,
-			status.Convert(err).Message(),
-		)
 	})
 
 	// The stream RPC end to end. This stack's provider refuses every start, so no call ever begins.

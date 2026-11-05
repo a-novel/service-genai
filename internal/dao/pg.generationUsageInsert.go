@@ -49,9 +49,8 @@ type GenerationUsageInsertRequest struct {
 
 // PgGenerationUsageInsert records what one answered attempt consumed.
 //
-// Call it in the same transaction as the settle or requeue it belongs to: a transition without its
-// usage is a billed call nothing counts. The stop of an orphaned call, which no transition tracks,
-// calls it alone.
+// Call it in the same transaction as the settle it belongs to: a settle without its usage is a
+// billed call nothing counts. The stop of an orphaned call, which no settle tracks, calls it alone.
 type PgGenerationUsageInsert struct{}
 
 // NewPgGenerationUsageInsert returns a new PgGenerationUsageInsert dao.

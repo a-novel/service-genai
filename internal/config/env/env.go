@@ -41,15 +41,8 @@ const (
 	// TimeoutWriteDefault lets a request answer once it has run to its deadline.
 	TimeoutWriteDefault = TimeoutRequestDefault + 15*time.Second
 
-	// CheckIntervalDefault is how long a check stays fresh: however often callers poll a generation,
-	// it reaches the provider at most once per interval.
-	CheckIntervalDefault = 2 * time.Second
-
 	// OpenAIBaseURLDefault reaches OpenAI's own Responses API.
 	OpenAIBaseURLDefault = "https://api.openai.com/v1/"
-
-	// MaxAttemptsDefault lets one retryable provider failure be retried once. Each attempt is paid.
-	MaxAttemptsDefault = 2
 
 	// RetentionDefault is how long a settled generation survives: long enough for a caller to come back
 	// after a lost connection, short enough that a request's content and its key are not kept.
@@ -135,11 +128,6 @@ var (
 	OpenAIWebhookSecret = getEnv("OPENAI_WEBHOOK_SECRET")
 	// OpenAIBaseURL is the Responses API endpoint the OpenAI connector calls.
 	OpenAIBaseURL = config.LoadEnv(getEnv("OPENAI_BASE_URL"), OpenAIBaseURLDefault, config.StringParser)
-
-	// CheckInterval is how long a check stays fresh.
-	CheckInterval = config.LoadEnv(getEnv("CHECK_INTERVAL"), CheckIntervalDefault, time.ParseDuration)
-	// MaxAttempts caps the provider calls a generation gets when a call fails retryably.
-	MaxAttempts = config.LoadEnv(getEnv("MAX_ATTEMPTS"), MaxAttemptsDefault, config.Int16Parser)
 
 	// Retention is how long a settled generation's user content survives before the purge.
 	Retention = config.LoadEnv(getEnv("RETENTION"), RetentionDefault, time.ParseDuration)

@@ -2,7 +2,6 @@ package dao_test
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 	"time"
 
@@ -20,17 +19,17 @@ const (
 
 var testOwner = uuid.MustParse("00000000-0000-0000-0000-000000000001")
 
-// seedGeneration submits one pending generation.
-func seedGeneration(ctx context.Context, t *testing.T, maxAttempts int16) *dao.Generation {
+// seedGeneration submits one pending generation, which carries its start intent as a submit records
+// it.
+func seedGeneration(ctx context.Context, t *testing.T) *dao.Generation {
 	t.Helper()
 
 	submitRequest := &dao.GenerationSubmitRequest{
-		ID:          uuid.Must(uuid.NewV7()),
-		OwnerID:     testOwner,
-		Purpose:     "studio.generation",
-		Provider:    "openai",
-		RequestKey:  []byte(uuid.Must(uuid.NewV7()).String()),
-		MaxAttempts: maxAttempts,
+		ID:         uuid.Must(uuid.NewV7()),
+		OwnerID:    testOwner,
+		Purpose:    "studio.generation",
+		Provider:   "openai",
+		RequestKey: []byte(uuid.Must(uuid.NewV7()).String()),
 	}
 
 	result, err := dao.NewPgGenerationSubmit().Exec(ctx, submitRequest)
@@ -38,77 +37,38 @@ func seedGeneration(ctx context.Context, t *testing.T, maxAttempts int16) *dao.G
 		panic(err)
 	}
 
-	_, err = dao.NewPgGenerationPayloadInsert().Exec(ctx, &dao.GenerationPayloadInsertRequest{
-		GenerationID: result.Generation.ID, Payload: json.RawMessage(`{"model": "a-model"}`),
-	})
-	if err != nil {
-		panic(err)
-	}
-
 	return result.Generation
 }
 
-// startGeneration records start intent on a seeded generation, as a check about to send its call.
-func startGeneration(ctx context.Context, t *testing.T, id uuid.UUID) *dao.Generation {
+// seedUnstarted seeds a pending generation as an earlier release recorded it between two starts: no
+// start intent.
+func seedUnstarted(ctx context.Context, t *testing.T) *dao.Generation {
 	t.Helper()
 
-	generation, err := dao.NewPgGenerationBeginStart().Exec(ctx, &dao.GenerationBeginStartRequest{ID: id})
-	if err != nil {
-		panic(err)
-	}
+	generation := seedGeneration(ctx, t)
+
+	execute(ctx, t, `UPDATE generations
+		SET attempt = 0, start_requested_at = NULL, first_start_requested_at = NULL WHERE id = ?0`, generation.ID)
+
+	generation.Attempt = 0
+	generation.StartRequestedAt = nil
+	generation.FirstStartRequestedAt = nil
 
 	return generation
 }
 
-// runGeneration starts a seeded generation and records its provider call.
+// runGeneration records the provider call of a generation's start intent, on its first attempt.
 func runGeneration(ctx context.Context, t *testing.T, id uuid.UUID) *dao.Generation {
 	t.Helper()
 
-	started := startGeneration(ctx, t, id)
-
 	generation, err := dao.NewPgGenerationRecordProviderCall().Exec(ctx, &dao.GenerationRecordProviderCallRequest{
-		ID: id, Attempt: started.Attempt, ProviderCallID: testCallID,
+		ID: id, Attempt: 1, ProviderCallID: testCallID,
 	})
 	if err != nil {
 		panic(err)
 	}
 
 	return generation
-}
-
-// setCheckedAt moves when a generation was last checked, relative to the database clock.
-func setCheckedAt(ctx context.Context, t *testing.T, id uuid.UUID, offset time.Duration) {
-	t.Helper()
-
-	execute(ctx, t, "UPDATE generations SET checked_at = clock_timestamp() + make_interval(secs => ?1) WHERE id = ?0",
-		id, offset.Seconds())
-}
-
-// setRunAt moves when a generation may next start, relative to the database clock.
-func setRunAt(ctx context.Context, t *testing.T, id uuid.UUID, offset time.Duration) {
-	t.Helper()
-
-	execute(ctx, t, "UPDATE generations SET run_at = clock_timestamp() + make_interval(secs => ?1) WHERE id = ?0",
-		id, offset.Seconds())
-}
-
-// storedPayload reads the payload recorded for a generation.
-func storedPayload(ctx context.Context, t *testing.T, id uuid.UUID) string {
-	t.Helper()
-
-	db, err := postgres.GetContext(ctx)
-	if err != nil {
-		panic(err)
-	}
-
-	var payload string
-
-	err = db.NewRaw("SELECT payload FROM generation_payloads WHERE generation_id = ?", id).Scan(ctx, &payload)
-	if err != nil {
-		panic(err)
-	}
-
-	return payload
 }
 
 // execute runs a statement on the test's database handle.

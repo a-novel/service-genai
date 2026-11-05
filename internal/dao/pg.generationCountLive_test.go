@@ -91,13 +91,13 @@ func TestPgGenerationCountLive(t *testing.T) {
 			postgrestest.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
 				t.Helper()
 
-				seedGeneration(ctx, t, 1)
-				running := runGeneration(ctx, t, seedGeneration(ctx, t, 1).ID)
+				seedGeneration(ctx, t)
+				running := runGeneration(ctx, t, seedGeneration(ctx, t).ID)
 				execute(ctx, t, "UPDATE generations SET purpose = 'studio.analysis' WHERE id = ?0", running.ID)
-				settleGeneration(ctx, t, runGeneration(ctx, t, seedGeneration(ctx, t, 1).ID))
+				settleGeneration(ctx, t, runGeneration(ctx, t, seedGeneration(ctx, t).ID))
 
 				if testCase.unknownSince > 0 {
-					unknown := settleGeneration(ctx, t, startGeneration(ctx, t, seedGeneration(ctx, t, 1).ID))
+					unknown := settleGeneration(ctx, t, seedGeneration(ctx, t))
 					execute(ctx, t,
 						"UPDATE generations SET outcome_unknown_at = clock_timestamp() - make_interval(secs => ?1) WHERE id = ?0",
 						unknown.ID, testCase.unknownSince.Seconds(),

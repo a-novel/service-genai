@@ -8,11 +8,20 @@
 -- The owner's advisory lock holds until the transaction ends, so one owner's admissions run one at a
 -- time and none misses another's generation.
 --
--- Timestamps are left to the column defaults, since the database is the clock for this table.
+-- A created generation carries its start intent: the submit sends its call once the transaction
+-- commits, so from then on the provider may hold paid work for its one attempt. The intent reads the
+-- clock once the owner's lock is held, and both starts take that instant. The other timestamps are
+-- left to the column defaults, since the database is the clock for this table.
 WITH
   owner_lock AS MATERIALIZED (
     SELECT
       pg_advisory_xact_lock(hashtextextended (?1::text, 0))
+  ),
+  intent AS MATERIALIZED (
+    SELECT
+      clock_timestamp() AS at
+    FROM
+      owner_lock
   ),
   generation AS (
     INSERT INTO
@@ -22,9 +31,11 @@ WITH
         purpose,
         provider,
         request_key,
-        max_attempts,
         traceparent,
-        streamed
+        streamed,
+        attempt,
+        start_requested_at,
+        first_start_requested_at
       )
     SELECT
       ?0::uuid,
@@ -32,11 +43,13 @@ WITH
       ?2::text,
       ?3::text,
       ?4::bytea,
-      ?5::smallint,
-      ?6::text,
-      ?7::boolean
+      ?5::text,
+      ?6::boolean,
+      1,
+      intent.at,
+      intent.at
     FROM
-      owner_lock
+      intent
     ON CONFLICT (request_key)
     WHERE
       status NOT IN ('failed', 'cancelled') DO UPDATE

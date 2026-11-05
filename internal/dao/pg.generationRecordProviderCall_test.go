@@ -76,15 +76,19 @@ func TestPgGenerationRecordProviderCall(t *testing.T) {
 			postgrestest.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
 				t.Helper()
 
-				generation := seedGeneration(ctx, t, 1)
+				// A submitted generation is starting: its start intent is recorded.
+				seed := seedGeneration
+				if testCase.state == "pending" {
+					seed = seedUnstarted
+				}
+
+				generation := seed(ctx, t)
 
 				switch testCase.state {
-				case "starting":
-					startGeneration(ctx, t, generation.ID)
 				case "running":
 					runGeneration(ctx, t, generation.ID)
 				case "settled":
-					settleGeneration(ctx, t, startGeneration(ctx, t, generation.ID))
+					settleGeneration(ctx, t, generation)
 				}
 
 				recorded, err := daoRecord.Exec(ctx, &dao.GenerationRecordProviderCallRequest{
@@ -99,6 +103,8 @@ func TestPgGenerationRecordProviderCall(t *testing.T) {
 				require.Equal(t, dao.GenerationStatusRunning, recorded.Status)
 				require.Equal(t, "resp_new", *recorded.ProviderCallID)
 				require.Equal(t, testCase.attempt, recorded.Attempt)
+				// A check that stops the call at once measures its ages from the write.
+				require.Equal(t, recorded.UpdatedAt, recorded.ReadAt)
 			})
 		})
 	}

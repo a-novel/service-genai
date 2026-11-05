@@ -88,7 +88,7 @@ func TestPgGenerationUsageInsert(t *testing.T) {
 			postgrestest.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
 				t.Helper()
 
-				generation := runGeneration(ctx, t, seedGeneration(ctx, t, 1).ID)
+				generation := runGeneration(ctx, t, seedGeneration(ctx, t).ID)
 
 				request := *testCase.usage
 				request.GenerationID = generation.ID
