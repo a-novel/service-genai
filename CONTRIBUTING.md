@@ -50,7 +50,7 @@ OWNER_ID=$(uuidgen)
 # The provider's own request, built by the caller.
 PAYLOAD=$(printf '%s' '{"model":"<model>","input":"Say hello.","store":false}' | base64 | tr -d '\n')
 
-# The purpose must be declared in internal/config/caps.config.yaml.
+# The purpose must be declared in internal/config/purposes.config.yaml.
 GENERATION_ID=$(
   grpcurl -plaintext \
     -d "{\"owner_id\":\"$OWNER_ID\",\"purpose\":\"studio.generation\",\"provider\":\"openai\",\"payload\":\"$PAYLOAD\"}" \
@@ -84,7 +84,7 @@ grpcurl -plaintext -d "{\"id\":\"$GENERATION_ID\",\"owner_id\":\"$OWNER_ID\"}" \
 
 ### The boundary
 
-**This service never learns a caller's domain.** It executes an opaque provider payload for an owner, a purpose and a user tier. It keeps the provider's raw answers and the usage read off them. Building the request and reading the output belong to the caller. A concept like a story, a step or an engine appearing anywhere in this repository means the boundary has moved.
+**This service never learns a caller's domain.** It executes an opaque provider payload for an owner and a purpose, under the caps its caller sends. It keeps the provider's raw answers and the usage read off them. Building the request and reading the output belong to the caller. A concept like a story, a step or an engine appearing anywhere in this repository means the boundary has moved.
 
 ### Retention purge
 

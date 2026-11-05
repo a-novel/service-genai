@@ -1,6 +1,7 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
@@ -8,7 +9,6 @@ import (
 	"encoding/json/jsontext"
 	"errors"
 	"fmt"
-	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -32,7 +32,7 @@ var ErrUsageCapReached = errors.New("usage cap reached")
 
 // A UsageCapError refuses a submit past one of the limits it answers to. It wraps [ErrUsageCapReached].
 type UsageCapError struct {
-	// Scope names the limits that refused: `purpose "<name>"`, or `global` for a submit without caps.
+	// Scope names the limits that refused: `purpose "<name>"`.
 	Scope string
 	// Limit names the limit that refused, such as `concurrency 2` or `input tokens over 5h`.
 	Limit string
@@ -83,11 +83,8 @@ type GenerationSubmitServiceCheck interface {
 type GenerationSubmitRequest struct {
 	// OwnerID is the user the generation acts for, supplied by a caller that already verified it.
 	OwnerID uuid.UUID `validate:"required"`
-	// Purpose is why the caller makes the call, up to 255 characters. It must be declared in the caps.
+	// Purpose is why the caller makes the call, up to 255 characters. It must be declared.
 	Purpose string `validate:"required,notblank,max=255"`
-	// UserTier selects the caps file's tier the user answers to, without Caps. Empty or unrecognized, it
-	// selects the default.
-	UserTier string `validate:"max=255"`
 	// Provider names the service to run the call on. It must have a connector offering the Async
 	// mode.
 	Provider string `validate:"required,max=255"`
@@ -99,8 +96,8 @@ type GenerationSubmitRequest struct {
 	// Stream creates the provider call in streaming mode, so [GenerationStream] can read its events
 	// while it runs. The provider must offer the Streaming mode.
 	Stream bool
-	// Caps are the limits the caller sets for its user on the purpose. Set, they alone limit the
-	// submit: the caller owns every limit, and UserTier is ignored. Nil answers to the caps file.
+	// Caps are the limits the caller sets for its user on the purpose. The caller owns every limit: nil
+	// or empty caps set none.
 	Caps *GenerationCaps
 }
 
@@ -150,7 +147,7 @@ type GenerationSubmit struct {
 	serviceCheck   GenerationSubmitServiceCheck
 	registry       connectors.Registry
 	transactor     transaction.Transactor
-	caps           config.Caps
+	purposes       []string
 }
 
 // NewGenerationSubmit returns a new GenerationSubmit service.
@@ -162,7 +159,7 @@ func NewGenerationSubmit(
 	serviceCheck GenerationSubmitServiceCheck,
 	registry connectors.Registry,
 	transactor transaction.Transactor,
-	caps config.Caps,
+	purposes []string,
 ) *GenerationSubmit {
 	return &GenerationSubmit{
 		dao:            dao,
@@ -172,7 +169,7 @@ func NewGenerationSubmit(
 		serviceCheck:   serviceCheck,
 		registry:       registry,
 		transactor:     transactor,
-		caps:           caps,
+		purposes:       purposes,
 	}
 }
 
@@ -291,8 +288,8 @@ func (service *GenerationSubmit) validateRequest(request *GenerationSubmitReques
 		return errors.Join(err, ErrInvalidRequest)
 	}
 
-	if _, declared := service.caps.Purposes[request.Purpose]; !declared {
-		return fmt.Errorf("%w: purpose %q is not declared in the caps", ErrInvalidRequest, request.Purpose)
+	if !slices.Contains(service.purposes, request.Purpose) {
+		return fmt.Errorf("%w: purpose %q is not declared", ErrInvalidRequest, request.Purpose)
 	}
 
 	if size := len(request.Payload); size > PayloadSizeCeiling {
@@ -324,116 +321,73 @@ func (service *GenerationSubmit) validateRequest(request *GenerationSubmitReques
 	return nil
 }
 
-// admissionScope is one set of limits a submit answers to.
-type admissionScope struct {
-	// name says which limits refused: `purpose "<name>"` or `global`.
-	name string
-	// purpose restricts the scope to one purpose; nil covers every purpose.
-	purpose *string
-	limits  config.Cap
-	// unknownHold is how long a generation failed with its outcome unknown still counts toward the
-	// concurrency.
-	unknownHold time.Duration
-}
-
-// admissionScopes lists the limits a submit answers to. With caps, the caller owns every limit: its
-// caps alone limit the purpose. Without, the caps file's tier limits the purpose, then every purpose.
+// admit refuses a newly created generation whose user already reached one of the caps its caller
+// sent, on the generation's purpose. It counts live generations before it sums usage. Nothing is
+// reserved: a call admitted under a cap runs to the end past it. The concurrency bounds how many can.
 //
-// A generation whose call may still run untracked counts toward its purpose's concurrency only, so
-// an uncertain call never holds back the user's other purposes.
-func (service *GenerationSubmit) admissionScopes(request *GenerationSubmitRequest) []admissionScope {
-	purpose := admissionScope{
-		name:        fmt.Sprintf("purpose %q", request.Purpose),
-		purpose:     &request.Purpose,
-		unknownHold: config.UnknownOutcomeHold,
-	}
-
-	if request.Caps == nil {
-		purpose.limits = service.caps.Purposes[request.Purpose].For(request.UserTier)
-
-		return []admissionScope{purpose, {name: "global", limits: service.caps.Global.For(request.UserTier)}}
-	}
-
-	purpose.limits = config.Cap{
-		Concurrency: request.Caps.Concurrency,
-		Windows:     make(map[time.Duration]config.Limit, len(request.Caps.Windows)),
-	}
-
-	for _, window := range request.Caps.Windows {
-		purpose.limits.Windows[window.Duration] = config.Limit{
-			InputTokens: window.InputTokens, OutputTokens: window.OutputTokens,
-		}
-	}
-
-	return []admissionScope{purpose}
-}
-
-// admit refuses a newly created generation whose user already reached one of its limits. It checks
-// each scope in turn, and counts live generations before it sums usage. Nothing is reserved: a call
-// admitted under a cap runs to the end past it. The concurrency limits bound how many can.
+// A generation whose call may still run untracked counts toward its purpose's concurrency for a
+// while, so a resend cannot multiply that spend.
 func (service *GenerationSubmit) admit(ctx context.Context, request *GenerationSubmitRequest) error {
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationSubmit(admit)")
 	defer span.End()
 
-	for _, scope := range service.admissionScopes(request) {
-		if scope.limits.Forbidden {
-			return otel.ReportError(span, &UsageCapError{
-				Scope: scope.name, Limit: "no usage", Reason: scope.name + " allows no usage",
-			})
-		}
+	caps := lo.FromPtr(request.Caps)
+	scope := fmt.Sprintf("purpose %q", request.Purpose)
 
-		if limit := scope.limits.Concurrency; limit != nil && *limit >= 0 {
-			live, err := service.daoCountLive.Exec(ctx, &dao.GenerationCountLiveRequest{
-				OwnerID: request.OwnerID, Purpose: scope.purpose, UnknownOutcomeWindow: scope.unknownHold,
-			})
-			if err != nil {
-				return otel.ReportError(span, fmt.Errorf("count live generations: %w", err))
-			}
-
-			// The count includes the generation this submit just created.
-			if live.Count > int64(*limit) {
-				return otel.ReportError(span, &UsageCapError{
-					Scope:  scope.name,
-					Limit:  fmt.Sprintf("concurrency %d", *limit),
-					Reason: fmt.Sprintf("%s concurrency: %d generations already in flight", scope.name, live.Count-1),
-				})
-			}
-		}
-
-		windows := slices.Sorted(maps.Keys(scope.limits.Windows))
-		if len(windows) == 0 {
-			continue
-		}
-
-		used, err := service.daoUsageSum.Exec(ctx, &dao.GenerationUsageSumRequest{
-			OwnerID: request.OwnerID, Purpose: scope.purpose, Windows: windows,
+	if caps.Concurrency != nil {
+		live, err := service.daoCountLive.Exec(ctx, &dao.GenerationCountLiveRequest{
+			OwnerID: request.OwnerID, Purpose: &request.Purpose, UnknownOutcomeWindow: config.UnknownOutcomeHold,
 		})
 		if err != nil {
-			return otel.ReportError(span, fmt.Errorf("sum usage: %w", err))
+			return otel.ReportError(span, fmt.Errorf("count live generations: %w", err))
 		}
 
-		for index, window := range windows {
-			refusal := windowRefusal(scope.name, window, scope.limits.Windows[window], used[index])
-			if refusal != nil {
-				return otel.ReportError(span, refusal)
-			}
+		// The count includes the generation this submit just created.
+		if live.Count > int64(*caps.Concurrency) {
+			return otel.ReportError(span, &UsageCapError{
+				Scope:  scope,
+				Limit:  fmt.Sprintf("concurrency %d", *caps.Concurrency),
+				Reason: fmt.Sprintf("%s concurrency: %d generations already in flight", scope, live.Count-1),
+			})
+		}
+	}
+
+	if len(caps.Windows) == 0 {
+		return nil
+	}
+
+	windows := slices.SortedFunc(slices.Values(caps.Windows), func(left, right GenerationCapWindow) int {
+		return cmp.Compare(left.Duration, right.Duration)
+	})
+
+	used, err := service.daoUsageSum.Exec(ctx, &dao.GenerationUsageSumRequest{
+		OwnerID: request.OwnerID,
+		Purpose: &request.Purpose,
+		Windows: lo.Map(windows, func(window GenerationCapWindow, _ int) time.Duration { return window.Duration }),
+	})
+	if err != nil {
+		return otel.ReportError(span, fmt.Errorf("sum usage: %w", err))
+	}
+
+	for index, window := range windows {
+		refusal := windowRefusal(scope, window, used[index])
+		if refusal != nil {
+			return otel.ReportError(span, refusal)
 		}
 	}
 
 	return nil
 }
 
-// windowRefusal refuses a scope's window whose usage reached one of its limits, input first. It
-// returns nil when the window has room left.
-func windowRefusal(
-	scope string, window time.Duration, limit config.Limit, used *dao.GenerationUsageTotals,
-) *UsageCapError {
+// windowRefusal refuses a window whose usage reached one of its limits, input first. It returns nil
+// when the window has room left.
+func windowRefusal(scope string, window GenerationCapWindow, used *dao.GenerationUsageTotals) *UsageCapError {
 	var tokens string
 
 	switch {
-	case reached(limit.InputTokens, used.InputTokens):
+	case reached(window.InputTokens, used.InputTokens):
 		tokens = "input"
-	case reached(limit.OutputTokens, used.OutputTokens):
+	case reached(window.OutputTokens, used.OutputTokens):
 		tokens = "output"
 	default:
 		return nil
@@ -441,13 +395,13 @@ func windowRefusal(
 
 	refusal := &UsageCapError{
 		Scope:  scope,
-		Limit:  fmt.Sprintf("%s tokens over %s", tokens, formatWindow(window)),
-		Reason: fmt.Sprintf("%s over %s", scope, window),
+		Limit:  fmt.Sprintf("%s tokens over %s", tokens, formatWindow(window.Duration)),
+		Reason: fmt.Sprintf("%s over %s", scope, window.Duration),
 	}
 
 	// The window frees usage once its oldest record leaves it.
 	if used.OldestAt != nil {
-		refusal.RetryAfter = max(time.Until(used.OldestAt.Add(window)), 0)
+		refusal.RetryAfter = max(time.Until(used.OldestAt.Add(window.Duration)), 0)
 	}
 
 	return refusal
@@ -458,8 +412,8 @@ func reached(limit *int64, used int64) bool {
 	return limit != nil && used >= *limit
 }
 
-// formatWindow writes a window as the caps file does, such as 5h or 90m, without the zero minutes and
-// seconds [time.Duration.String] adds.
+// formatWindow writes a window the short way, such as 5h or 90m, without the zero minutes and seconds
+// [time.Duration.String] adds.
 func formatWindow(window time.Duration) string {
 	written := window.String()
 

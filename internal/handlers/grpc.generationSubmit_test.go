@@ -26,8 +26,8 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 	// Every request field reaches the request key: it is how a resend finds its generation. A new
 	// field must be mapped below and added to the key, or two different requests would share one.
 	keyFields := []string{"owner_id", "purpose", "provider", "payload", "variant", "stream"}
-	// user_tier and caps select the limits a submit answers to, and change nothing about the call.
-	notKeyed := []string{"user_tier", "caps"}
+	// caps set the limits a submit answers to, and change nothing about the call.
+	notKeyed := []string{"caps"}
 
 	fields := (&genaiv0.GenerationSubmitRequest{}).ProtoReflect().Descriptor().Fields()
 	for index := range fields.Len() {
@@ -134,8 +134,7 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 			expect: &genaiv0.GenerationSubmitResponse{Generation: testGrpcGeneration(), Created: true},
 		},
 		{
-			// Empty caps limit nothing, which is not the same as sending none: no caps answer to the caps
-			// file.
+			// Empty caps reach the service as sent, and limit nothing, as no caps do.
 			name: "Success/EmptyCaps",
 
 			request: &genaiv0.GenerationSubmitRequest{
@@ -174,13 +173,14 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 			name: "Error/UsageCapReached",
 
 			request: &genaiv0.GenerationSubmitRequest{
-				OwnerId: testOwnerID, Purpose: "studio.generation", UserTier: "premium", Provider: "openai",
-				Payload: payload,
+				OwnerId: testOwnerID, Purpose: "studio.generation", Provider: "openai", Payload: payload,
 			},
-			serviceMock: &serviceMock{err: fmt.Errorf("%w: global over 720h0m0s", core.ErrUsageCapReached)},
+			serviceMock: &serviceMock{
+				err: fmt.Errorf(`%w: purpose "studio.generation" over 720h0m0s`, core.ErrUsageCapReached),
+			},
 
 			expectStatus:  codes.ResourceExhausted,
-			expectMessage: "global over 720h0m0s",
+			expectMessage: `purpose "studio.generation" over 720h0m0s`,
 		},
 		{
 			// The details name the limit in fields, and tell when the window frees usage.
@@ -250,7 +250,6 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 				serviceRequest := &core.GenerationSubmitRequest{
 					OwnerID:  uuid.MustParse(testCase.request.GetOwnerId()),
 					Purpose:  testCase.request.GetPurpose(),
-					UserTier: testCase.request.GetUserTier(),
 					Provider: testCase.request.GetProvider(),
 					Payload:  json.RawMessage(testCase.request.GetPayload()),
 					Variant:  testCase.request.GetVariant(),

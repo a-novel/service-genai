@@ -56,7 +56,6 @@ func (handler *GrpcGenerationSubmit) GenerationSubmit(
 	serviceRequest := &core.GenerationSubmitRequest{
 		OwnerID:  ownerID,
 		Purpose:  request.GetPurpose(),
-		UserTier: request.GetUserTier(),
 		Provider: request.GetProvider(),
 		Payload:  request.GetPayload(),
 		Variant:  request.GetVariant(),
@@ -96,8 +95,8 @@ func (handler *GrpcGenerationSubmit) GenerationSubmit(
 	}, nil
 }
 
-// newCoreGenerationCaps converts the caps a caller sent to their core form. Absent caps stay nil, so
-// the submit answers to the caps file. Core validation refuses a window without a duration.
+// newCoreGenerationCaps converts the caps a caller sent to their core form. Absent caps stay nil, and
+// limit nothing. Core validation refuses a window without a duration.
 func newCoreGenerationCaps(caps *genaiv0.GenerationCaps) *core.GenerationCaps {
 	if caps == nil {
 		return nil

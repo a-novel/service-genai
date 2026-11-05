@@ -251,12 +251,10 @@ func TestGenerationGet(t *testing.T) {
 			check,
 			testConnectors(t),
 			transactiontest.NewTransactor(),
-			testCaps,
+			testPurposes,
 		)
 
-		submitted, err := submit.Exec(t.Context(), submitRequest(func(request *core.GenerationSubmitRequest) {
-			request.Caps = &core.GenerationCaps{}
-		}))
+		submitted, err := submit.Exec(t.Context(), submitRequest(nil))
 		require.NoError(t, err)
 		require.Equal(t, core.GenerationStatusRunning, submitted.Generation.Status)
 
