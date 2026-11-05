@@ -38,8 +38,8 @@ type GenerationSubmitServiceClient interface {
 	// unknown provider included; UNIMPLEMENTED for a provider without the Async mode; and
 	// RESOURCE_EXHAUSTED, naming the limit, when the user already reached one. That refusal carries a
 	// google.rpc.QuotaFailure with one violation: its subject names the limits that refused, such as
-	// `purpose "studio.generation"`, `ceiling` or `global`, and its description the limit, such as
-	// `concurrency 2` or `input tokens over 5h`. A window's refusal adds a google.rpc.RetryInfo when
+	// `purpose "studio.generation"`, or `global` for a submit without caps, and its description the
+	// limit, such as `concurrency 2` or `input tokens over 5h`. A window's refusal adds a google.rpc.RetryInfo when
 	// the window frees usage at a known time: its delay runs until the window's oldest usage leaves
 	// it.
 	GenerationSubmit(ctx context.Context, in *GenerationSubmitRequest, opts ...grpc.CallOption) (*GenerationSubmitResponse, error)
@@ -79,8 +79,8 @@ type GenerationSubmitServiceServer interface {
 	// unknown provider included; UNIMPLEMENTED for a provider without the Async mode; and
 	// RESOURCE_EXHAUSTED, naming the limit, when the user already reached one. That refusal carries a
 	// google.rpc.QuotaFailure with one violation: its subject names the limits that refused, such as
-	// `purpose "studio.generation"`, `ceiling` or `global`, and its description the limit, such as
-	// `concurrency 2` or `input tokens over 5h`. A window's refusal adds a google.rpc.RetryInfo when
+	// `purpose "studio.generation"`, or `global` for a submit without caps, and its description the
+	// limit, such as `concurrency 2` or `input tokens over 5h`. A window's refusal adds a google.rpc.RetryInfo when
 	// the window frees usage at a known time: its delay runs until the window's oldest usage leaves
 	// it.
 	GenerationSubmit(context.Context, *GenerationSubmitRequest) (*GenerationSubmitResponse, error)

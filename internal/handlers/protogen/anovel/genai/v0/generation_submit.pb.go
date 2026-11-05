@@ -29,7 +29,8 @@ type GenerationSubmitRequest struct {
 	// its own credential, and this service trusts it as sent.
 	OwnerId string `protobuf:"bytes,1,opt,name=owner_id,json=ownerId,proto3" json:"owner_id,omitempty"`
 	// Purpose labels why the call is made, such as "studio.generation". Required, and declared in the
-	// service's caps file, which sets how much each user may consume for it.
+	// service's caps file, which also sets how much each user may consume for it when the submit
+	// carries no caps.
 	Purpose string `protobuf:"bytes,2,opt,name=purpose,proto3" json:"purpose,omitempty"`
 	// Provider names the service to run the call on, such as "openai". Required.
 	Provider string `protobuf:"bytes,11,opt,name=provider,proto3" json:"provider,omitempty"`
@@ -52,9 +53,9 @@ type GenerationSubmitRequest struct {
 	// time, or after 30 seconds with the call still queued. It is part of the request: the same
 	// payload with and without it are two generations.
 	Stream bool `protobuf:"varint,14,opt,name=stream,proto3" json:"stream,omitempty"`
-	// Caps are the limits the caller sets for its user on the request's purpose. Set, the submit
-	// answers to them on the purpose and to the service's ceiling across every purpose, and user_tier
-	// is ignored. Unset, it answers to the service's caps file. Caps are left out of the request's
+	// Caps are the limits the caller sets for its user on the request's purpose. Set, they alone limit
+	// the submit: the caller owns every limit, user_tier is ignored, and empty caps limit nothing.
+	// Unset, the submit answers to the service's caps file. Caps are left out of the request's
 	// identity, so resending a request under other caps returns the same generation.
 	Caps          *GenerationCaps `protobuf:"bytes,15,opt,name=caps,proto3" json:"caps,omitempty"`
 	unknownFields protoimpl.UnknownFields
