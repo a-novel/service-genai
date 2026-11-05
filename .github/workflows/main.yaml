@@ -316,30 +316,6 @@ jobs:
           run_args: >-
             -e POSTGRES_DSN="${POSTGRES_DSN}" -e OPENAI_API_KEY=smoke-test -e SERVICE_ISSUER_OPTIONAL=true
 
-  build-rest:
-    needs: [build-database]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-      attestations: write
-      id-token: write
-    env:
-      POSTGRES_DSN: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - *start-local-database
-      - uses: $/.github/actions/run-migrations
-      - uses: a-novel-kit/workflows/build-actions/docker@v1.82.0
-        with:
-          file: builds/rest.Dockerfile
-          image_name: ${{ github.repository }}/rest
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          # The server refuses to start without a provider key. The smoke run never calls the provider.
-          run_args: -e POSTGRES_DSN="${POSTGRES_DSN}" -e OPENAI_API_KEY=smoke-test
-
   build-sweep:
     needs: [build-database]
     runs-on: ubuntu-latest

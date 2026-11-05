@@ -47,10 +47,6 @@ var (
 	// ErrStreamUnavailable means the provider no longer streams the operation, or never did: its
 	// result is read with [Async.Get].
 	ErrStreamUnavailable = errors.New("provider does not stream this operation")
-	// ErrNotificationInvalid means a notification did not come from the provider.
-	ErrNotificationInvalid = errors.New("notification failed verification")
-	// ErrNotificationIgnored means a notification reports nothing this service acts on.
-	ErrNotificationIgnored = errors.New("notification ignored")
 	// ErrResponseTooLarge means the provider's answer is larger than the connector reads: the call
 	// cannot be read, however often it is asked.
 	ErrResponseTooLarge = errors.New("provider response too large")
@@ -173,29 +169,6 @@ type StreamEvent struct {
 	Terminal bool
 }
 
-// A Notifications reads the provider's notifications that its operations ended, so the service
-// checks them without waiting for a poll. The connector verifies each notification: only one that
-// comes from the provider names an operation.
-type Notifications interface {
-	// Notification verifies a notification and names the operation it concerns. [ErrModeUnsupported]
-	// means the connector has no means to verify one.
-	Notification(ctx context.Context, request *NotificationRequest) (*Notification, error)
-}
-
-// NotificationRequest is a notification as the provider sent it.
-type NotificationRequest struct {
-	// Body is the notification's body, as received: a signature covers its exact bytes.
-	Body []byte
-	// Header holds the notification's headers, which carry its signature.
-	Header map[string][]string
-}
-
-// Notification names the operation a notification concerns.
-type Notification struct {
-	// CallID identifies the operation that ended.
-	CallID string
-}
-
 // Registry names the connector serving each provider. A connector offers a mode by implementing the
 // mode's interface, so what a provider supports is decided by its code and cannot be misdeclared.
 type Registry map[string]any
@@ -214,11 +187,6 @@ func NewRegistry(openAI OpenAIConfig) (Registry, error) {
 // Streaming returns the connector serving the provider in the Streaming mode.
 func (registry Registry) Streaming(provider string) (Streaming, error) {
 	return modeOf[Streaming](registry, provider)
-}
-
-// Notifications returns the connector reading the provider's notifications.
-func (registry Registry) Notifications(provider string) (Notifications, error) {
-	return modeOf[Notifications](registry, provider)
 }
 
 // Async returns the connector running the provider's calls in the Async mode.

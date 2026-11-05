@@ -18,12 +18,6 @@ grpcurl -plaintext "localhost:${SERVICE_GENAI_GRPC_PORT}" grpc.health.v1.Health/
 grpcurl -plaintext "localhost:${SERVICE_GENAI_GRPC_PORT}" anovel.genai.v0.StatusService/Status
 ```
 
-The notification server, started with `a-novel run start service-genai/rest`, listens on `SERVICE_GENAI_REST_PORT`. No provider reaches a local stack, so it receives no notification.
-
-```bash
-curl "localhost:${SERVICE_GENAI_REST_PORT}/ping"
-```
-
 To sweep a local stack by hand, start the sweep server with the stack's environment:
 
 ```bash

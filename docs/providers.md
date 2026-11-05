@@ -2,7 +2,7 @@
 
 A connector is the code that reaches a provider. It authenticates against the provider, owns its endpoints, writes the fields an execution mode needs over the caller's payload, and reads the provider's status and errors. The caller builds the payload in the provider's own format, so moving to another provider is a change in the caller.
 
-A connector offers a mode by implementing its interface. The OpenAI connector offers the Async and Streaming modes, through the [Responses API](https://developers.openai.com/api/reference/resources/responses), and the Notifications mode once given its webhook signing secret.
+A connector offers a mode by implementing its interface. The OpenAI connector offers the Async and Streaming modes, through the [Responses API](https://developers.openai.com/api/reference/resources/responses).
 
 ## Async mode requirements
 
@@ -26,12 +26,6 @@ An open OpenAI bug can leave a streamed call queued for good when its creation s
 
 Every generation is one call, a streamed one included, so its stream's cursor counts that call's events. A failure settles it, and the caller resends the request. The connector issues the stream's GET itself, because openai-go's `GetStreaming` sends a body the API refuses ([openai-go#660](https://github.com/openai/openai-go/issues/660)).
 
-## Notifications mode
-
-A provider offers the Notifications mode by posting a signed message when one of its operations ends. The connector verifies the message and names the operation it concerns, or reports it invalid or irrelevant to the service. The `rest` server then checks the generation carrying that operation. Nothing provider-specific leaves the connector, so the server serves every provider at `/webhooks/{provider}`.
-
-OpenAI follows the [Standard Webhooks](https://www.standardwebhooks.com/) specification. Each event is signed with the endpoint's secret, delivered at least once, in no guaranteed order, and retried for up to 72 hours until it is answered with a `2xx`. The connector verifies events with openai-go's `Webhooks.Unwrap` and acts on `response.completed`, `response.failed`, `response.cancelled` and `response.incomplete`. An event carries only the response id, so the check retrieves the result as a poll would. A duplicate or late event finds the generation already settled.
-
 ## Who conforms
 
 As of October 2026:
@@ -46,7 +40,7 @@ As of October 2026:
 
 ## Checking a provider
 
-The conformance check builds the connectors from the variables the server reads, all but the webhook secret. It runs the OpenAI connector's Async and Streaming modes against every requirement it can observe. Run it before changing the connector or the account it reaches. It calls the provider and costs a few cents, so it runs only when `PROVIDER_CONFORMANCE` is `true`. Paste the API key at the prompt:
+The conformance check builds the connectors from the variables the server reads. It runs the OpenAI connector's Async and Streaming modes against every requirement it can observe. Run it before changing the connector or the account it reaches. It calls the provider and costs a few cents, so it runs only when `PROVIDER_CONFORMANCE` is `true`. Paste the API key at the prompt:
 
 ```bash
 read -rs OPENAI_API_KEY

@@ -1,5 +1,5 @@
 // Command migrations applies the service's database schema migrations, schedules its pg_cron jobs
-// and exits. The cmd/grpc, cmd/rest and cmd/sweep servers start once the schema is in place.
+// and exits. The cmd/grpc and cmd/sweep servers start once the schema is in place.
 package main
 
 import (

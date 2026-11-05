@@ -8,7 +8,6 @@ After its insert, a run writes its `generations` row twice: the provider's call 
 
 - `GenerationSubmit` inserts the generation with its start, then sends the payload it holds in memory and records the call's id. The service never stores the payload, so no other check can send it.
 - `GenerationGet` checks every unsettled generation it reads, so a poll made after the provider finished returns the settled generation. The caller bounds how often it polls.
-- A provider's notification that a call ended checks the generation running it, through the `rest` server. A notification that arrives before the call's id is recorded finds no generation, and the next poll or sweep settles it.
 - The `sweep` server checks every unsettled generation, each time a scheduler posts to `/sweep`, and every `SWEEP_INTERVAL` when `SWEEP_TICKER` is set. One run leads at a time across every replica: it holds a PostgreSQL advisory lock on a connection of its own, and a run that finds it taken checks nothing. The leader reads batches of `SWEEP_BATCH_SIZE` in id order while each comes back full, and starts no check its deadline could not wait out.
 
 The sweep exists for generations whose caller stopped polling. The provider keeps a finished result it does not store only for a while, and only a check frees the concurrency slot of a generation nobody follows.

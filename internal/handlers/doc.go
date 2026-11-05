@@ -8,6 +8,5 @@
 //     configured, [GrpcServiceToken] admits only the callers whose service token it accepts. Wired
 //     by cmd/grpc.
 //
-//   - REST handlers: the public endpoint providers post their notifications to, wired by cmd/rest,
-//     and the private sweep a scheduler calls, wired by cmd/sweep.
+//   - REST handlers: the private sweep server a scheduler calls, wired by cmd/sweep.
 package handlers

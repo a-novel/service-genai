@@ -99,7 +99,7 @@ var (
 	// GrpcURL is the address of the gRPC service, in the form <host>:<port>. The Go client tests
 	// dial it.
 	GrpcURL = getEnv("GRPC_URL")
-	// Rest configures the REST server from the REST_* variables.
+	// Rest configures the sweep's REST server from the REST_* variables.
 	Rest = httpf.LoadServerConfig(getEnv, restDefaults())
 	// Grpc configures the gRPC server from the GRPC_* variables.
 	Grpc = grpcf.LoadServerConfig(getEnv, grpcDefaults())
@@ -123,9 +123,6 @@ var (
 	// OpenAIAPIKey authenticates the OpenAI connector. It is the only credential this service holds,
 	// so no caller holds one.
 	OpenAIAPIKey = getEnv("OPENAI_API_KEY")
-	// OpenAIWebhookSecret is the signing secret of the webhook endpoint OpenAI notifies. Inject it as a
-	// secret; unset, the service reads no notification.
-	OpenAIWebhookSecret = getEnv("OPENAI_WEBHOOK_SECRET")
 	// OpenAIBaseURL is the Responses API endpoint the OpenAI connector calls.
 	OpenAIBaseURL = config.LoadEnv(getEnv("OPENAI_BASE_URL"), OpenAIBaseURLDefault, config.StringParser)
 
@@ -151,9 +148,7 @@ var (
 )
 
 // restDefaults keeps golib's REST defaults but for a few. The drain fits the pod's grace period, and a
-// request has the time its checks need. The rate limit lets a provider's burst of notifications
-// through, since they all come from its few addresses. The routes only read, receive notifications
-// and sweep.
+// request has the time its checks need. The routes only read and sweep.
 func restDefaults() httpf.ServerConfig {
 	defaults := httpf.ServerConfigDefault
 	defaults.Timeouts.Shutdown = TimeoutShutdownDefault
