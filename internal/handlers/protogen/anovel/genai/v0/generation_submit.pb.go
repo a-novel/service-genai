@@ -9,6 +9,7 @@ package v0
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	durationpb "google.golang.org/protobuf/types/known/durationpb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -28,7 +29,8 @@ type GenerationSubmitRequest struct {
 	// its own credential, and this service trusts it as sent.
 	OwnerId string `protobuf:"bytes,1,opt,name=owner_id,json=ownerId,proto3" json:"owner_id,omitempty"`
 	// Purpose labels why the call is made, such as "studio.generation". Required, and declared in the
-	// service's caps file, which sets how much each user may consume for it.
+	// service's caps file, which also sets how much each user may consume for it when the submit
+	// carries no caps.
 	Purpose string `protobuf:"bytes,2,opt,name=purpose,proto3" json:"purpose,omitempty"`
 	// Provider names the service to run the call on, such as "openai". Required.
 	Provider string `protobuf:"bytes,11,opt,name=provider,proto3" json:"provider,omitempty"`
@@ -37,10 +39,10 @@ type GenerationSubmitRequest struct {
 	// no unpaired surrogates, no duplicate names in an object. The provider's connector sets the fields
 	// the Async mode needs, such as OpenAI's background and stream, over the payload's own values.
 	Payload []byte `protobuf:"bytes,12,opt,name=payload,proto3" json:"payload,omitempty"`
-	// UserTier is the usage tier the caller assigns its user, such as "premium". It selects the caps
-	// the submit answers to; an empty or unrecognized tier answers to the default caps. It is left out
-	// of the request's identity, so resending a request under another tier returns the same
-	// generation.
+	// UserTier is the usage tier the caller assigns its user, such as "premium". Without caps, it
+	// selects the caps of the service's caps file that the submit answers to; an empty or unrecognized
+	// tier answers to the default caps. With caps, it is ignored. It is left out of the request's
+	// identity, so resending a request under another tier returns the same generation.
 	UserTier string `protobuf:"bytes,13,opt,name=user_tier,json=userTier,proto3" json:"user_tier,omitempty"`
 	// Variant asks for another generation of a request that already succeeded, such as a regenerate.
 	// It defaults to zero. A caller recovering from a crash counts variants from zero again, and each
@@ -49,9 +51,13 @@ type GenerationSubmitRequest struct {
 	// Stream creates the provider call in streaming mode, so GenerationStream can forward its events
 	// while it runs. The submit then answers once the provider has begun the call, after its queue
 	// time, or after 30 seconds with the call still queued. It is part of the request: the same
-	// payload with and without it are two generations. A streamed generation is one provider call: a
-	// retryable provider failure settles it, and the caller resends it to run it again.
-	Stream        bool `protobuf:"varint,14,opt,name=stream,proto3" json:"stream,omitempty"`
+	// payload with and without it are two generations.
+	Stream bool `protobuf:"varint,14,opt,name=stream,proto3" json:"stream,omitempty"`
+	// Caps are the limits the caller sets for its user on the request's purpose. Set, they alone limit
+	// the submit: the caller owns every limit, user_tier is ignored, and empty caps limit nothing.
+	// Unset, the submit answers to the service's caps file. Caps are left out of the request's
+	// identity, so resending a request under other caps returns the same generation.
+	Caps          *GenerationCaps `protobuf:"bytes,15,opt,name=caps,proto3" json:"caps,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -135,6 +141,138 @@ func (x *GenerationSubmitRequest) GetStream() bool {
 	return false
 }
 
+func (x *GenerationSubmitRequest) GetCaps() *GenerationCaps {
+	if x != nil {
+		return x.Caps
+	}
+	return nil
+}
+
+// GenerationCaps limits one owner's generations of the request's purpose.
+type GenerationCaps struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Concurrency is how many generations of the purpose the user may have in flight at once, this one
+	// included: pending, running, or failed with an unknown outcome within the last 15 minutes. Unset,
+	// it sets no limit. At least 0.
+	Concurrency *int32 `protobuf:"varint,1,opt,name=concurrency,proto3,oneof" json:"concurrency,omitempty"`
+	// Windows limit the tokens the user's generations of the purpose consumed over rolling windows. A
+	// submit is refused once a window's usage reaches its limit. Empty, they set no limit. At most 10,
+	// each of a distinct duration.
+	Windows       []*GenerationCapWindow `protobuf:"bytes,2,rep,name=windows,proto3" json:"windows,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GenerationCaps) Reset() {
+	*x = GenerationCaps{}
+	mi := &file_anovel_genai_v0_generation_submit_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GenerationCaps) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GenerationCaps) ProtoMessage() {}
+
+func (x *GenerationCaps) ProtoReflect() protoreflect.Message {
+	mi := &file_anovel_genai_v0_generation_submit_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GenerationCaps.ProtoReflect.Descriptor instead.
+func (*GenerationCaps) Descriptor() ([]byte, []int) {
+	return file_anovel_genai_v0_generation_submit_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *GenerationCaps) GetConcurrency() int32 {
+	if x != nil && x.Concurrency != nil {
+		return *x.Concurrency
+	}
+	return 0
+}
+
+func (x *GenerationCaps) GetWindows() []*GenerationCapWindow {
+	if x != nil {
+		return x.Windows
+	}
+	return nil
+}
+
+// GenerationCapWindow limits the tokens one owner consumed over a rolling window.
+type GenerationCapWindow struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Duration is how far back the window reaches. Above zero, at most 8760 hours.
+	Duration *durationpb.Duration `protobuf:"bytes,1,opt,name=duration,proto3" json:"duration,omitempty"`
+	// InputTokens limits the input tokens consumed in the window, cached ones included. Unset, it sets
+	// no limit. At least 0.
+	InputTokens *int64 `protobuf:"varint,2,opt,name=input_tokens,json=inputTokens,proto3,oneof" json:"input_tokens,omitempty"`
+	// OutputTokens limits the output tokens consumed in the window, reasoning ones included. Unset, it
+	// sets no limit. At least 0.
+	OutputTokens  *int64 `protobuf:"varint,3,opt,name=output_tokens,json=outputTokens,proto3,oneof" json:"output_tokens,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GenerationCapWindow) Reset() {
+	*x = GenerationCapWindow{}
+	mi := &file_anovel_genai_v0_generation_submit_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GenerationCapWindow) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GenerationCapWindow) ProtoMessage() {}
+
+func (x *GenerationCapWindow) ProtoReflect() protoreflect.Message {
+	mi := &file_anovel_genai_v0_generation_submit_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GenerationCapWindow.ProtoReflect.Descriptor instead.
+func (*GenerationCapWindow) Descriptor() ([]byte, []int) {
+	return file_anovel_genai_v0_generation_submit_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *GenerationCapWindow) GetDuration() *durationpb.Duration {
+	if x != nil {
+		return x.Duration
+	}
+	return nil
+}
+
+func (x *GenerationCapWindow) GetInputTokens() int64 {
+	if x != nil && x.InputTokens != nil {
+		return *x.InputTokens
+	}
+	return 0
+}
+
+func (x *GenerationCapWindow) GetOutputTokens() int64 {
+	if x != nil && x.OutputTokens != nil {
+		return *x.OutputTokens
+	}
+	return 0
+}
+
 // GenerationSubmitResponse returns the recorded generation and whether this call created it.
 type GenerationSubmitResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -149,7 +287,7 @@ type GenerationSubmitResponse struct {
 
 func (x *GenerationSubmitResponse) Reset() {
 	*x = GenerationSubmitResponse{}
-	mi := &file_anovel_genai_v0_generation_submit_proto_msgTypes[1]
+	mi := &file_anovel_genai_v0_generation_submit_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -161,7 +299,7 @@ func (x *GenerationSubmitResponse) String() string {
 func (*GenerationSubmitResponse) ProtoMessage() {}
 
 func (x *GenerationSubmitResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_anovel_genai_v0_generation_submit_proto_msgTypes[1]
+	mi := &file_anovel_genai_v0_generation_submit_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -174,7 +312,7 @@ func (x *GenerationSubmitResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GenerationSubmitResponse.ProtoReflect.Descriptor instead.
 func (*GenerationSubmitResponse) Descriptor() ([]byte, []int) {
-	return file_anovel_genai_v0_generation_submit_proto_rawDescGZIP(), []int{1}
+	return file_anovel_genai_v0_generation_submit_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *GenerationSubmitResponse) GetGeneration() *Generation {
@@ -195,7 +333,7 @@ var File_anovel_genai_v0_generation_submit_proto protoreflect.FileDescriptor
 
 const file_anovel_genai_v0_generation_submit_proto_rawDesc = "" +
 	"\n" +
-	"'anovel/genai/v0/generation_submit.proto\x12\x0fanovel.genai.v0\x1a anovel/genai/v0/generation.proto\"\xcf\x02\n" +
+	"'anovel/genai/v0/generation_submit.proto\x12\x0fanovel.genai.v0\x1a anovel/genai/v0/generation.proto\x1a\x1egoogle/protobuf/duration.proto\"\x84\x03\n" +
 	"\x17GenerationSubmitRequest\x12\x19\n" +
 	"\bowner_id\x18\x01 \x01(\tR\aownerId\x12\x18\n" +
 	"\apurpose\x18\x02 \x01(\tR\apurpose\x12\x1a\n" +
@@ -204,8 +342,19 @@ const file_anovel_genai_v0_generation_submit_proto_rawDesc = "" +
 	"\tuser_tier\x18\r \x01(\tR\buserTier\x12\x18\n" +
 	"\avariant\x18\n" +
 	" \x01(\rR\avariant\x12\x16\n" +
-	"\x06stream\x18\x0e \x01(\bR\x06streamJ\x04\b\x03\x10\x04J\x04\b\x04\x10\x05J\x04\b\x05\x10\x06J\x04\b\x06\x10\aJ\x04\b\a\x10\bJ\x04\b\b\x10\tJ\x04\b\t\x10\n" +
-	"R\x0fidempotency_keyR\arequestR\fmax_attemptsR\x04tierR\finstructionsR\x05inputR\routput_schema\"q\n" +
+	"\x06stream\x18\x0e \x01(\bR\x06stream\x123\n" +
+	"\x04caps\x18\x0f \x01(\v2\x1f.anovel.genai.v0.GenerationCapsR\x04capsJ\x04\b\x03\x10\x04J\x04\b\x04\x10\x05J\x04\b\x05\x10\x06J\x04\b\x06\x10\aJ\x04\b\a\x10\bJ\x04\b\b\x10\tJ\x04\b\t\x10\n" +
+	"R\x0fidempotency_keyR\arequestR\fmax_attemptsR\x04tierR\finstructionsR\x05inputR\routput_schema\"\x87\x01\n" +
+	"\x0eGenerationCaps\x12%\n" +
+	"\vconcurrency\x18\x01 \x01(\x05H\x00R\vconcurrency\x88\x01\x01\x12>\n" +
+	"\awindows\x18\x02 \x03(\v2$.anovel.genai.v0.GenerationCapWindowR\awindowsB\x0e\n" +
+	"\f_concurrency\"\xc1\x01\n" +
+	"\x13GenerationCapWindow\x125\n" +
+	"\bduration\x18\x01 \x01(\v2\x19.google.protobuf.DurationR\bduration\x12&\n" +
+	"\finput_tokens\x18\x02 \x01(\x03H\x00R\vinputTokens\x88\x01\x01\x12(\n" +
+	"\routput_tokens\x18\x03 \x01(\x03H\x01R\foutputTokens\x88\x01\x01B\x0f\n" +
+	"\r_input_tokensB\x10\n" +
+	"\x0e_output_tokens\"q\n" +
 	"\x18GenerationSubmitResponse\x12;\n" +
 	"\n" +
 	"generation\x18\x01 \x01(\v2\x1b.anovel.genai.v0.GenerationR\n" +
@@ -227,21 +376,27 @@ func file_anovel_genai_v0_generation_submit_proto_rawDescGZIP() []byte {
 	return file_anovel_genai_v0_generation_submit_proto_rawDescData
 }
 
-var file_anovel_genai_v0_generation_submit_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_anovel_genai_v0_generation_submit_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_anovel_genai_v0_generation_submit_proto_goTypes = []any{
 	(*GenerationSubmitRequest)(nil),  // 0: anovel.genai.v0.GenerationSubmitRequest
-	(*GenerationSubmitResponse)(nil), // 1: anovel.genai.v0.GenerationSubmitResponse
-	(*Generation)(nil),               // 2: anovel.genai.v0.Generation
+	(*GenerationCaps)(nil),           // 1: anovel.genai.v0.GenerationCaps
+	(*GenerationCapWindow)(nil),      // 2: anovel.genai.v0.GenerationCapWindow
+	(*GenerationSubmitResponse)(nil), // 3: anovel.genai.v0.GenerationSubmitResponse
+	(*durationpb.Duration)(nil),      // 4: google.protobuf.Duration
+	(*Generation)(nil),               // 5: anovel.genai.v0.Generation
 }
 var file_anovel_genai_v0_generation_submit_proto_depIdxs = []int32{
-	2, // 0: anovel.genai.v0.GenerationSubmitResponse.generation:type_name -> anovel.genai.v0.Generation
-	0, // 1: anovel.genai.v0.GenerationSubmitService.GenerationSubmit:input_type -> anovel.genai.v0.GenerationSubmitRequest
-	1, // 2: anovel.genai.v0.GenerationSubmitService.GenerationSubmit:output_type -> anovel.genai.v0.GenerationSubmitResponse
-	2, // [2:3] is the sub-list for method output_type
-	1, // [1:2] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	1, // 0: anovel.genai.v0.GenerationSubmitRequest.caps:type_name -> anovel.genai.v0.GenerationCaps
+	2, // 1: anovel.genai.v0.GenerationCaps.windows:type_name -> anovel.genai.v0.GenerationCapWindow
+	4, // 2: anovel.genai.v0.GenerationCapWindow.duration:type_name -> google.protobuf.Duration
+	5, // 3: anovel.genai.v0.GenerationSubmitResponse.generation:type_name -> anovel.genai.v0.Generation
+	0, // 4: anovel.genai.v0.GenerationSubmitService.GenerationSubmit:input_type -> anovel.genai.v0.GenerationSubmitRequest
+	3, // 5: anovel.genai.v0.GenerationSubmitService.GenerationSubmit:output_type -> anovel.genai.v0.GenerationSubmitResponse
+	5, // [5:6] is the sub-list for method output_type
+	4, // [4:5] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_anovel_genai_v0_generation_submit_proto_init() }
@@ -250,13 +405,15 @@ func file_anovel_genai_v0_generation_submit_proto_init() {
 		return
 	}
 	file_anovel_genai_v0_generation_proto_init()
+	file_anovel_genai_v0_generation_submit_proto_msgTypes[1].OneofWrappers = []any{}
+	file_anovel_genai_v0_generation_submit_proto_msgTypes[2].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_anovel_genai_v0_generation_submit_proto_rawDesc), len(file_anovel_genai_v0_generation_submit_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

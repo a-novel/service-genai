@@ -28,10 +28,11 @@ const (
 //
 // GenerationGetService reads one of an owner's generations.
 type GenerationGetServiceClient interface {
-	// Returns one of an owner's generations, checking it with the provider first when nobody checked
-	// it recently. Poll it until the generation settles. Returns NOT_FOUND if the owner has no such
-	// generation, including when another owner holds it, so the read cannot reveal whether an id
-	// exists. Returns INVALID_ARGUMENT if an id is not a UUID.
+	// Returns one of an owner's generations. An unsettled one is checked with the provider first, so
+	// a poll made after the provider finished returns the settled generation. Poll it until the
+	// generation settles. Returns NOT_FOUND if the owner has no such generation, including when
+	// another owner holds it, so the read cannot reveal whether an id exists. Returns
+	// INVALID_ARGUMENT if an id is not a UUID.
 	GenerationGet(ctx context.Context, in *GenerationGetRequest, opts ...grpc.CallOption) (*GenerationGetResponse, error)
 }
 
@@ -59,10 +60,11 @@ func (c *generationGetServiceClient) GenerationGet(ctx context.Context, in *Gene
 //
 // GenerationGetService reads one of an owner's generations.
 type GenerationGetServiceServer interface {
-	// Returns one of an owner's generations, checking it with the provider first when nobody checked
-	// it recently. Poll it until the generation settles. Returns NOT_FOUND if the owner has no such
-	// generation, including when another owner holds it, so the read cannot reveal whether an id
-	// exists. Returns INVALID_ARGUMENT if an id is not a UUID.
+	// Returns one of an owner's generations. An unsettled one is checked with the provider first, so
+	// a poll made after the provider finished returns the settled generation. Poll it until the
+	// generation settles. Returns NOT_FOUND if the owner has no such generation, including when
+	// another owner holds it, so the read cannot reveal whether an id exists. Returns
+	// INVALID_ARGUMENT if an id is not a UUID.
 	GenerationGet(context.Context, *GenerationGetRequest) (*GenerationGetResponse, error)
 	mustEmbedUnimplementedGenerationGetServiceServer()
 }

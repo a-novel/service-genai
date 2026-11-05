@@ -20,6 +20,9 @@ message Generation {
   // Error names why the generation failed or was cancelled, in this service's own words. Empty
   // otherwise.
   string error = 8;
+  // FailureClass says why a failed generation failed, so the caller decides whether to resend its
+  // request. Set with status FAILED, unspecified otherwise.
+  GenerationFailure failure_class = 22;
   // CreatedAt is when the generation was submitted.
   google.protobuf.Timestamp created_at = 18;
   // UpdatedAt is when the generation last changed.
@@ -30,8 +33,9 @@ message Generation {
   google.protobuf.Timestamp expires_at = 21;
   // Provider names the service the generation runs on, as submitted.
   string provider = 16;
-  // Attempts lists every provider call that reached an answer, in order: retried and cancelled ones
-  // as well as the last. The output and the usage are in their responses.
+  // Attempts lists the provider's answers, in order. This service sends one call per generation and
+  // never retries it, so the list holds one answer at most: the finished, failed or cancelled call,
+  // or the error body of a request the provider rejected. The output and the usage are in it.
   repeated GenerationAttempt attempts = 17;
 
   // The caller reads the output, the failure kind and the usage off the provider's responses.
@@ -68,9 +72,8 @@ enum GenerationStatus {
   // GENERATION_STATUS_SUCCEEDED means the provider finished the call. Whether its output is usable
   // is the caller's reading of the last attempt's response.
   GENERATION_STATUS_SUCCEEDED = 3;
-  // GENERATION_STATUS_FAILED means the generation holds no finished response: the provider rejected
-  // or failed the call, or its outcome is unknown. A resend of the same request runs again from
-  // scratch.
+  // GENERATION_STATUS_FAILED means the generation holds no finished response, for the reason its
+  // failure_class gives. A resend of the same request runs again from scratch.
   GENERATION_STATUS_FAILED = 4;
   // GENERATION_STATUS_CANCELLED means the generation was stopped on the owner's request. A resend of
   // the same request runs again from scratch.
@@ -78,4 +81,26 @@ enum GenerationStatus {
   // Reserved so a retired value's number and name are never reused.
   reserved 5;
   reserved "GENERATION_STATUS_ABANDONED";
+}
+
+// GenerationFailure says why a generation failed, so the caller knows whether a resend may succeed.
+// This service never resends a call itself.
+enum GenerationFailure {
+  // GENERATION_FAILURE_UNSPECIFIED means the generation did not fail, or failed before this service
+  // classified its failures.
+  GENERATION_FAILURE_UNSPECIFIED = 0;
+  // GENERATION_FAILURE_REJECTED means the provider refused the request, such as an unknown model or
+  // an exhausted quota. The attempt holds the provider's error body. The same request fails again.
+  GENERATION_FAILURE_REJECTED = 1;
+  // GENERATION_FAILURE_PROVIDER_FAILED means the provider accepted the call, then failed it, did not
+  // finish it in time, or no longer held its answer. A resend may succeed.
+  GENERATION_FAILURE_PROVIDER_FAILED = 2;
+  // GENERATION_FAILURE_NOT_STARTED means the provider never ran the call: it was never sent, or the
+  // provider turned it away before accepting it, as on a rate limit. A resend may succeed, and costs
+  // nothing more than this one did.
+  GENERATION_FAILURE_NOT_STARTED = 3;
+  // GENERATION_FAILURE_OUTCOME_UNKNOWN means the provider may have accepted the call and may still
+  // run it, untracked. The generation keeps counting toward its purpose's concurrency for 15 minutes,
+  // so a resend in that time may be refused.
+  GENERATION_FAILURE_OUTCOME_UNKNOWN = 4;
 }

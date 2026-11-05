@@ -35,9 +35,8 @@ const (
 	// GENERATION_STATUS_SUCCEEDED means the provider finished the call. Whether its output is usable
 	// is the caller's reading of the last attempt's response.
 	GenerationStatus_GENERATION_STATUS_SUCCEEDED GenerationStatus = 3
-	// GENERATION_STATUS_FAILED means the generation holds no finished response: the provider rejected
-	// or failed the call, or its outcome is unknown. A resend of the same request runs again from
-	// scratch.
+	// GENERATION_STATUS_FAILED means the generation holds no finished response, for the reason its
+	// failure_class gives. A resend of the same request runs again from scratch.
 	GenerationStatus_GENERATION_STATUS_FAILED GenerationStatus = 4
 	// GENERATION_STATUS_CANCELLED means the generation was stopped on the owner's request. A resend of
 	// the same request runs again from scratch.
@@ -91,6 +90,75 @@ func (GenerationStatus) EnumDescriptor() ([]byte, []int) {
 	return file_anovel_genai_v0_generation_proto_rawDescGZIP(), []int{0}
 }
 
+// GenerationFailure says why a generation failed, so the caller knows whether a resend may succeed.
+// This service never resends a call itself.
+type GenerationFailure int32
+
+const (
+	// GENERATION_FAILURE_UNSPECIFIED means the generation did not fail, or failed before this service
+	// classified its failures.
+	GenerationFailure_GENERATION_FAILURE_UNSPECIFIED GenerationFailure = 0
+	// GENERATION_FAILURE_REJECTED means the provider refused the request, such as an unknown model or
+	// an exhausted quota. The attempt holds the provider's error body. The same request fails again.
+	GenerationFailure_GENERATION_FAILURE_REJECTED GenerationFailure = 1
+	// GENERATION_FAILURE_PROVIDER_FAILED means the provider accepted the call, then failed it, did not
+	// finish it in time, or no longer held its answer. A resend may succeed.
+	GenerationFailure_GENERATION_FAILURE_PROVIDER_FAILED GenerationFailure = 2
+	// GENERATION_FAILURE_NOT_STARTED means the provider never ran the call: it was never sent, or the
+	// provider turned it away before accepting it, as on a rate limit. A resend may succeed, and costs
+	// nothing more than this one did.
+	GenerationFailure_GENERATION_FAILURE_NOT_STARTED GenerationFailure = 3
+	// GENERATION_FAILURE_OUTCOME_UNKNOWN means the provider may have accepted the call and may still
+	// run it, untracked. The generation keeps counting toward its purpose's concurrency for 15 minutes,
+	// so a resend in that time may be refused.
+	GenerationFailure_GENERATION_FAILURE_OUTCOME_UNKNOWN GenerationFailure = 4
+)
+
+// Enum value maps for GenerationFailure.
+var (
+	GenerationFailure_name = map[int32]string{
+		0: "GENERATION_FAILURE_UNSPECIFIED",
+		1: "GENERATION_FAILURE_REJECTED",
+		2: "GENERATION_FAILURE_PROVIDER_FAILED",
+		3: "GENERATION_FAILURE_NOT_STARTED",
+		4: "GENERATION_FAILURE_OUTCOME_UNKNOWN",
+	}
+	GenerationFailure_value = map[string]int32{
+		"GENERATION_FAILURE_UNSPECIFIED":     0,
+		"GENERATION_FAILURE_REJECTED":        1,
+		"GENERATION_FAILURE_PROVIDER_FAILED": 2,
+		"GENERATION_FAILURE_NOT_STARTED":     3,
+		"GENERATION_FAILURE_OUTCOME_UNKNOWN": 4,
+	}
+)
+
+func (x GenerationFailure) Enum() *GenerationFailure {
+	p := new(GenerationFailure)
+	*p = x
+	return p
+}
+
+func (x GenerationFailure) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (GenerationFailure) Descriptor() protoreflect.EnumDescriptor {
+	return file_anovel_genai_v0_generation_proto_enumTypes[1].Descriptor()
+}
+
+func (GenerationFailure) Type() protoreflect.EnumType {
+	return &file_anovel_genai_v0_generation_proto_enumTypes[1]
+}
+
+func (x GenerationFailure) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use GenerationFailure.Descriptor instead.
+func (GenerationFailure) EnumDescriptor() ([]byte, []int) {
+	return file_anovel_genai_v0_generation_proto_rawDescGZIP(), []int{1}
+}
+
 // A Generation is one provider call as this service records it.
 //
 // The caller builds the provider's own request; this service executes it durably, never pays for it
@@ -108,6 +176,9 @@ type Generation struct {
 	// Error names why the generation failed or was cancelled, in this service's own words. Empty
 	// otherwise.
 	Error string `protobuf:"bytes,8,opt,name=error,proto3" json:"error,omitempty"`
+	// FailureClass says why a failed generation failed, so the caller decides whether to resend its
+	// request. Set with status FAILED, unspecified otherwise.
+	FailureClass GenerationFailure `protobuf:"varint,22,opt,name=failure_class,json=failureClass,proto3,enum=anovel.genai.v0.GenerationFailure" json:"failure_class,omitempty"`
 	// CreatedAt is when the generation was submitted.
 	CreatedAt *timestamppb.Timestamp `protobuf:"bytes,18,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	// UpdatedAt is when the generation last changed.
@@ -118,8 +189,9 @@ type Generation struct {
 	ExpiresAt *timestamppb.Timestamp `protobuf:"bytes,21,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
 	// Provider names the service the generation runs on, as submitted.
 	Provider string `protobuf:"bytes,16,opt,name=provider,proto3" json:"provider,omitempty"`
-	// Attempts lists every provider call that reached an answer, in order: retried and cancelled ones
-	// as well as the last. The output and the usage are in their responses.
+	// Attempts lists the provider's answers, in order. This service sends one call per generation and
+	// never retries it, so the list holds one answer at most: the finished, failed or cancelled call,
+	// or the error body of a request the provider rejected. The output and the usage are in it.
 	Attempts      []*GenerationAttempt `protobuf:"bytes,17,rep,name=attempts,proto3" json:"attempts,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -188,6 +260,13 @@ func (x *Generation) GetError() string {
 		return x.Error
 	}
 	return ""
+}
+
+func (x *Generation) GetFailureClass() GenerationFailure {
+	if x != nil {
+		return x.FailureClass
+	}
+	return GenerationFailure_GENERATION_FAILURE_UNSPECIFIED
 }
 
 func (x *Generation) GetCreatedAt() *timestamppb.Timestamp {
@@ -292,14 +371,15 @@ var File_anovel_genai_v0_generation_proto protoreflect.FileDescriptor
 
 const file_anovel_genai_v0_generation_proto_rawDesc = "" +
 	"\n" +
-	" anovel/genai/v0/generation.proto\x12\x0fanovel.genai.v0\x1a\x1fgoogle/protobuf/timestamp.proto\"\xd5\x04\n" +
+	" anovel/genai/v0/generation.proto\x12\x0fanovel.genai.v0\x1a\x1fgoogle/protobuf/timestamp.proto\"\x9e\x05\n" +
 	"\n" +
 	"Generation\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x19\n" +
 	"\bowner_id\x18\x02 \x01(\tR\aownerId\x12\x18\n" +
 	"\apurpose\x18\x03 \x01(\tR\apurpose\x129\n" +
 	"\x06status\x18\x04 \x01(\x0e2!.anovel.genai.v0.GenerationStatusR\x06status\x12\x14\n" +
-	"\x05error\x18\b \x01(\tR\x05error\x129\n" +
+	"\x05error\x18\b \x01(\tR\x05error\x12G\n" +
+	"\rfailure_class\x18\x16 \x01(\x0e2\".anovel.genai.v0.GenerationFailureR\ffailureClass\x129\n" +
 	"\n" +
 	"created_at\x18\x12 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
@@ -319,7 +399,13 @@ const file_anovel_genai_v0_generation_proto_rawDesc = "" +
 	"\x19GENERATION_STATUS_RUNNING\x10\x02\x12\x1f\n" +
 	"\x1bGENERATION_STATUS_SUCCEEDED\x10\x03\x12\x1c\n" +
 	"\x18GENERATION_STATUS_FAILED\x10\x04\x12\x1f\n" +
-	"\x1bGENERATION_STATUS_CANCELLED\x10\x06\"\x04\b\x05\x10\x05*\x1bGENERATION_STATUS_ABANDONEDB\xd1\x01\n" +
+	"\x1bGENERATION_STATUS_CANCELLED\x10\x06\"\x04\b\x05\x10\x05*\x1bGENERATION_STATUS_ABANDONED*\xcc\x01\n" +
+	"\x11GenerationFailure\x12\"\n" +
+	"\x1eGENERATION_FAILURE_UNSPECIFIED\x10\x00\x12\x1f\n" +
+	"\x1bGENERATION_FAILURE_REJECTED\x10\x01\x12&\n" +
+	"\"GENERATION_FAILURE_PROVIDER_FAILED\x10\x02\x12\"\n" +
+	"\x1eGENERATION_FAILURE_NOT_STARTED\x10\x03\x12&\n" +
+	"\"GENERATION_FAILURE_OUTCOME_UNKNOWN\x10\x04B\xd1\x01\n" +
 	"\x13com.anovel.genai.v0B\x0fGenerationProtoP\x01ZKgithub.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v0\xa2\x02\x03AGV\xaa\x02\x0fAnovel.Genai.V0\xca\x02\x0fAnovel\\Genai\\V0\xe2\x02\x1bAnovel\\Genai\\V0\\GPBMetadata\xea\x02\x11Anovel::Genai::V0b\x06proto3"
 
 var (
@@ -334,26 +420,28 @@ func file_anovel_genai_v0_generation_proto_rawDescGZIP() []byte {
 	return file_anovel_genai_v0_generation_proto_rawDescData
 }
 
-var file_anovel_genai_v0_generation_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_anovel_genai_v0_generation_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
 var file_anovel_genai_v0_generation_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
 var file_anovel_genai_v0_generation_proto_goTypes = []any{
 	(GenerationStatus)(0),         // 0: anovel.genai.v0.GenerationStatus
-	(*Generation)(nil),            // 1: anovel.genai.v0.Generation
-	(*GenerationAttempt)(nil),     // 2: anovel.genai.v0.GenerationAttempt
-	(*timestamppb.Timestamp)(nil), // 3: google.protobuf.Timestamp
+	(GenerationFailure)(0),        // 1: anovel.genai.v0.GenerationFailure
+	(*Generation)(nil),            // 2: anovel.genai.v0.Generation
+	(*GenerationAttempt)(nil),     // 3: anovel.genai.v0.GenerationAttempt
+	(*timestamppb.Timestamp)(nil), // 4: google.protobuf.Timestamp
 }
 var file_anovel_genai_v0_generation_proto_depIdxs = []int32{
 	0, // 0: anovel.genai.v0.Generation.status:type_name -> anovel.genai.v0.GenerationStatus
-	3, // 1: anovel.genai.v0.Generation.created_at:type_name -> google.protobuf.Timestamp
-	3, // 2: anovel.genai.v0.Generation.updated_at:type_name -> google.protobuf.Timestamp
-	3, // 3: anovel.genai.v0.Generation.settled_at:type_name -> google.protobuf.Timestamp
-	3, // 4: anovel.genai.v0.Generation.expires_at:type_name -> google.protobuf.Timestamp
-	2, // 5: anovel.genai.v0.Generation.attempts:type_name -> anovel.genai.v0.GenerationAttempt
-	6, // [6:6] is the sub-list for method output_type
-	6, // [6:6] is the sub-list for method input_type
-	6, // [6:6] is the sub-list for extension type_name
-	6, // [6:6] is the sub-list for extension extendee
-	0, // [0:6] is the sub-list for field type_name
+	1, // 1: anovel.genai.v0.Generation.failure_class:type_name -> anovel.genai.v0.GenerationFailure
+	4, // 2: anovel.genai.v0.Generation.created_at:type_name -> google.protobuf.Timestamp
+	4, // 3: anovel.genai.v0.Generation.updated_at:type_name -> google.protobuf.Timestamp
+	4, // 4: anovel.genai.v0.Generation.settled_at:type_name -> google.protobuf.Timestamp
+	4, // 5: anovel.genai.v0.Generation.expires_at:type_name -> google.protobuf.Timestamp
+	3, // 6: anovel.genai.v0.Generation.attempts:type_name -> anovel.genai.v0.GenerationAttempt
+	7, // [7:7] is the sub-list for method output_type
+	7, // [7:7] is the sub-list for method input_type
+	7, // [7:7] is the sub-list for extension type_name
+	7, // [7:7] is the sub-list for extension extendee
+	0, // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_anovel_genai_v0_generation_proto_init() }
@@ -366,7 +454,7 @@ func file_anovel_genai_v0_generation_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_anovel_genai_v0_generation_proto_rawDesc), len(file_anovel_genai_v0_generation_proto_rawDesc)),
-			NumEnums:      1,
+			NumEnums:      2,
 			NumMessages:   2,
 			NumExtensions: 0,
 			NumServices:   0,

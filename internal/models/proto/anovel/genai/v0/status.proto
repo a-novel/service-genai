@@ -41,11 +41,10 @@ message DependencyHealth {
 // accept their call, and how long the one waiting longest has waited. The age tells a queue absorbing
 // a burst from a stalled one, which the count alone cannot.
 message QueueDepth {
-  // pending is the number of generations waiting for the provider to accept their call: due to
-  // start, retrying a refused start, or with a start in flight.
+  // pending is the number of generations waiting for the provider to accept their call.
   int64 pending = 1;
-  // oldest_pending_age is how long the one waiting longest has waited, from its submission or
-  // requeue, or from its attempt's first start when it retries one. Zero when nothing is pending.
+  // oldest_pending_age is how long the one waiting longest has waited since its start. Zero when
+  // nothing is pending.
   google.protobuf.Duration oldest_pending_age = 3;
 
   // Reserved so the retired float form of the age in seconds is never reused.

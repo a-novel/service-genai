@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package anovel.genai.v0;
+
+import "google/protobuf/duration.proto";
+
+// UsageSummaryService reports what one owner consumes, as the submit's caps count it.
+service UsageSummaryService {
+  // Returns an owner's generations in flight for a purpose, and the tokens they consumed over each
+  // window. A caller shows its user the room left under the caps it sends. Returns INVALID_ARGUMENT
+  // for an owner id that is not a UUID, an undeclared purpose, or windows outside the caps' bounds.
+  rpc UsageSummary(UsageSummaryRequest) returns (UsageSummaryResponse);
+}
+
+// UsageSummaryRequest names the owner, the purpose and the windows to sum.
+message UsageSummaryRequest {
+  // OwnerID is the user to report on, formatted as a UUID.
+  string owner_id = 1;
+  // Purpose is the purpose to report on, declared in the service's caps file.
+  string purpose = 2;
+  // Windows are how far back each sum reaches, as caps windows: at most 10, each of a distinct
+  // duration above zero and at most 8760 hours.
+  repeated google.protobuf.Duration windows = 3;
+}
+
+// UsageSummaryResponse reports an owner's usage of one purpose.
+message UsageSummaryResponse {
+  // Live is how many generations of the purpose the owner has in flight, as a caps concurrency
+  // counts them: pending, running, or failed with an unknown outcome within the last 15 minutes.
+  int64 live = 1;
+  // Windows holds the tokens consumed over each requested window, in the request's order.
+  repeated UsageSummaryWindow windows = 2;
+}
+
+// UsageSummaryWindow is what an owner consumed for a purpose over one rolling window.
+message UsageSummaryWindow {
+  // Duration is how far back the window reaches, as requested.
+  google.protobuf.Duration duration = 1;
+  // InputTokens is the input tokens consumed in the window, cached ones included.
+  int64 input_tokens = 2;
+  // OutputTokens is the output tokens consumed in the window, reasoning ones included.
+  int64 output_tokens = 3;
+}
