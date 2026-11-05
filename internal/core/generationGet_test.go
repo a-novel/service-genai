@@ -252,7 +252,6 @@ func TestGenerationGet(t *testing.T) {
 			testConnectors(t),
 			transactiontest.NewTransactor(),
 			testCaps,
-			config.Cap{},
 		)
 
 		submitted, err := submit.Exec(t.Context(), submitRequest(func(request *core.GenerationSubmitRequest) {

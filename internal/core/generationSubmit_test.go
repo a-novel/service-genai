@@ -95,12 +95,6 @@ var testCaps = config.Caps{
 	},
 }
 
-// testCeiling bounds a user under caps of their own: 3 live generations and a cap over 720h.
-var testCeiling = config.Cap{
-	Concurrency: new(3),
-	Windows:     map[time.Duration]config.Limit{720 * time.Hour: {OutputTokens: new(int64(500))}},
-}
-
 func TestGenerationSubmit(t *testing.T) {
 	t.Parallel()
 
@@ -143,9 +137,6 @@ func TestGenerationSubmit(t *testing.T) {
 		{purpose: true, windows: []time.Duration{5 * time.Hour}, used: []*dao.GenerationUsageTotals{{}}},
 		{windows: []time.Duration{720 * time.Hour}, used: []*dao.GenerationUsageTotals{{}}},
 	}
-
-	// underCeiling is the ceiling's admission of a user with room left under it.
-	underCeiling := usageMock{windows: []time.Duration{720 * time.Hour}, used: []*dao.GenerationUsageTotals{{}}}
 
 	testCases := []struct {
 		name string
@@ -362,8 +353,8 @@ func TestGenerationSubmit(t *testing.T) {
 			expectErr: core.ErrUsageCapReached,
 		},
 		{
-			// The caller's caps limit the purpose, and the ceiling every purpose: the caps file's tier is
-			// ignored, a forbidden one included.
+			// The caller owns every limit: its caps alone limit the purpose, nothing counts the user's
+			// other purposes, and the caps file's tier is ignored, a forbidden one included.
 			name: "Success/Caps",
 
 			request: submitRequest(func(request *core.GenerationSubmitRequest) {
@@ -374,26 +365,24 @@ func TestGenerationSubmit(t *testing.T) {
 				}
 			}),
 			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: startingGeneration(0), Created: true}},
-			live:    alone,
+			live:    []liveMock{{purpose: true, count: 1}},
 			usage: []usageMock{
 				{purpose: true, windows: []time.Duration{time.Hour}, used: []*dao.GenerationUsageTotals{{InputTokens: 99}}},
-				underCeiling,
 			},
 
 			expectCreated: true,
 		},
 		{
-			// Empty caps set no limit on the purpose: the ceiling alone applies.
+			// Empty caps limit nothing: admission reads no count and no sum.
 			name: "Success/EmptyCaps",
 
 			request: submitRequest(withCaps(&core.GenerationCaps{})),
 			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: startingGeneration(0), Created: true}},
-			live:    []liveMock{{count: 3}},
-			usage:   []usageMock{underCeiling},
 
 			expectCreated: true,
 		},
 		{
+			// The count includes the generations whose call may still run, within the hold.
 			name: "Error/CapsConcurrencyReached",
 
 			request:       submitRequest(withCaps(&core.GenerationCaps{Concurrency: new(1)})),
@@ -422,36 +411,6 @@ func TestGenerationSubmit(t *testing.T) {
 			expectRefusal:    true,
 			expectScope:      purposeScope,
 			expectLimit:      "output tokens over 5h",
-			expectRetryAfter: time.Hour,
-
-			expectErr: core.ErrUsageCapReached,
-		},
-		{
-			// No caps exceed the ceiling.
-			name: "Error/CeilingConcurrencyReached",
-
-			request:       submitRequest(withCaps(&core.GenerationCaps{Concurrency: new(10)})),
-			daoMock:       &daoMock{resp: &dao.GenerationSubmitResult{Generation: startingGeneration(0), Created: true}},
-			live:          []liveMock{{purpose: true, count: 1}, {count: 4}},
-			expectRefusal: true,
-			expectScope:   "ceiling",
-			expectLimit:   "concurrency 3",
-
-			expectErr: core.ErrUsageCapReached,
-		},
-		{
-			name: "Error/CeilingWindowReached",
-
-			request: submitRequest(withCaps(&core.GenerationCaps{})),
-			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: startingGeneration(0), Created: true}},
-			live:    []liveMock{{count: 1}},
-			usage: []usageMock{{
-				windows: []time.Duration{720 * time.Hour},
-				used:    []*dao.GenerationUsageTotals{{OutputTokens: 500, OldestAt: new(time.Now().Add(-719 * time.Hour))}},
-			}},
-			expectRefusal:    true,
-			expectScope:      "ceiling",
-			expectLimit:      "output tokens over 720h",
 			expectRetryAfter: time.Hour,
 
 			expectErr: core.ErrUsageCapReached,
@@ -679,8 +638,7 @@ func TestGenerationSubmit(t *testing.T) {
 			admitted := !testCase.expectRefusal
 			created := testCase.daoMock != nil && testCase.daoMock.resp != nil && testCase.daoMock.resp.Created
 
-			// A purpose scope reads the request's purpose; the global one and the ceiling read every
-			// purpose.
+			// A purpose scope reads the request's purpose; the global one reads every purpose.
 			purpose := &testCase.request.Purpose
 
 			for _, live := range testCase.live {
@@ -747,7 +705,6 @@ func TestGenerationSubmit(t *testing.T) {
 				testConnectors(t),
 				transactiontest.NewTransactor(),
 				testCaps,
-				testCeiling,
 			)
 
 			result, err := service.Exec(trace.ContextWithSpanContext(t.Context(), testCaller), testCase.request)
@@ -895,7 +852,6 @@ func submittedKey(t *testing.T, request *core.GenerationSubmitRequest) []byte {
 		testConnectors(t),
 		transactiontest.NewTransactor(),
 		testCaps,
-		testCeiling,
 	)
 
 	_, err := service.Exec(t.Context(), request)

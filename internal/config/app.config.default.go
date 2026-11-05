@@ -74,8 +74,7 @@ var AppPresetDefault = App{
 		BaseURL:       env.OpenAIBaseURL,
 		WebhookSecret: env.OpenAIWebhookSecret,
 	},
-	Caps:    CapsDefault,
-	Ceiling: CeilingDefault,
+	Caps: CapsDefault,
 
 	Otel:       OtelPresetDefault,
 	Logger:     lo.Ternary[logging.Log](!exportsOTLP, LoggerDev, LoggerProd),

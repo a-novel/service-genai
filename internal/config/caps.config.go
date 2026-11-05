@@ -172,18 +172,3 @@ func (capOfTier Cap) validate() error {
 
 	return nil
 }
-
-// validateCeiling refuses a ceiling that leaves one user unbounded: like the global default tier, it
-// sets a concurrency unless it allows no usage.
-func (capOfTier Cap) validateCeiling() error {
-	err := capOfTier.validate()
-	if err != nil {
-		return err
-	}
-
-	if capOfTier.Concurrency == nil && !capOfTier.Forbidden {
-		return fmt.Errorf("%w: no concurrency", ErrInvalidConfig)
-	}
-
-	return nil
-}

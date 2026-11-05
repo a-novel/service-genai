@@ -1,7 +1,0 @@
-# The ceiling bounds one user across every purpose when a submit carries caps of its own, whatever
-# those caps allow. Starting values, to be tuned from measured usage.
-concurrency: 8 # Generations of every purpose one user may have in flight at once.
-windows:
-  720h: # A rolling window, as a Go duration.
-    inputTokens: 500000000
-    outputTokens: 50000000

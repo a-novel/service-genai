@@ -16,7 +16,6 @@ func TestApp(t *testing.T) {
 		Generations: config.Generations{Retention: time.Hour},
 		Sweep:       config.Sweep{Interval: time.Minute, BatchSize: 50, Concurrency: 8},
 		Caps:        config.CapsDefault,
-		Ceiling:     config.CeilingDefault,
 	}
 
 	testCases := []struct {
@@ -28,12 +27,6 @@ func TestApp(t *testing.T) {
 	}{
 		{
 			name: "Success",
-		},
-		{
-			// A ceiling that allows nothing refuses every submit with caps: a deliberate policy.
-			name: "Success/CeilingForbidden",
-
-			adjust: func(app *config.App) { app.Ceiling = config.Cap{Forbidden: true} },
 		},
 		{
 			// The purge would end an unknown outcome's hold on its owner's slot early.
@@ -70,25 +63,6 @@ func TestApp(t *testing.T) {
 			name: "Error/Caps",
 
 			adjust: func(app *config.App) { app.Caps = config.Caps{} },
-
-			expectErr: config.ErrInvalidConfig,
-		},
-		{
-			// A user under caps of their own would run as many generations at once as they like.
-			name: "Error/CeilingWithoutConcurrency",
-
-			adjust: func(app *config.App) {
-				app.Ceiling = config.Cap{Windows: map[time.Duration]config.Limit{time.Hour: {InputTokens: new(int64(1))}}}
-			},
-
-			expectErr: config.ErrInvalidConfig,
-		},
-		{
-			name: "Error/CeilingLimitsNothing",
-
-			adjust: func(app *config.App) {
-				app.Ceiling = config.Cap{Concurrency: new(1), Windows: map[time.Duration]config.Limit{time.Hour: {}}}
-			},
 
 			expectErr: config.ErrInvalidConfig,
 		},

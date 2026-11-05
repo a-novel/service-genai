@@ -32,7 +32,7 @@ var ErrUsageCapReached = errors.New("usage cap reached")
 
 // A UsageCapError refuses a submit past one of the limits it answers to. It wraps [ErrUsageCapReached].
 type UsageCapError struct {
-	// Scope names the limits that refused: `purpose "<name>"`, `ceiling` or `global`.
+	// Scope names the limits that refused: `purpose "<name>"`, or `global` for a submit without caps.
 	Scope string
 	// Limit names the limit that refused, such as `concurrency 2` or `input tokens over 5h`.
 	Limit string
@@ -99,8 +99,8 @@ type GenerationSubmitRequest struct {
 	// Stream creates the provider call in streaming mode, so [GenerationStream] can read its events
 	// while it runs. The provider must offer the Streaming mode.
 	Stream bool
-	// Caps are the limits the caller sets for its user on the purpose. Set, the submit answers to them
-	// and to the ceiling, and UserTier is ignored. Nil answers to the caps file.
+	// Caps are the limits the caller sets for its user on the purpose. Set, they alone limit the
+	// submit: the caller owns every limit, and UserTier is ignored. Nil answers to the caps file.
 	Caps *GenerationCaps
 }
 
@@ -151,7 +151,6 @@ type GenerationSubmit struct {
 	registry       connectors.Registry
 	transactor     transaction.Transactor
 	caps           config.Caps
-	ceiling        config.Cap
 }
 
 // NewGenerationSubmit returns a new GenerationSubmit service.
@@ -164,7 +163,6 @@ func NewGenerationSubmit(
 	registry connectors.Registry,
 	transactor transaction.Transactor,
 	caps config.Caps,
-	ceiling config.Cap,
 ) *GenerationSubmit {
 	return &GenerationSubmit{
 		dao:            dao,
@@ -175,7 +173,6 @@ func NewGenerationSubmit(
 		registry:       registry,
 		transactor:     transactor,
 		caps:           caps,
-		ceiling:        ceiling,
 	}
 }
 
@@ -329,7 +326,7 @@ func (service *GenerationSubmit) validateRequest(request *GenerationSubmitReques
 
 // admissionScope is one set of limits a submit answers to.
 type admissionScope struct {
-	// name says which limits refused: `purpose "<name>"`, `ceiling` or `global`.
+	// name says which limits refused: `purpose "<name>"` or `global`.
 	name string
 	// purpose restricts the scope to one purpose; nil covers every purpose.
 	purpose *string
@@ -339,8 +336,8 @@ type admissionScope struct {
 	unknownHold time.Duration
 }
 
-// admissionScopes lists the limits a submit answers to, purpose first. With caps, the caller's caps
-// limit the purpose and the ceiling every purpose. Without, the caps file's tier limits both.
+// admissionScopes lists the limits a submit answers to. With caps, the caller owns every limit: its
+// caps alone limit the purpose. Without, the caps file's tier limits the purpose, then every purpose.
 //
 // A generation whose call may still run untracked counts toward its purpose's concurrency only, so
 // an uncertain call never holds back the user's other purposes.
@@ -368,7 +365,7 @@ func (service *GenerationSubmit) admissionScopes(request *GenerationSubmitReques
 		}
 	}
 
-	return []admissionScope{purpose, {name: "ceiling", limits: service.ceiling}}
+	return []admissionScope{purpose}
 }
 
 // admit refuses a newly created generation whose user already reached one of its limits. It checks

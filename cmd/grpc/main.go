@@ -104,7 +104,6 @@ func main() {
 		registry,
 		transactor,
 		cfg.Caps,
-		cfg.Ceiling,
 	)
 	serviceGet := core.NewGenerationGet(daoGet, daoAttemptList, serviceCheck)
 	serviceCancel := core.NewGenerationCancel(daoRequestCancel, daoGet, daoAttemptList, serviceCheck, cfg.Generations)

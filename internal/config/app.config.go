@@ -90,8 +90,6 @@ type App struct {
 	OpenAI OpenAI `json:"openAi" yaml:"openAi"`
 	// Caps is the usage policy a submit without caps of its own answers to.
 	Caps Caps `json:"caps" yaml:"caps"`
-	// Ceiling bounds one user across every purpose when a submit carries caps of its own.
-	Ceiling Cap `json:"ceiling" yaml:"ceiling"`
 	// Otel configures the OpenTelemetry exporter for traces and metrics.
 	Otel otel.Config `json:"otel" yaml:"otel"`
 	// Logger is the base application logger: checks log provider failures to it, and the REST handlers
@@ -121,11 +119,6 @@ func (app App) Validate() error {
 	err := app.Caps.Validate()
 	if err != nil {
 		return fmt.Errorf("caps: %w", err)
-	}
-
-	err = app.Ceiling.validateCeiling()
-	if err != nil {
-		return fmt.Errorf("ceiling: %w", err)
 	}
 
 	return nil
