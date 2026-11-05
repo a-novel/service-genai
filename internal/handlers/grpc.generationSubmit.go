@@ -5,8 +5,12 @@ import (
 	"errors"
 
 	"github.com/google/uuid"
+	"github.com/samber/lo"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/protoadapt"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	"github.com/a-novel-kit/golib/grpcf"
 	"github.com/a-novel-kit/golib/otel"
@@ -57,6 +61,7 @@ func (handler *GrpcGenerationSubmit) GenerationSubmit(
 		Payload:  request.GetPayload(),
 		Variant:  request.GetVariant(),
 		Stream:   request.GetStream(),
+		Caps:     newCoreGenerationCaps(request.GetCaps()),
 	}
 
 	result, err := handler.service.Exec(ctx, serviceRequest)
@@ -66,7 +71,13 @@ func (handler *GrpcGenerationSubmit) GenerationSubmit(
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	// The message names the cap, so the caller can tell its user which limit was reached.
+	// The message names the cap, so the caller can tell its user which limit was reached. The details
+	// say it in fields a caller reads without parsing the message.
+	var refusal *core.UsageCapError
+	if errors.As(err, &refusal) {
+		return nil, newGrpcUsageCapStatus(refusal)
+	}
+
 	if errors.Is(err, core.ErrUsageCapReached) {
 		return nil, status.Error(codes.ResourceExhausted, err.Error())
 	}
@@ -83,4 +94,51 @@ func (handler *GrpcGenerationSubmit) GenerationSubmit(
 		Generation: NewGrpcGeneration(result.Generation),
 		Created:    result.Created,
 	}, nil
+}
+
+// newCoreGenerationCaps converts the caps a caller sent to their core form. Absent caps stay nil, so
+// the submit answers to the caps file. Core validation refuses a window without a duration.
+func newCoreGenerationCaps(caps *genaiv0.GenerationCaps) *core.GenerationCaps {
+	if caps == nil {
+		return nil
+	}
+
+	converted := &core.GenerationCaps{Windows: make([]core.GenerationCapWindow, len(caps.GetWindows()))}
+
+	if caps.Concurrency != nil {
+		converted.Concurrency = lo.ToPtr(int(caps.GetConcurrency()))
+	}
+
+	for index, window := range caps.GetWindows() {
+		converted.Windows[index] = core.GenerationCapWindow{
+			Duration:     window.GetDuration().AsDuration(),
+			InputTokens:  window.InputTokens,
+			OutputTokens: window.OutputTokens,
+		}
+	}
+
+	return converted
+}
+
+// newGrpcUsageCapStatus answers a refusal with RESOURCE_EXHAUSTED and its message, a
+// google.rpc.QuotaFailure naming the scope and the limit that refused, and a google.rpc.RetryInfo when
+// the refusing window frees usage at a known time.
+func newGrpcUsageCapStatus(refusal *core.UsageCapError) error {
+	details := []protoadapt.MessageV1{&errdetails.QuotaFailure{
+		Violations: []*errdetails.QuotaFailure_Violation{{Subject: refusal.Scope, Description: refusal.Limit}},
+	}}
+
+	if refusal.RetryAfter > 0 {
+		details = append(details, &errdetails.RetryInfo{RetryDelay: durationpb.New(refusal.RetryAfter)})
+	}
+
+	refused := status.New(codes.ResourceExhausted, refusal.Error())
+
+	// The details only fail to marshal on a bug: the caller still reads the limit in the message.
+	detailed, err := refused.WithDetails(details...)
+	if err != nil {
+		return refused.Err()
+	}
+
+	return detailed.Err()
 }

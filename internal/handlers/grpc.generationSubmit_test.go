@@ -4,12 +4,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	"github.com/a-novel/service-genai/internal/core"
 	"github.com/a-novel/service-genai/internal/handlers"
@@ -38,10 +41,20 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 
 	payload := []byte(`{"model": "a-model", "input": "Continue."}`)
 
+	// refusal is a window's refusal, which frees usage in an hour.
+	refusal := &core.UsageCapError{
+		Scope:      `purpose "studio.generation"`,
+		Limit:      "input tokens over 5h",
+		RetryAfter: time.Hour,
+		Reason:     `purpose "studio.generation" over 5h0m0s`,
+	}
+
 	testCases := []struct {
 		name string
 
 		request *genaiv0.GenerationSubmitRequest
+		// expectCaps are the caps the service receives.
+		expectCaps *core.GenerationCaps
 
 		serviceMock *serviceMock
 
@@ -51,6 +64,9 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 		expectMessage string
 		// expectCause is the error the fault wraps, whose type the call's span records.
 		expectCause error
+		// expectQuota is the limit a refusal's details name, and expectRetry when its window frees usage.
+		expectQuota *errdetails.QuotaFailure_Violation
+		expectRetry time.Duration
 	}{
 		{
 			name: "Success",
@@ -91,6 +107,49 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 			expect: &genaiv0.GenerationSubmitResponse{Generation: testGrpcGeneration()},
 		},
 		{
+			// The caller's caps reach the service as sent: a limit left out stays unset.
+			name: "Success/Caps",
+
+			request: &genaiv0.GenerationSubmitRequest{
+				OwnerId: testOwnerID, Purpose: "studio.generation", Provider: "openai", Payload: payload,
+				Caps: &genaiv0.GenerationCaps{
+					Concurrency: new(int32(2)),
+					Windows: []*genaiv0.GenerationCapWindow{
+						{Duration: durationpb.New(5 * time.Hour), InputTokens: new(int64(1000))},
+						{Duration: durationpb.New(720 * time.Hour), OutputTokens: new(int64(50))},
+					},
+				},
+			},
+			expectCaps: &core.GenerationCaps{
+				Concurrency: new(2),
+				Windows: []core.GenerationCapWindow{
+					{Duration: 5 * time.Hour, InputTokens: new(int64(1000))},
+					{Duration: 720 * time.Hour, OutputTokens: new(int64(50))},
+				},
+			},
+			serviceMock: &serviceMock{resp: &core.GenerationSubmitResult{
+				Generation: testGeneration(), Created: true,
+			}},
+
+			expect: &genaiv0.GenerationSubmitResponse{Generation: testGrpcGeneration(), Created: true},
+		},
+		{
+			// Empty caps limit nothing, which is not the same as sending none: no caps answer to the caps
+			// file.
+			name: "Success/EmptyCaps",
+
+			request: &genaiv0.GenerationSubmitRequest{
+				OwnerId: testOwnerID, Purpose: "studio.generation", Provider: "openai", Payload: payload,
+				Caps: &genaiv0.GenerationCaps{},
+			},
+			expectCaps: &core.GenerationCaps{Windows: []core.GenerationCapWindow{}},
+			serviceMock: &serviceMock{resp: &core.GenerationSubmitResult{
+				Generation: testGeneration(), Created: true,
+			}},
+
+			expect: &genaiv0.GenerationSubmitResponse{Generation: testGrpcGeneration(), Created: true},
+		},
+		{
 			name: "Error/InvalidOwnerID",
 
 			request: &genaiv0.GenerationSubmitRequest{
@@ -122,6 +181,40 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 
 			expectStatus:  codes.ResourceExhausted,
 			expectMessage: "global over 720h0m0s",
+		},
+		{
+			// The details name the limit in fields, and tell when the window frees usage.
+			name: "Error/UsageCapDetails",
+
+			request: &genaiv0.GenerationSubmitRequest{
+				OwnerId: testOwnerID, Purpose: "studio.generation", Provider: "openai", Payload: payload,
+			},
+			serviceMock: &serviceMock{err: refusal},
+
+			expectStatus:  codes.ResourceExhausted,
+			expectMessage: `usage cap reached: purpose "studio.generation" over 5h0m0s`,
+			expectQuota: &errdetails.QuotaFailure_Violation{
+				Subject: `purpose "studio.generation"`, Description: "input tokens over 5h",
+			},
+			expectRetry: time.Hour,
+		},
+		{
+			// A concurrency frees at no known time: the refusal carries no retry delay.
+			name: "Error/UsageCapDetailsNoRetry",
+
+			request: &genaiv0.GenerationSubmitRequest{
+				OwnerId: testOwnerID, Purpose: "studio.generation", Provider: "openai", Payload: payload,
+			},
+			serviceMock: &serviceMock{err: &core.UsageCapError{
+				Scope: `purpose "studio.generation"`, Limit: "concurrency 2",
+				Reason: `purpose "studio.generation" concurrency: 2 generations already in flight`,
+			}},
+
+			expectStatus:  codes.ResourceExhausted,
+			expectMessage: `usage cap reached: purpose "studio.generation" concurrency: 2 generations already in flight`,
+			expectQuota: &errdetails.QuotaFailure_Violation{
+				Subject: `purpose "studio.generation"`, Description: "concurrency 2",
+			},
 		},
 		{
 			name: "Error/ModeUnsupported",
@@ -162,6 +255,7 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 					Payload:  json.RawMessage(testCase.request.GetPayload()),
 					Variant:  testCase.request.GetVariant(),
 					Stream:   testCase.request.GetStream(),
+					Caps:     testCase.expectCaps,
 				}
 
 				service.EXPECT().Exec(mock.Anything, serviceRequest).Return(testCase.serviceMock.resp, testCase.serviceMock.err)
@@ -182,6 +276,34 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 			}
 
 			require.Equal(t, testCase.expect, res)
+
+			var (
+				quota *errdetails.QuotaFailure
+				retry *errdetails.RetryInfo
+			)
+
+			for _, detail := range resSt.Details() {
+				switch detail := detail.(type) {
+				case *errdetails.QuotaFailure:
+					quota = detail
+				case *errdetails.RetryInfo:
+					retry = detail
+				}
+			}
+
+			if testCase.expectQuota == nil {
+				require.Nil(t, quota)
+			} else {
+				require.Len(t, quota.GetViolations(), 1)
+				require.Equal(t, testCase.expectQuota.GetSubject(), quota.GetViolations()[0].GetSubject())
+				require.Equal(t, testCase.expectQuota.GetDescription(), quota.GetViolations()[0].GetDescription())
+			}
+
+			if testCase.expectRetry == 0 {
+				require.Nil(t, retry)
+			} else {
+				require.Equal(t, testCase.expectRetry, retry.GetRetryDelay().AsDuration())
+			}
 
 			service.AssertExpectations(t)
 		})

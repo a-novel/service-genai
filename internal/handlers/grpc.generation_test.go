@@ -52,12 +52,13 @@ func TestNewGrpcGeneration(t *testing.T) {
 		},
 		{
 			// A failure still returns every answer the provider gave, and with them what each consumed.
+			// Its class tells the caller whether a resend may succeed.
 			name: "Success/FailedWithAttempts",
 
 			generation: &core.Generation{
 				ID: uuid.MustParse(testGenerationID), OwnerID: uuid.MustParse(testOwnerID),
 				Purpose: "studio.generation", Provider: "openai",
-				Status: core.GenerationStatusFailed, Error: &message,
+				Status: core.GenerationStatusFailed, Error: &message, Failure: new(core.GenerationFailureProviderFailed),
 				Attempts: []*core.GenerationAttempt{
 					{Number: 1, Response: json.RawMessage(failedResponse)},
 					{Number: 2, Response: json.RawMessage(failedResponse)},
@@ -68,6 +69,7 @@ func TestNewGrpcGeneration(t *testing.T) {
 			expect: &genaiv0.Generation{
 				Id: testGenerationID, OwnerId: testOwnerID, Purpose: "studio.generation", Provider: "openai",
 				Status: genaiv0.GenerationStatus_GENERATION_STATUS_FAILED, Error: message,
+				FailureClass: genaiv0.GenerationFailure_GENERATION_FAILURE_PROVIDER_FAILED,
 				Attempts: []*genaiv0.GenerationAttempt{
 					{Number: 1, Response: []byte(failedResponse)},
 					{Number: 2, Response: []byte(failedResponse)},
@@ -79,6 +81,24 @@ func TestNewGrpcGeneration(t *testing.T) {
 			},
 		},
 	}
+
+	// Every class a failure can carry reaches the wire: a missing one would read as unclassified.
+	t.Run("Success/FailureClasses", func(t *testing.T) {
+		t.Parallel()
+
+		classes := map[core.GenerationFailure]genaiv0.GenerationFailure{
+			core.GenerationFailureRejected:       genaiv0.GenerationFailure_GENERATION_FAILURE_REJECTED,
+			core.GenerationFailureProviderFailed: genaiv0.GenerationFailure_GENERATION_FAILURE_PROVIDER_FAILED,
+			core.GenerationFailureNotStarted:     genaiv0.GenerationFailure_GENERATION_FAILURE_NOT_STARTED,
+			core.GenerationFailureOutcomeUnknown: genaiv0.GenerationFailure_GENERATION_FAILURE_OUTCOME_UNKNOWN,
+		}
+
+		for class, expected := range classes {
+			generation := &core.Generation{Status: core.GenerationStatusFailed, Failure: &class}
+
+			require.Equal(t, expected, handlers.NewGrpcGeneration(generation).GetFailureClass(), class)
+		}
+	})
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {

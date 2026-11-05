@@ -109,6 +109,7 @@ func main() {
 	serviceCancel := core.NewGenerationCancel(daoRequestCancel, daoGet, daoAttemptList, serviceCheck, cfg.Generations)
 	serviceStream := core.NewGenerationStream(daoGet, registry)
 	serviceQueueDepth := core.NewGenerationQueueDepth(daoQueueDepth)
+	serviceUsageSummary := core.NewUsageSummary(daoCountLive, daoUsageSum, cfg.Caps)
 
 	// =================================================================================================================
 	// HANDLERS
@@ -119,6 +120,7 @@ func main() {
 	handlerGet := handlers.NewGrpcGenerationGet(serviceGet)
 	handlerCancel := handlers.NewGrpcGenerationCancel(serviceCancel)
 	handlerStream := handlers.NewGrpcGenerationStream(serviceStream)
+	handlerUsageSummary := handlers.NewGrpcUsageSummary(serviceUsageSummary)
 
 	// =================================================================================================================
 	// SERVER
@@ -140,6 +142,7 @@ func main() {
 	genaiv0.RegisterGenerationGetServiceServer(server, handlerGet)
 	genaiv0.RegisterGenerationCancelServiceServer(server, handlerCancel)
 	genaiv0.RegisterGenerationStreamServiceServer(server, handlerStream)
+	genaiv0.RegisterUsageSummaryServiceServer(server, handlerUsageSummary)
 
 	reflection.Register(server)
 

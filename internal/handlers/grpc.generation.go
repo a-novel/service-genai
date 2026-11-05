@@ -18,18 +18,28 @@ var generationStatuses = map[core.GenerationStatus]genaiv0.GenerationStatus{
 	core.GenerationStatusCancelled: genaiv0.GenerationStatus_GENERATION_STATUS_CANCELLED,
 }
 
+// generationFailures maps the failure classes onto the wire enum. A generation without one, or with a
+// class this service has not published, reports unspecified.
+var generationFailures = map[core.GenerationFailure]genaiv0.GenerationFailure{
+	core.GenerationFailureRejected:       genaiv0.GenerationFailure_GENERATION_FAILURE_REJECTED,
+	core.GenerationFailureProviderFailed: genaiv0.GenerationFailure_GENERATION_FAILURE_PROVIDER_FAILED,
+	core.GenerationFailureNotStarted:     genaiv0.GenerationFailure_GENERATION_FAILURE_NOT_STARTED,
+	core.GenerationFailureOutcomeUnknown: genaiv0.GenerationFailure_GENERATION_FAILURE_OUTCOME_UNKNOWN,
+}
+
 // NewGrpcGeneration converts a stored generation to its wire form.
 func NewGrpcGeneration(generation *core.Generation) *genaiv0.Generation {
 	message := &genaiv0.Generation{
-		Id:        generation.ID.String(),
-		OwnerId:   generation.OwnerID.String(),
-		Purpose:   generation.Purpose,
-		Provider:  generation.Provider,
-		Error:     lo.FromPtr(generation.Error),
-		Status:    generationStatuses[generation.Status],
-		Attempts:  make([]*genaiv0.GenerationAttempt, len(generation.Attempts)),
-		CreatedAt: timestamppb.New(generation.CreatedAt),
-		UpdatedAt: timestamppb.New(generation.UpdatedAt),
+		Id:           generation.ID.String(),
+		OwnerId:      generation.OwnerID.String(),
+		Purpose:      generation.Purpose,
+		Provider:     generation.Provider,
+		Error:        lo.FromPtr(generation.Error),
+		FailureClass: generationFailures[lo.FromPtr(generation.Failure)],
+		Status:       generationStatuses[generation.Status],
+		Attempts:     make([]*genaiv0.GenerationAttempt, len(generation.Attempts)),
+		CreatedAt:    timestamppb.New(generation.CreatedAt),
+		UpdatedAt:    timestamppb.New(generation.UpdatedAt),
 	}
 
 	if generation.SettledAt != nil {
