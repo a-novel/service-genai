@@ -44,7 +44,7 @@ Callers are other services, which reach the generation API over **gRPC** on the 
 
 The service runs as published OCI images plus a PostgreSQL database. All state lives in Postgres, so the server scales to as many replicas as you need. Replicas coordinate through conditional writes on each generation row.
 
-> **OpenTofu modules are the planned canonical deployment path.** Until they land, deploy the images with any container orchestrator — the composition below is the reference for which images to run, how they wire together, and the environment they expect.
+> **OpenTofu modules are the planned canonical deployment path.** Until they land, deploy the images with any container orchestrator. The composition below is the reference for which images to run, how they wire together, and the environment they expect.
 
 | Image                           | Role                                                                        |
 | ------------------------------- | --------------------------------------------------------------------------- |
@@ -278,9 +278,9 @@ import (
 func main() {
 	ctx := context.Background()
 
-	// The server has no application-layer auth, so transport security alone protects it from a
-	// network adversary. In production, replace insecure.NewCredentials() with a TLS or mTLS
-	// credential.
+	// A local stack without a token issuer takes plaintext calls with no service token. In
+	// production, dial with the options of golib's grpcf.ServiceTokenCredentialsProvider: it sends
+	// the caller's service token with every call, over TLS once its TLS field is set.
 	client, err := servicegenai.NewClient(
 		"service-genai:8080",
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
