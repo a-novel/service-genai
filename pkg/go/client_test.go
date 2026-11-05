@@ -363,6 +363,14 @@ func TestClient(t *testing.T) {
 			require.Equal(t, `purpose "studio.generation"`, quota.GetViolations()[0].GetSubject())
 			require.Equal(t, capsCase.expectLimit, quota.GetViolations()[0].GetDescription())
 		}
+
+		// The caller owns every limit: empty caps limit nothing.
+		unlimited := submitRequest(owner)
+		unlimited.Caps = &servicegenai.GenerationCaps{}
+
+		created, err := client.GenerationSubmit(t.Context(), unlimited)
+		require.NoError(t, err)
+		require.True(t, created.GetCreated())
 	})
 
 	// The usage summary counts what the caps count, in the windows the caller names.

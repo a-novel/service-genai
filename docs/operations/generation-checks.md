@@ -47,7 +47,7 @@ The service never sends a call again. A generation settles on its first outcome 
 | A response larger than 24 MiB                                                             | The response is never read. The generation fails, `OUTCOME_UNKNOWN`, and holds its owner's slot in its purpose for 15 minutes.                                         |
 | An answer the database keeps refusing to record                                           | The generation fails without it, `PROVIDER_FAILED`, 2 hours and 10 minutes after the call's start, when a call that cannot be stopped is given up on too.              |
 
-A held slot covers a call the provider may still run while nothing tracks or meters it, so a resend cannot multiply that spend. The hold counts against the generation's purpose only: the ceiling, the global concurrency and the owner's other purposes stay free.
+A held slot covers a call the provider may still run while nothing tracks or meters it, so a resend cannot multiply that spend. The hold counts against the generation's purpose only: the global concurrency of a submit without caps and the owner's other purposes stay free.
 
 ## Deploying and recovering
 
