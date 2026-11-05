@@ -23,8 +23,8 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 	// Every request field reaches the request key: it is how a resend finds its generation. A new
 	// field must be mapped below and added to the key, or two different requests would share one.
 	keyFields := []string{"owner_id", "purpose", "provider", "payload", "variant", "stream"}
-	// user_tier selects the caps a submit answers to, and changes nothing about the call.
-	notKeyed := []string{"user_tier"}
+	// user_tier and caps select the limits a submit answers to, and change nothing about the call.
+	notKeyed := []string{"user_tier", "caps"}
 
 	fields := (&genaiv0.GenerationSubmitRequest{}).ProtoReflect().Descriptor().Fields()
 	for index := range fields.Len() {

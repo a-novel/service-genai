@@ -31,10 +31,17 @@ const (
 type GenerationSubmitServiceClient interface {
 	// Records a generation and starts its provider call. Resending the same request is a replay: it
 	// returns the generation already pending, running or succeeded, so the call is paid once. A
-	// request whose generation failed or was cancelled runs again from scratch. Returns
-	// INVALID_ARGUMENT with the reason for an invalid request, an undeclared purpose or an unknown
-	// provider included; UNIMPLEMENTED for a provider without the Async mode; and RESOURCE_EXHAUSTED,
-	// naming the limit, when the user already reached one.
+	// request whose generation failed or was cancelled runs again from scratch. This service never
+	// resends a call itself: the caller reads a failure's failure_class and decides whether to resend.
+	//
+	// Returns INVALID_ARGUMENT with the reason for an invalid request, an undeclared purpose or an
+	// unknown provider included; UNIMPLEMENTED for a provider without the Async mode; and
+	// RESOURCE_EXHAUSTED, naming the limit, when the user already reached one. That refusal carries a
+	// google.rpc.QuotaFailure with one violation: its subject names the limits that refused, such as
+	// `purpose "studio.generation"`, `ceiling` or `global`, and its description the limit, such as
+	// `concurrency 2` or `input tokens over 5h`. A window's refusal adds a google.rpc.RetryInfo when
+	// the window frees usage at a known time: its delay runs until the window's oldest usage leaves
+	// it.
 	GenerationSubmit(ctx context.Context, in *GenerationSubmitRequest, opts ...grpc.CallOption) (*GenerationSubmitResponse, error)
 }
 
@@ -65,10 +72,17 @@ func (c *generationSubmitServiceClient) GenerationSubmit(ctx context.Context, in
 type GenerationSubmitServiceServer interface {
 	// Records a generation and starts its provider call. Resending the same request is a replay: it
 	// returns the generation already pending, running or succeeded, so the call is paid once. A
-	// request whose generation failed or was cancelled runs again from scratch. Returns
-	// INVALID_ARGUMENT with the reason for an invalid request, an undeclared purpose or an unknown
-	// provider included; UNIMPLEMENTED for a provider without the Async mode; and RESOURCE_EXHAUSTED,
-	// naming the limit, when the user already reached one.
+	// request whose generation failed or was cancelled runs again from scratch. This service never
+	// resends a call itself: the caller reads a failure's failure_class and decides whether to resend.
+	//
+	// Returns INVALID_ARGUMENT with the reason for an invalid request, an undeclared purpose or an
+	// unknown provider included; UNIMPLEMENTED for a provider without the Async mode; and
+	// RESOURCE_EXHAUSTED, naming the limit, when the user already reached one. That refusal carries a
+	// google.rpc.QuotaFailure with one violation: its subject names the limits that refused, such as
+	// `purpose "studio.generation"`, `ceiling` or `global`, and its description the limit, such as
+	// `concurrency 2` or `input tokens over 5h`. A window's refusal adds a google.rpc.RetryInfo when
+	// the window frees usage at a known time: its delay runs until the window's oldest usage leaves
+	// it.
 	GenerationSubmit(context.Context, *GenerationSubmitRequest) (*GenerationSubmitResponse, error)
 	mustEmbedUnimplementedGenerationSubmitServiceServer()
 }

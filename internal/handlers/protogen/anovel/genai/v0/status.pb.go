@@ -130,11 +130,10 @@ func (x *DependencyHealth) GetStatus() DependencyStatus {
 // a burst from a stalled one, which the count alone cannot.
 type QueueDepth struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// pending is the number of generations waiting for the provider to accept their call: due to
-	// start, retrying a refused start, or with a start in flight.
+	// pending is the number of generations waiting for the provider to accept their call.
 	Pending int64 `protobuf:"varint,1,opt,name=pending,proto3" json:"pending,omitempty"`
-	// oldest_pending_age is how long the one waiting longest has waited, from its submission or
-	// requeue, or from its attempt's first start when it retries one. Zero when nothing is pending.
+	// oldest_pending_age is how long the one waiting longest has waited since its start. Zero when
+	// nothing is pending.
 	OldestPendingAge *durationpb.Duration `protobuf:"bytes,3,opt,name=oldest_pending_age,json=oldestPendingAge,proto3" json:"oldest_pending_age,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
