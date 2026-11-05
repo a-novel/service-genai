@@ -44,10 +44,11 @@ type GenerationCancelRequest struct {
 
 // A GenerationCancel stops a generation.
 //
-// One that never started is settled at once. One whose provider call is known is checked right
-// away, which cancels the call and settles it with the provider's answer: a cancelled call is not a
-// free one. One whose start is in flight is only marked, and the next check stops it. One already
-// settled is returned as it stands, so a cancel that lost a race or is retried still succeeds.
+// One whose provider call is known is checked right away, which cancels the call and settles it with
+// the provider's answer: a cancelled call is not a free one. One whose start is in flight is only
+// marked, and the submit sending it stops the call as soon as the provider accepts it. One already
+// settled is returned as it stands, so a cancel that lost a race or is retried still succeeds. One an
+// earlier release left with no start in flight is settled at once.
 type GenerationCancel struct {
 	dao            GenerationCancelDao
 	daoGet         GenerationCancelDaoGet

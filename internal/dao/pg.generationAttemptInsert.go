@@ -26,8 +26,8 @@ type GenerationAttemptInsertRequest struct {
 
 // PgGenerationAttemptInsert records the provider's answer to one attempt.
 //
-// Call it in the same transaction as the settle or requeue it belongs to: a transition without its
-// answer loses what the attempt consumed.
+// Call it in the same transaction as the settle it belongs to: a settle without its answer loses
+// what the attempt consumed.
 type PgGenerationAttemptInsert struct{}
 
 // NewPgGenerationAttemptInsert returns a new PgGenerationAttemptInsert dao.

@@ -1,6 +1,7 @@
 -- Fenced by the attempt, start and provider call the caller observed, so a check acting on an outdated
--- read cannot settle an attempt it never saw. The start matters on its own: a requeue or a restart
--- keeps the attempt number and clears the call, and only the start tells that state from the one read.
+-- read cannot settle an attempt it never saw. The start matters on its own for a generation an
+-- earlier release started again: that kept the attempt number and cleared the call, and only the
+-- start tells that state from the one read.
 --
 -- One instant serves every timestamp: two clock_timestamp() calls in one statement can differ, and
 -- the retention between settled_at and expires_at must be exact.
@@ -8,6 +9,7 @@ UPDATE generations
 SET
   status = ?3,
   error = ?4,
+  failure = ?8,
   settled_at = settle.at,
   expires_at = settle.at + make_interval(secs => ?5),
   outcome_unknown_at = CASE

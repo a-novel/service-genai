@@ -21,13 +21,20 @@ func TestPgGenerationUsageSum(t *testing.T) {
 	otherOwner := uuid.MustParse("00000000-0000-0000-0000-000000000002")
 	generation, analysis := "studio.generation", "studio.analysis"
 
+	// totals is what a case expects of one window: its sums, and how long ago its oldest record was
+	// written, zero when it holds none.
+	type totals struct {
+		input, output int64
+		oldest        time.Duration
+	}
+
 	testCases := []struct {
 		name string
 
 		purpose *string
 		windows []time.Duration
 
-		expect []*dao.GenerationUsageTotals
+		expect []totals
 	}{
 		{
 			// Within the hour: the recent generation and the recent analysis, not the old one.
@@ -35,7 +42,7 @@ func TestPgGenerationUsageSum(t *testing.T) {
 
 			windows: []time.Duration{time.Hour},
 
-			expect: []*dao.GenerationUsageTotals{{InputTokens: 300, OutputTokens: 30}},
+			expect: []totals{{input: 300, output: 30, oldest: 20 * time.Minute}},
 		},
 		{
 			name: "Success/OnePurpose",
@@ -43,7 +50,7 @@ func TestPgGenerationUsageSum(t *testing.T) {
 			purpose: &generation,
 			windows: []time.Duration{time.Hour},
 
-			expect: []*dao.GenerationUsageTotals{{InputTokens: 100, OutputTokens: 10}},
+			expect: []totals{{input: 100, output: 10, oldest: 10 * time.Minute}},
 		},
 		{
 			// The day reaches the old record too.
@@ -52,7 +59,7 @@ func TestPgGenerationUsageSum(t *testing.T) {
 			purpose: &generation,
 			windows: []time.Duration{24 * time.Hour},
 
-			expect: []*dao.GenerationUsageTotals{{InputTokens: 1100, OutputTokens: 110}},
+			expect: []totals{{input: 1100, output: 110, oldest: 2 * time.Hour}},
 		},
 		{
 			// The analysis is twenty minutes old.
@@ -61,7 +68,7 @@ func TestPgGenerationUsageSum(t *testing.T) {
 			purpose: &analysis,
 			windows: []time.Duration{time.Minute},
 
-			expect: []*dao.GenerationUsageTotals{{}},
+			expect: []totals{{}},
 		},
 		{
 			// One query sums every window, each in the order given, an empty one included.
@@ -69,10 +76,10 @@ func TestPgGenerationUsageSum(t *testing.T) {
 
 			windows: []time.Duration{24 * time.Hour, time.Minute, time.Hour},
 
-			expect: []*dao.GenerationUsageTotals{
-				{InputTokens: 1300, OutputTokens: 130},
+			expect: []totals{
+				{input: 1300, output: 130, oldest: 2 * time.Hour},
 				{},
-				{InputTokens: 300, OutputTokens: 30},
+				{input: 300, output: 30, oldest: 20 * time.Minute},
 			},
 		},
 	}
@@ -93,11 +100,25 @@ func TestPgGenerationUsageSum(t *testing.T) {
 				seedUsage(ctx, t, testOwner, generation, 1000, 100, -2*time.Hour)
 				seedUsage(ctx, t, otherOwner, generation, 5000, 500, -10*time.Minute)
 
-				totals, err := daoUsageSum.Exec(ctx, &dao.GenerationUsageSumRequest{
+				summed, err := daoUsageSum.Exec(ctx, &dao.GenerationUsageSumRequest{
 					OwnerID: testOwner, Purpose: testCase.purpose, Windows: testCase.windows,
 				})
 				require.NoError(t, err)
-				require.Equal(t, testCase.expect, totals)
+				require.Len(t, summed, len(testCase.expect))
+
+				for index, expected := range testCase.expect {
+					require.Equal(t, expected.input, summed[index].InputTokens)
+					require.Equal(t, expected.output, summed[index].OutputTokens)
+
+					if expected.oldest == 0 {
+						require.Nil(t, summed[index].OldestAt)
+
+						continue
+					}
+
+					require.NotNil(t, summed[index].OldestAt)
+					require.WithinDuration(t, time.Now().Add(-expected.oldest), *summed[index].OldestAt, 10*time.Second)
+				}
 			})
 		})
 	}

@@ -30,6 +30,7 @@ func TestPgGenerationQueueDepth(t *testing.T) {
 			name: "Success/EmptyQueue",
 		},
 		{
+			// A submitted generation's start is in flight: it waits for the provider to accept its call.
 			name: "Success/Pending",
 
 			pending: 2,
@@ -38,12 +39,11 @@ func TestPgGenerationQueueDepth(t *testing.T) {
 			expectWaiting: true,
 		},
 		{
-			// A start in flight, or retrying after a refusal, still waits for the provider: counted, it
-			// shows a provider that keeps refusing as a queue that stalls.
-			name: "Success/StartInFlight",
+			// An earlier release left these pending between two starts.
+			name: "Success/Unstarted",
 
 			pending: 2,
-			state:   "starting",
+			state:   "unstarted",
 
 			expectPending: 2,
 			expectWaiting: true,
@@ -67,13 +67,13 @@ func TestPgGenerationQueueDepth(t *testing.T) {
 				t.Helper()
 
 				for range testCase.pending {
-					generation := seedGeneration(ctx, t, 1)
-
 					switch testCase.state {
-					case "starting":
-						startGeneration(ctx, t, generation.ID)
+					case "unstarted":
+						seedUnstarted(ctx, t)
 					case "running":
-						runGeneration(ctx, t, generation.ID)
+						runGeneration(ctx, t, seedGeneration(ctx, t).ID)
+					default:
+						seedGeneration(ctx, t)
 					}
 				}
 

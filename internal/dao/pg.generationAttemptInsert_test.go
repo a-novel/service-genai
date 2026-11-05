@@ -59,7 +59,7 @@ func TestPgGenerationAttemptInsert(t *testing.T) {
 			postgrestest.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
 				t.Helper()
 
-				generation := seedGeneration(ctx, t, 1)
+				generation := seedGeneration(ctx, t)
 				running := runGeneration(ctx, t, generation.ID)
 
 				attempt, err := daoAttemptInsert.Exec(ctx, &dao.GenerationAttemptInsertRequest{

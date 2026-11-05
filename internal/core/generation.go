@@ -31,6 +31,23 @@ const (
 	GenerationStatusCancelled GenerationStatus = "cancelled"
 )
 
+// GenerationFailure classifies why a generation failed, so its caller knows whether a resend may
+// succeed. This service never resends a call itself.
+type GenerationFailure string
+
+const (
+	// GenerationFailureRejected means the provider refused the request: the same request fails again.
+	GenerationFailureRejected GenerationFailure = "rejected"
+	// GenerationFailureProviderFailed means the provider accepted the call, then failed it, did not
+	// finish it in time, or no longer held its answer. A resend may succeed.
+	GenerationFailureProviderFailed GenerationFailure = "provider_failed"
+	// GenerationFailureNotStarted means the provider never ran the call. A resend may succeed.
+	GenerationFailureNotStarted GenerationFailure = "not_started"
+	// GenerationFailureOutcomeUnknown means the provider may have accepted the call and may still run
+	// it. The generation keeps counting toward its purpose's concurrency for a while.
+	GenerationFailureOutcomeUnknown GenerationFailure = "outcome_unknown"
+)
+
 // Generation is the core result exposed to generation transports.
 type Generation struct {
 	// ID identifies the generation.
@@ -43,6 +60,9 @@ type Generation struct {
 	Provider string
 	// Error names the cause of a failure or cancellation in this service's own words.
 	Error *string
+	// Failure classifies a failed generation's cause. Nil for any other status, and for a generation
+	// that failed before failures were classified.
+	Failure *GenerationFailure
 	// Status identifies the generation's current lifecycle state.
 	Status GenerationStatus
 	// Attempts are the provider's answers, in attempt order.
@@ -73,6 +93,7 @@ func newGeneration(generation *dao.Generation, attempts []*dao.GenerationAttempt
 		Purpose:   generation.Purpose,
 		Provider:  generation.Provider,
 		Error:     generation.Error,
+		Failure:   (*GenerationFailure)(generation.Failure),
 		Status:    GenerationStatus(generation.Status),
 		Attempts:  make([]*GenerationAttempt, len(attempts)),
 		CreatedAt: generation.CreatedAt,
@@ -89,8 +110,8 @@ func newGeneration(generation *dao.Generation, attempts []*dao.GenerationAttempt
 }
 
 // mayHaveAttempts reports whether a generation can have an attempt answered, so a read with none to
-// find is skipped. An answer is recorded when its attempt settles or is requeued: an unsettled
-// generation's attempt in flight has none yet.
+// find is skipped. An answer is recorded when its attempt settles: an unsettled generation's attempt
+// in flight has none yet.
 func mayHaveAttempts(generation *dao.Generation) bool {
 	answered := generation.Attempt
 	if generation.SettledAt == nil && generation.StartRequestedAt != nil {

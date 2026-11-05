@@ -4,8 +4,8 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
-	"time"
 
+	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/a-novel-kit/golib/otel"
@@ -15,16 +15,15 @@ import (
 //go:embed pg.generationSweep.sql
 var generationSweepQuery string
 
-// GenerationSweepRequest bounds one sweep.
+// GenerationSweepRequest names one page of a sweep.
 type GenerationSweepRequest struct {
-	// Interval is how long a check stays fresh.
-	Interval time.Duration
-	// Limit caps the batch.
+	// After is the last generation of the previous page. The zero UUID starts the first page.
+	After uuid.UUID
+	// Limit caps the page.
 	Limit int
 }
 
-// PgGenerationSweep takes the unsettled generations nobody checked within the interval, marking them
-// checked.
+// PgGenerationSweep reads one page of the unsettled generations, in id order.
 type PgGenerationSweep struct{}
 
 // NewPgGenerationSweep returns a new PgGenerationSweep dao.
@@ -44,7 +43,7 @@ func (dao *PgGenerationSweep) Exec(ctx context.Context, request *GenerationSweep
 	entities := make([]*Generation, 0)
 
 	err = db.NewRaw(
-		generationSweepQuery, request.Interval.Seconds(), request.Limit,
+		generationSweepQuery, request.After, request.Limit,
 	).Scan(ctx, &entities)
 	if err != nil {
 		return nil, otel.ReportError(span, fmt.Errorf("execute query: %w", err))

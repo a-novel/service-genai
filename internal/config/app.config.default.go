@@ -61,9 +61,7 @@ var AppPresetDefault = App{
 	ServiceIssuerOptional: env.ServiceIssuerOptional,
 
 	Generations: Generations{
-		CheckInterval: env.CheckInterval,
-		MaxAttempts:   env.MaxAttempts,
-		Retention:     env.Retention,
+		Retention: env.Retention,
 	},
 	Sweep: Sweep{
 		Interval:    env.SweepInterval,
@@ -103,11 +101,12 @@ func newOtelPreset() otel.Config {
 const sweepConcurrencyCeiling = 8
 
 // sweepConcurrency gives each check a sweep runs at once a connection of its own, so none waits on
-// the pool past its write deadlines. A pool of zero is unlimited.
+// the pool past its write deadlines. The sweep's leader role holds one more. A pool of zero is
+// unlimited.
 func sweepConcurrency(maxOpenConns int) int {
 	if maxOpenConns <= 0 {
 		return sweepConcurrencyCeiling
 	}
 
-	return min(maxOpenConns, sweepConcurrencyCeiling)
+	return max(min(maxOpenConns-1, sweepConcurrencyCeiling), 1)
 }

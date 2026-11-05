@@ -1,7 +1,6 @@
 package dao
 
 import (
-	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -25,10 +24,26 @@ const (
 	GenerationStatusCancelled GenerationStatus = "cancelled"
 )
 
+// GenerationFailure classifies why a generation failed, so its caller knows whether a resend may
+// succeed. It mirrors the generation_failure database enum, and the two must be migrated together.
+type GenerationFailure string
+
+const (
+	// GenerationFailureRejected means the provider refused the request.
+	GenerationFailureRejected GenerationFailure = "rejected"
+	// GenerationFailureProviderFailed means the provider accepted the call, then failed it, did not
+	// finish it in time, or no longer held its answer.
+	GenerationFailureProviderFailed GenerationFailure = "provider_failed"
+	// GenerationFailureNotStarted means the provider never ran the call.
+	GenerationFailureNotStarted GenerationFailure = "not_started"
+	// GenerationFailureOutcomeUnknown means the provider may have accepted the call and may still run
+	// it.
+	GenerationFailureOutcomeUnknown GenerationFailure = "outcome_unknown"
+)
+
 // Generation is the durable record of one provider call.
 //
-// Its payload and attempts hold user content, so the row is purged on a retention schedule and they
-// go with it.
+// Its attempts hold user content, so the row is purged on a retention schedule and they go with it.
 type Generation struct {
 	bun.BaseModel `bun:"table:generations,alias:generations"`
 
@@ -40,11 +55,11 @@ type Generation struct {
 	Provider string `bun:"provider"`
 	// RequestKey identifies the request among live and succeeded generations.
 	RequestKey []byte `bun:"request_key"`
-	// Payload is the provider's own request, built by the caller and stored as sent. Only the read
-	// that begins a start carries it.
-	Payload json.RawMessage `bun:"payload,type:json,scanonly"`
 	// Error names the cause of a failure or cancellation in this service's own words.
 	Error *string `bun:"error,nullzero"`
+	// Failure classifies a failed generation's cause. Nil for any other status, and for a generation
+	// that failed before failures were classified.
+	Failure *GenerationFailure `bun:"failure,nullzero"`
 
 	Status      GenerationStatus `bun:"status"`
 	Attempt     int16            `bun:"attempt"`
@@ -53,13 +68,16 @@ type Generation struct {
 	RunAt time.Time `bun:"run_at"`
 	// StartRequestedAt records that paid work may exist even before its provider ID is durable.
 	StartRequestedAt *time.Time `bun:"start_requested_at,nullzero"`
-	// FirstStartRequestedAt is when the current attempt's first start was requested; a released start
-	// keeps it, so its retries are bounded from it.
+	// FirstStartRequestedAt is when the attempt's first start was requested: the submit records it with
+	// the start intent.
 	FirstStartRequestedAt *time.Time `bun:"first_start_requested_at,nullzero"`
 	ProviderCallID        *string    `bun:"provider_call_id,nullzero"`
 	CancelRequestedAt     *time.Time `bun:"cancel_requested_at,nullzero"`
 	// CheckedAt is when a check last looked at the generation, by the database clock.
 	CheckedAt time.Time `bun:"checked_at"`
+	// ReadAt is the database clock when the statement read the row, so a check measures every age on
+	// one clock. Only the reads that feed a check fill it.
+	ReadAt time.Time `bun:"read_at,scanonly"`
 	// Traceparent is the W3C trace context of the request that submitted the generation.
 	Traceparent *string `bun:"traceparent,nullzero"`
 	// OutcomeUnknownAt is when the generation failed with its start's outcome unknown: the provider

@@ -13,7 +13,7 @@ func TestApp(t *testing.T) {
 	t.Parallel()
 
 	valid := config.App{
-		Generations: config.Generations{CheckInterval: 2 * time.Second, MaxAttempts: 2, Retention: time.Hour},
+		Generations: config.Generations{Retention: time.Hour},
 		Sweep:       config.Sweep{Interval: time.Minute, BatchSize: 50, Concurrency: 8},
 		Caps:        config.CapsDefault,
 	}
@@ -27,20 +27,6 @@ func TestApp(t *testing.T) {
 	}{
 		{
 			name: "Success",
-		},
-		{
-			name: "Error/NoCheckInterval",
-
-			adjust: func(app *config.App) { app.Generations.CheckInterval = 0 },
-
-			expectErr: config.ErrInvalidConfig,
-		},
-		{
-			name: "Error/MaxAttemptsAboveCeiling",
-
-			adjust: func(app *config.App) { app.Generations.MaxAttempts = config.MaxAttemptsCeiling + 1 },
-
-			expectErr: config.ErrInvalidConfig,
 		},
 		{
 			// The purge would end an unknown outcome's hold on its owner's slot early.

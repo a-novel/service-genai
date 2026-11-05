@@ -1,6 +1,6 @@
-// Command sweep checks the generations nobody checked within the interval, each time a scheduler
-// posts to /sweep, and every interval when SWEEP_TICKER is set. It runs as its own private service,
-// which only the scheduler may call; cmd/grpc serves the generation API.
+// Command sweep checks every unsettled generation, each time a scheduler posts to /sweep, and every
+// interval when SWEEP_TICKER is set. It runs as its own private service, which only the scheduler may
+// call; cmd/grpc serves the generation API.
 package main
 
 import (
@@ -59,13 +59,12 @@ func main() {
 	// =================================================================================================================
 
 	daoAttemptInsert := dao.NewPgGenerationAttemptInsert()
-	daoBeginStart := dao.NewPgGenerationBeginStart()
 	daoGet := dao.NewPgGenerationGet()
 	daoRecordProviderCall := dao.NewPgGenerationRecordProviderCall()
-	daoReleaseStart := dao.NewPgGenerationReleaseStart()
-	daoRequeue := dao.NewPgGenerationRequeue()
 	daoSettle := dao.NewPgGenerationSettle()
 	daoSweep := dao.NewPgGenerationSweep()
+	daoSweepLock := dao.NewPgGenerationSweepLock()
+	daoSweepUnlock := dao.NewPgGenerationSweepUnlock()
 	daoUsageInsert := dao.NewPgGenerationUsageInsert()
 
 	// =================================================================================================================
@@ -75,11 +74,8 @@ func main() {
 	registry := lo.Must(connectors.NewRegistry(connectors.OpenAIConfig(cfg.OpenAI)))
 
 	serviceCheck := core.NewGenerationCheck(
-		daoBeginStart,
-		daoReleaseStart,
 		daoRecordProviderCall,
 		daoSettle,
-		daoRequeue,
 		daoAttemptInsert,
 		daoUsageInsert,
 		daoGet,
@@ -88,7 +84,7 @@ func main() {
 		cfg.Logger,
 		cfg.Generations,
 	)
-	serviceSweep := core.NewGenerationSweep(daoSweep, serviceCheck, cfg.Sweep)
+	serviceSweep := core.NewGenerationSweep(daoSweep, daoSweepLock, daoSweepUnlock, serviceCheck, cfg.Sweep)
 
 	// =================================================================================================================
 	// HANDLERS

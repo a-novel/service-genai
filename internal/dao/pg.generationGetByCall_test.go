@@ -2,7 +2,6 @@ package dao_test
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 	"time"
 
@@ -29,7 +28,6 @@ func TestPgGenerationGetByCall(t *testing.T) {
 		Purpose:        "studio.generation",
 		Provider:       "openai",
 		RequestKey:     []byte("key"),
-		Payload:        json.RawMessage(`{"model": "a-model"}`),
 		Status:         dao.GenerationStatusRunning,
 		MaxAttempts:    1,
 		ProviderCallID: lo.ToPtr("resp_1"),
@@ -113,6 +111,8 @@ func TestPgGenerationGetByCall(t *testing.T) {
 				require.NotNil(t, result)
 				require.Equal(t, generationID, result.ID)
 				require.Equal(t, dao.GenerationStatusRunning, result.Status)
+				// The check that follows measures ages from the read's own clock.
+				require.False(t, result.ReadAt.IsZero())
 			})
 		})
 	}

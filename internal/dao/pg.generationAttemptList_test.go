@@ -48,8 +48,8 @@ func TestPgGenerationAttemptList(t *testing.T) {
 			postgrestest.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
 				t.Helper()
 
-				generation := seedGeneration(ctx, t, 3)
-				other := seedGeneration(ctx, t, 1)
+				generation := seedGeneration(ctx, t)
+				other := seedGeneration(ctx, t)
 
 				generationIDs := []uuid.UUID{generation.ID, other.ID}
 

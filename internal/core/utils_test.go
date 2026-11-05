@@ -45,22 +45,21 @@ var (
 	})
 )
 
-// pendingGeneration has never started.
+// pendingGeneration has no start intent, as an earlier release left a generation between two starts.
 func pendingGeneration() *dao.Generation {
 	return &dao.Generation{
-		ID:          testGenerationID,
-		OwnerID:     testOwner,
-		Purpose:     testPurpose,
-		Provider:    testProvider,
-		Payload:     testPayload,
-		Status:      dao.GenerationStatusPending,
-		MaxAttempts: 2,
-		CheckedAt:   testNow,
-		CreatedAt:   testNow,
+		ID:        testGenerationID,
+		OwnerID:   testOwner,
+		Purpose:   testPurpose,
+		Provider:  testProvider,
+		Status:    dao.GenerationStatusPending,
+		ReadAt:    testNow,
+		CreatedAt: testNow,
 	}
 }
 
-// startingGeneration recorded start intent for attempt 1 the given age ago, with no call id yet.
+// startingGeneration recorded start intent for attempt 1 the given age ago, with no call id yet, as a
+// submit records it.
 func startingGeneration(age time.Duration) *dao.Generation {
 	generation := pendingGeneration()
 	requested := testNow.Add(-age)
@@ -97,14 +96,6 @@ func cancelledAgo(generation *dao.Generation, age time.Duration) *dao.Generation
 	return generation
 }
 
-// retryingSince dates the current attempt's first start the given age before testNow.
-func retryingSince(generation *dao.Generation, age time.Duration) *dao.Generation {
-	first := testNow.Add(-age)
-	generation.FirstStartRequestedAt = &first
-
-	return generation
-}
-
 // startedAgo backdates a generation's start by the given age before testNow.
 func startedAgo(generation *dao.Generation, age time.Duration) *dao.Generation {
 	started := testNow.Add(-age)
@@ -126,13 +117,6 @@ type asyncStreaming struct {
 	*connectorsmocks.MockStreaming
 }
 
-// submittedAgo dates the generation's submission age before testNow.
-func submittedAgo(generation *dao.Generation, age time.Duration) *dao.Generation {
-	generation.CreatedAt = testNow.Add(-age)
-
-	return generation
-}
-
 // withProvider moves the generation to another provider.
 func withProvider(generation *dao.Generation, provider string) *dao.Generation {
 	generation.Provider = provider
@@ -148,6 +132,13 @@ func settledGeneration(status dao.GenerationStatus) *dao.Generation {
 	generation.Status = status
 	generation.SettledAt = &settled
 	generation.ExpiresAt = &expires
+
+	return generation
+}
+
+// withoutCall drops the generation's provider call, as for a start settled before its id landed.
+func withoutCall(generation *dao.Generation) *dao.Generation {
+	generation.ProviderCallID = nil
 
 	return generation
 }

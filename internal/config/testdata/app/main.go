@@ -7,5 +7,5 @@ import (
 )
 
 func main() {
-	fmt.Println(config.AppPresetDefault.Generations.CheckInterval)
+	fmt.Println(config.AppPresetDefault.Generations.Retention)
 }

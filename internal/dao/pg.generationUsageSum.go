@@ -30,6 +30,9 @@ type GenerationUsageSumRequest struct {
 type GenerationUsageTotals struct {
 	InputTokens  int64 `bun:"input_tokens"`
 	OutputTokens int64 `bun:"output_tokens"`
+	// OldestAt is when the window's oldest Usage Record was written, the first to leave the window.
+	// Nil when the window holds none.
+	OldestAt *time.Time `bun:"oldest_at"`
 }
 
 // PgGenerationUsageSum adds up an owner's Usage Records over rolling windows, in one query. It
