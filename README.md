@@ -22,17 +22,21 @@ A provider call can take minutes, costs real money, and must be paid for once. T
 
 The caller holds no connection while the provider works. It submits the call, then polls for the result. The call outlives the caller's request, a restart of either side, and a deploy.
 
-Five rules shape the contract.
+Six rules shape the contract.
 
 **The caller builds the request.** A submission names its `purpose`, in the caller's own vocabulary, and a provider, `openai` today. Its payload is the provider's own request body, as raw JSON. The caller owns the model, the prompt, the output schema, the limits and the privacy fields such as `store`. The provider's connector writes only the fields the execution mode needs, and authenticates with the platform's only provider credential. Calls run in the Async mode: the provider runs the call on its side while the caller polls. A submission can also ask to `stream`. `GenerationStream` then forwards the provider's events as they come, for the first 5 minutes of the call, while polls and checks work on it as on any other.
 
 **A resend is a replay.** The service derives each generation's key from its owner, purpose, provider, `stream` flag, payload and `variant`. A caller that lost its connection or crashed sends the same request again and gets the same generation back, running or finished. The caller keeps no key of its own. Formatting and the order of top-level fields leave the key unchanged. Nested fields keep their order in the key, since a provider can read meaning into it, such as a schema's property order. A failed or cancelled generation is not served again: resending its request runs it from scratch. To ask for another result of a request that succeeded, send it with the next `variant`.
 
-**A crash re-attaches instead of paying again.** The service records the provider's identifier for a call the moment the call starts, and every later check reads it back. No process holds a generation, so a restart or a deploy loses nothing. The next poll or sweep picks up the call already paid for. Every accepted call is followed until it settles, whether anyone polls it or not.
+**A crash re-attaches instead of paying again.** The submit records the generation with its start, then sends the call, holding the payload in memory: the service never stores it. It records the provider's identifier for the call the moment the provider accepts it, and every later check reads it back. After its insert, a run writes its row twice, for that identifier and for the settle, whatever the polls. No process holds a generation, so a restart or a deploy loses nothing. The next poll or sweep picks up the call already paid for. Every accepted call is followed until it settles, whether anyone polls it or not.
 
-**The provider's answers come back as sent.** Each generation lists every attempt that reached an answer, retried and cancelled ones included, with the provider's raw response. That response holds the output and the usage. A request the provider rejected comes back with the provider's error body. A generation that holds no finished response says why in the service's own words. The purge deletes a generation and its responses after `RETENTION`. A permanent Usage Record of every answered attempt stays: who it ran for, what ran, what it consumed and when, with no content.
+**A failed call settles on its first outcome.** The service sends one call per generation and never sends it again. A failed generation carries a `failure_class`: `REJECTED` (the same request fails again), `PROVIDER_FAILED`, `NOT_STARTED` (nothing ran) or `OUTCOME_UNKNOWN` (the provider may still run it). The caller reads the class and decides whether to resend.
 
-**Usage is capped per purpose and user tier.** The [caps file](./internal/config/caps.config.yaml) is built into the image, so every change to it is reviewed. It declares each purpose a caller may submit and the token limits of each user tier over rolling windows. It also caps how many generations a user may run at once, per purpose and across all of them. Its comments explain every key. Once a user reaches a limit, a submit that would start a new generation answers `RESOURCE_EXHAUSTED`, naming the limit. An admitted call always finishes, even past its cap, and a resend of a running generation always attaches to it.
+**The provider's answers come back as sent.** Each generation lists the answer its call reached, a cancelled call's included, with the provider's raw response. That response holds the output and the usage. A request the provider rejected comes back with the provider's error body. A generation that holds no finished response says why in the service's own words. The purge deletes a generation and its responses after `RETENTION`. A permanent Usage Record of every answered attempt stays: who it ran for, what ran, what it consumed and when, with no content.
+
+**The caller caps each user's usage.** A submit carries `caps` for its user on its purpose: how many generations may run at once, and token limits over rolling windows. The caller owns every limit: the service counts usage per user and purpose, refuses a submit past the caps, and adds no limit of its own, so empty caps limit nothing. A refusal answers `RESOURCE_EXHAUSTED`, naming the limit, with a `google.rpc.QuotaFailure` and, when the window frees usage at a known time, a `google.rpc.RetryInfo`. `UsageSummary` reports a user's generations in flight and the tokens used in the windows a caller names, so it can show the room left. An admitted call always finishes, even past its cap, and a resend of a running generation always attaches to it.
+
+A submit without caps answers to the [caps file](./internal/config/caps.config.yaml) instead, its user tier selecting the limits on the purpose and across every purpose. The caps file is built into the image, so every change to it is reviewed. It also declares each purpose a caller may submit, with or without caps. Its comments explain every key.
 
 Callers are other services, which reach the generation API over **gRPC** on the internal network. The server admits only the callers its service tokens allow, and refuses to start without a token issuer unless a local stack opts out. The optional `rest` server is public and serves no generation. It only receives the providers' notifications that their calls ended.
 
@@ -55,7 +59,7 @@ Pin every image to the same release tag, from the [latest release](https://githu
 
 A caller controls the whole payload, including the model and the provider's built-in tools. Grant invocation to calling services only, and restrict the OpenAI key to the Responses endpoints.
 
-Every server does its work inside a request, so none needs CPU outside of one. A `sweep` server with `SWEEP_TICKER` set is the exception. Each needs outbound access to the provider's API. A check its caller abandons resumes only with the server's next request, and a streamed start waits for the provider to begin the call. Give a streamed generation's submit and polls a deadline of at least 35 seconds.
+Every server does its work inside a request, so none needs CPU outside of one. A `sweep` server with `SWEEP_TICKER` set is the exception. Each needs outbound access to the provider's API. A check its caller abandons resumes only with the server's next request, and a streamed start waits for the provider to begin the call. Give a streamed generation's submit a deadline of at least 35 seconds. A submit also waits for its call's id to be recorded, up to two minutes while a migration holds a lock on the table.
 
 ```yaml
 services:
@@ -137,9 +141,9 @@ volumes:
 
 ### The sweep
 
-Each poll checks its generation with the provider. The `sweep` server checks the generations nobody polled. It captures a result before the provider discards it, stops a stuck call, and frees a user's concurrency slot.
+Every poll of an unsettled generation checks it with the provider, so a poll made after the provider finished returns the settled generation. The caller bounds how often it polls. The `sweep` server checks the generations nobody polled. It captures a result before the provider discards it, stops a stuck call, and frees a user's concurrency slot. A check writes nothing until a call ends.
 
-Run it privately, and have a scheduler `POST /sweep` every `SWEEP_INTERVAL`. On Google Cloud, use Cloud Scheduler with an OIDC token for the only identity allowed to invoke it. A call checks batch after batch and answers within two minutes. The server checks as many generations at once as its connection pool has connections, eight at most, however many calls overlap.
+Run it privately, and have a scheduler `POST /sweep` every `SWEEP_INTERVAL`. On Google Cloud, use Cloud Scheduler with an OIDC token for the only identity allowed to invoke it. One run leads at a time across every replica, holding a PostgreSQL advisory lock on a connection of its own; a run that finds the lock taken answers at once and checks nothing. A run reads every unsettled generation once, batch after batch, and answers within two minutes. The server checks as many generations at once as its connection pool has connections, less the one the lock holds, eight at most, however many calls overlap.
 
 On a platform that keeps the server's CPU between requests, such as Kubernetes, set `SWEEP_TICKER` instead. The server then sweeps every `SWEEP_INTERVAL` on its own and needs no scheduler. On SIGTERM, a run starts no new check and waits for those it started, a minute at most. Give the process at least 75 seconds between SIGTERM and SIGKILL. From `DOWNTIME_START` on, the server starts no run.
 
@@ -153,7 +157,7 @@ To enable it for OpenAI:
 2. In the OpenAI project's settings, create a webhook endpoint pointing at `https://<host>/webhooks/openai`. Subscribe it to `response.completed`, `response.failed`, `response.cancelled` and `response.incomplete`.
 3. Store the endpoint's signing secret as `OPENAI_WEBHOOK_SECRET`.
 
-Polls and the sweep keep working for a notification that never comes. Once notifications flow, raise `CHECK_INTERVAL` so polls stop reaching the provider.
+Polls and the sweep keep working for a notification that never comes.
 
 ### Database image
 
@@ -188,14 +192,12 @@ OpenAI connector (all servers). The endpoint must meet the [provider requirement
 
 Checks (all servers) and sweep (`sweep`). [Generation checks](./docs/operations/generation-checks.md) explains how they move a generation forward.
 
-| Name               | Description                                                                                                                                                          | Default |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| `CHECK_INTERVAL`   | How long a check stays fresh. However often callers poll, a generation reaches the provider at most once per interval.                                               | `2s`    |
-| `SWEEP_INTERVAL`   | How often the sweep runs. Each run checks every generation nobody checked within half of it. At most `5m`.                                                           | `1m`    |
-| `SWEEP_BATCH_SIZE` | Generations one batch of a sweep takes, from 1 to 100. A sweep takes another batch while each comes back full.                                                       | `50`    |
-| `SWEEP_TICKER`     | Run the sweep every `SWEEP_INTERVAL` from the server itself, besides `POST /sweep`. The server then needs CPU between requests.                                      | `false` |
-| `MAX_ATTEMPTS`     | Provider calls a generation gets when a call fails retryably, 1 or 2, so a generation's responses fit one message. Each one is paid. A streamed generation gets one. | `2`     |
-| `RETENTION`        | How long a settled generation, its attempts and its request key survive before the purge deletes them. At least `15m`.                                               | `6h`    |
+| Name               | Description                                                                                                                     | Default |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| `SWEEP_INTERVAL`   | How often the sweep runs. Each run checks every unsettled generation. At most `5m`.                                             | `1m`    |
+| `SWEEP_BATCH_SIZE` | Generations one batch of a sweep reads, from 1 to 100. A sweep reads another batch while each comes back full.                  | `50`    |
+| `SWEEP_TICKER`     | Run the sweep every `SWEEP_INTERVAL` from the server itself, besides `POST /sweep`. The server then needs CPU between requests. | `false` |
+| `RETENTION`        | How long a settled generation, its attempts and its request key survive before the purge deletes them. At least `15m`.          | `6h`    |
 
 gRPC server:
 

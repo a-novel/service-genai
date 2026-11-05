@@ -9,18 +9,21 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	"github.com/a-novel-kit/golib/grpcf"
 	golibproto "github.com/a-novel-kit/golib/grpcf/proto/gen"
@@ -207,6 +210,7 @@ func TestClient(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, created.GetCreated())
 		require.Equal(t, servicegenai.GenerationStatusFailed, created.GetGeneration().GetStatus())
+		require.Equal(t, servicegenai.GenerationFailureNotStarted, created.GetGeneration().GetFailureClass())
 		require.NotNil(t, created.GetGeneration().GetSettledAt())
 
 		// The caller decides to resend: the request runs from scratch, as another generation.
@@ -308,6 +312,91 @@ func TestClient(t *testing.T) {
 			Id: generation.GetId(), OwnerId: uuid.Must(uuid.NewV7()).String(),
 		})
 		require.Equal(t, codes.NotFound, status.Code(err))
+	})
+
+	// Over the caps a caller sends, the caller reads which limit refused, in admission's own words
+	// and in the details' fields.
+	t.Run("UsageCapReached", func(t *testing.T) {
+		t.Parallel()
+
+		client := newClient(t)
+
+		owner := uuid.Must(uuid.NewV7()).String()
+
+		capsCases := []struct {
+			caps *servicegenai.GenerationCaps
+
+			expectMessage string
+			expectLimit   string
+		}{
+			{
+				// The count includes the generation the submit would create.
+				caps: &servicegenai.GenerationCaps{Concurrency: new(int32(0))},
+
+				expectMessage: `usage cap reached: purpose "studio.generation" concurrency: 0 generations already in flight`,
+				expectLimit:   "concurrency 0",
+			},
+			{
+				caps: &servicegenai.GenerationCaps{Windows: []*servicegenai.GenerationCapWindow{
+					{Duration: durationpb.New(5 * time.Hour), InputTokens: new(int64(0))},
+				}},
+
+				expectMessage: `usage cap reached: purpose "studio.generation" over 5h0m0s`,
+				expectLimit:   "input tokens over 5h",
+			},
+		}
+
+		for _, capsCase := range capsCases {
+			request := submitRequest(owner)
+			request.Caps = capsCase.caps
+
+			_, err := client.GenerationSubmit(t.Context(), request)
+			require.Equal(t, codes.ResourceExhausted, status.Code(err))
+			require.Equal(t, capsCase.expectMessage, status.Convert(err).Message())
+
+			details := status.Convert(err).Details()
+			require.Len(t, details, 1)
+
+			quota, ok := details[0].(*errdetails.QuotaFailure)
+			require.True(t, ok)
+			require.Len(t, quota.GetViolations(), 1)
+			require.Equal(t, `purpose "studio.generation"`, quota.GetViolations()[0].GetSubject())
+			require.Equal(t, capsCase.expectLimit, quota.GetViolations()[0].GetDescription())
+		}
+
+		// The caller owns every limit: empty caps limit nothing.
+		unlimited := submitRequest(owner)
+		unlimited.Caps = &servicegenai.GenerationCaps{}
+
+		created, err := client.GenerationSubmit(t.Context(), unlimited)
+		require.NoError(t, err)
+		require.True(t, created.GetCreated())
+	})
+
+	// The usage summary counts what the caps count, in the windows the caller names.
+	t.Run("UsageSummary", func(t *testing.T) {
+		t.Parallel()
+
+		client := newClient(t)
+
+		owner := uuid.Must(uuid.NewV7()).String()
+
+		summary, err := client.UsageSummary(t.Context(), &servicegenai.UsageSummaryRequest{
+			OwnerId: owner, Purpose: "studio.generation",
+			Windows: []*durationpb.Duration{durationpb.New(720 * time.Hour), durationpb.New(5 * time.Hour)},
+		})
+		require.NoError(t, err)
+		require.Zero(t, summary.GetLive())
+		require.Len(t, summary.GetWindows(), 2)
+		require.Equal(t, 720*time.Hour, summary.GetWindows()[0].GetDuration().AsDuration())
+		require.Equal(t, 5*time.Hour, summary.GetWindows()[1].GetDuration().AsDuration())
+		require.Zero(t, summary.GetWindows()[0].GetInputTokens())
+
+		// A purpose the caps do not declare has no usage to report.
+		_, err = client.UsageSummary(t.Context(), &servicegenai.UsageSummaryRequest{
+			OwnerId: owner, Purpose: "studio.undeclared",
+		})
+		require.Equal(t, codes.InvalidArgument, status.Code(err))
 	})
 
 	// The stream RPC end to end. This stack's provider refuses every start, so no call ever begins.

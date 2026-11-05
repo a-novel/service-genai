@@ -41,7 +41,7 @@ Start it with `SWEEP_TICKER=true` instead, and it sweeps every `SWEEP_INTERVAL` 
 
 ### Generations
 
-The payload and each attempt's response are `bytes` fields, so `grpcurl` takes and prints them base64-encoded. The local stack reads `OPENAI_API_KEY` from the environment it starts in, and falls back to a placeholder (see [`builds/podman-compose.yaml`](./builds/podman-compose.yaml)). OpenAI refuses every start made with the placeholder. The service retries it as a fault of its own configuration, so the generation stays pending for ten minutes, then fails with no attempt.
+The payload and each attempt's response are `bytes` fields, so `grpcurl` takes and prints them base64-encoded. The local stack reads `OPENAI_API_KEY` from the environment it starts in, and falls back to a placeholder (see [`builds/podman-compose.yaml`](./builds/podman-compose.yaml)). OpenAI refuses every start made with the placeholder, so the generation fails at once, with the failure class `NOT_STARTED` and no attempt.
 
 ```bash
 # Any UUID: the calling service supplies the owner, and this service trusts it.
@@ -96,7 +96,11 @@ The migrations job skips the jobs where `pg_cron` is missing, as in the database
 
 ### Migrations on live tables
 
-Every check rewrites a row of `generations`, and some of those writes record a call the provider already accepted. A write left waiting for a lock gives up after the server's `lock_timeout`, five seconds. A call whose id is not recorded settles failed with its outcome unknown, paid for and unread. A migration on `generations` therefore holds no lock that blocks writes for more than a second or two. Follow [`write-sql`](https://github.com/a-novel-kit/stack/blob/master/.agents/skills/write-sql/SKILL.md#migrations-on-live-tables): build an index concurrently, add a constraint `NOT VALID` then validate it, and run a backfill in batches outside the migration.
+After its insert, a run writes its `generations` row twice: the provider's call id once the provider accepts the call, and the settle. Polls and the sweep write nothing until a call ends.
+
+The call-id write is patient. A write that waits out the server's `lock_timeout`, five seconds, is sent again after a pause that doubles from 250 milliseconds up to 5 seconds, until two minutes after the start. A check settles a start still without an id as unknown only three minutes after it. A migration holding a lock on `generations` therefore costs a run latency, not the call. A settle that gives up on its lock is redone by the next poll or sweep, since the provider keeps the answer.
+
+A migration's work has no time limit, but its lock wait stays short: a DDL statement waiting for its lock queues every later query on the table behind it. The migrations job gives up a lock wait after three seconds and runs the file again a moment later. To keep a write-blocking lock off a large table, follow [`write-sql`](https://github.com/a-novel-kit/stack/blob/master/.agents/skills/write-sql/SKILL.md#migrations-on-live-tables): build an index concurrently, add a constraint `NOT VALID` then validate it, and run a backfill in batches outside the migration.
 
 ### Provider retention
 
@@ -106,7 +110,7 @@ Re-attaching does not depend on `store`. A finished background response stays re
 
 ### Transactions
 
-A check settles or requeues a generation, and records the attempt's answer and its Usage Record, in one transaction. Its provider calls run outside any transaction, as the [`transaction.Transactor` contract](https://pkg.go.dev/github.com/a-novel-kit/golib/transaction#Transactor) requires.
+A check settles a generation, and records the attempt's answer and its Usage Record, in one transaction. Its provider calls run outside any transaction, as the [`transaction.Transactor` contract](https://pkg.go.dev/github.com/a-novel-kit/golib/transaction#Transactor) requires.
 
 ---
 
