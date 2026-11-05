@@ -134,7 +134,8 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 			expect: &genaiv0.GenerationSubmitResponse{Generation: testGrpcGeneration(), Created: true},
 		},
 		{
-			// Empty caps set no limit beyond the ceiling, which is not the same as sending none.
+			// Empty caps limit nothing, which is not the same as sending none: no caps answer to the caps
+			// file.
 			name: "Success/EmptyCaps",
 
 			request: &genaiv0.GenerationSubmitRequest{
@@ -205,12 +206,15 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 				OwnerId: testOwnerID, Purpose: "studio.generation", Provider: "openai", Payload: payload,
 			},
 			serviceMock: &serviceMock{err: &core.UsageCapError{
-				Scope: "ceiling", Limit: "concurrency 8", Reason: "ceiling concurrency: 8 generations already in flight",
+				Scope: `purpose "studio.generation"`, Limit: "concurrency 2",
+				Reason: `purpose "studio.generation" concurrency: 2 generations already in flight`,
 			}},
 
 			expectStatus:  codes.ResourceExhausted,
-			expectMessage: "usage cap reached: ceiling concurrency: 8 generations already in flight",
-			expectQuota:   &errdetails.QuotaFailure_Violation{Subject: "ceiling", Description: "concurrency 8"},
+			expectMessage: `usage cap reached: purpose "studio.generation" concurrency: 2 generations already in flight`,
+			expectQuota: &errdetails.QuotaFailure_Violation{
+				Subject: `purpose "studio.generation"`, Description: "concurrency 2",
+			},
 		},
 		{
 			name: "Error/ModeUnsupported",
