@@ -24,7 +24,7 @@ A provider offers the Streaming mode by reading an operation's events after a cu
 
 An open OpenAI bug can leave a streamed call queued for good when its creation stream is left before the provider reports `response.in_progress`. The connector holds the creation stream until then, for 30 seconds at most. It reports the call's id as soon as the provider names it, so the call is recorded before the hold ends. A check stops a streamed call still queued 5 minutes after its start.
 
-A streamed generation is one call, since a fresh call numbers its events from zero. A retryable failure settles it instead of starting a fresh call. The connector issues the stream's GET itself, because openai-go's `GetStreaming` sends a body the API refuses ([openai-go#660](https://github.com/openai/openai-go/issues/660)).
+Every generation is one call, a streamed one included, so its stream's cursor counts that call's events. A failure settles it, and the caller resends the request. The connector issues the stream's GET itself, because openai-go's `GetStreaming` sends a body the API refuses ([openai-go#660](https://github.com/openai/openai-go/issues/660)).
 
 ## Notifications mode
 

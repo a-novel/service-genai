@@ -23,6 +23,8 @@ type (
 
 	GenerationSubmitRequest  = genaiv0.GenerationSubmitRequest
 	GenerationSubmitResponse = genaiv0.GenerationSubmitResponse
+	GenerationCaps           = genaiv0.GenerationCaps
+	GenerationCapWindow      = genaiv0.GenerationCapWindow
 	GenerationGetRequest     = genaiv0.GenerationGetRequest
 	GenerationGetResponse    = genaiv0.GenerationGetResponse
 	GenerationCancelRequest  = genaiv0.GenerationCancelRequest
@@ -32,7 +34,12 @@ type (
 
 	Generation        = genaiv0.Generation
 	GenerationStatus  = genaiv0.GenerationStatus
+	GenerationFailure = genaiv0.GenerationFailure
 	GenerationAttempt = genaiv0.GenerationAttempt
+
+	UsageSummaryRequest  = genaiv0.UsageSummaryRequest
+	UsageSummaryResponse = genaiv0.UsageSummaryResponse
+	UsageSummaryWindow   = genaiv0.UsageSummaryWindow
 )
 
 // Dependency statuses a Status report carries.
@@ -53,8 +60,19 @@ const (
 	GenerationStatusCancelled   = genaiv0.GenerationStatus_GENERATION_STATUS_CANCELLED
 )
 
+// Generation failure classes, re-exported so a caller can decide whether to resend a failed request
+// without importing the generated package.
+const (
+	GenerationFailureUnspecified    = genaiv0.GenerationFailure_GENERATION_FAILURE_UNSPECIFIED
+	GenerationFailureRejected       = genaiv0.GenerationFailure_GENERATION_FAILURE_REJECTED
+	GenerationFailureProviderFailed = genaiv0.GenerationFailure_GENERATION_FAILURE_PROVIDER_FAILED
+	GenerationFailureNotStarted     = genaiv0.GenerationFailure_GENERATION_FAILURE_NOT_STARTED
+	GenerationFailureOutcomeUnknown = genaiv0.GenerationFailure_GENERATION_FAILURE_OUTCOME_UNKNOWN
+)
+
 // maxReceiveBytes lets a generation through whole: its attempts carry the provider's raw responses,
-// two at most, of up to 24 MiB each, past gRPC's default 4 MiB receive limit.
+// of up to 24 MiB each, past gRPC's default 4 MiB receive limit. A generation holds one, or two when
+// an earlier release retried its call.
 const maxReceiveBytes = 64 << 20
 
 // A Client issues the service's gRPC calls, one method per RPC. Construct one
@@ -70,19 +88,21 @@ type Client interface {
 	// Callers should set a deadline on ctx.
 	Status(ctx context.Context, req *StatusRequest, opts ...grpc.CallOption) (*StatusResponse, error)
 
-	// GenerationSubmit records a generation and starts it in the Async mode: the payload is the
+	// GenerationSubmit records a generation and sends its call in the Async mode: the payload is the
 	// provider's own request, which the service forwards without reading. Resending the same request
 	// is a replay: it returns the pending, running or succeeded generation rather than paying again,
 	// and the response reports which happened. A request whose generation failed or was cancelled
-	// runs again. A streamed submit answers once the provider begins the call: give it a deadline of
+	// runs again: the service never resends a call, so read the failure class to decide. Send the
+	// user's caps with each request; a refusal past them answers RESOURCE_EXHAUSTED with a
+	// google.rpc.QuotaFailure, and a google.rpc.RetryInfo when the refusing window frees usage at a
+	// known time. A streamed submit answers once the provider begins the call: give it a deadline of
 	// at least 35 seconds.
 	GenerationSubmit(
 		ctx context.Context, req *GenerationSubmitRequest, opts ...grpc.CallOption,
 	) (*GenerationSubmitResponse, error)
-	// GenerationGet reads one of an owner's generations, checking it with the provider when it is
-	// stale. Poll it until the generation settles. Another owner's reports not-found. A poll may start
-	// a streamed generation's call again after the provider turned one away: give it the submit's
-	// deadline.
+	// GenerationGet reads one of an owner's generations, checking it with the provider first while
+	// it is unsettled, so a poll made after the provider finished returns the settled generation. Poll
+	// it until the generation settles, at a pace the caller bounds. Another owner's reports not-found.
 	GenerationGet(
 		ctx context.Context, req *GenerationGetRequest, opts ...grpc.CallOption,
 	) (*GenerationGetResponse, error)
@@ -91,6 +111,12 @@ type Client interface {
 	GenerationCancel(
 		ctx context.Context, req *GenerationCancelRequest, opts ...grpc.CallOption,
 	) (*GenerationCancelResponse, error)
+	// UsageSummary reports an owner's generations in flight for a purpose, and the tokens they
+	// consumed over each window, as a submit's caps count them. Show a user the room left under the
+	// caps sent for them.
+	UsageSummary(
+		ctx context.Context, req *UsageSummaryRequest, opts ...grpc.CallOption,
+	) (*UsageSummaryResponse, error)
 	// GenerationStream forwards the provider's events of a generation submitted with stream, until
 	// the terminal one. After a disconnect, open a new stream after the last sequence number
 	// received; once the provider no longer streams the generation (FAILED_PRECONDITION), poll it.
@@ -110,6 +136,7 @@ type client struct {
 	genaiv0.GenerationGetServiceClient
 	genaiv0.GenerationCancelServiceClient
 	genaiv0.GenerationStreamServiceClient
+	genaiv0.UsageSummaryServiceClient
 
 	conn *grpc.ClientConn
 }
@@ -151,6 +178,7 @@ func NewClient(addr string, opts ...grpc.DialOption) (Client, error) {
 		GenerationGetServiceClient:    genaiv0.NewGenerationGetServiceClient(conn),
 		GenerationCancelServiceClient: genaiv0.NewGenerationCancelServiceClient(conn),
 		GenerationStreamServiceClient: genaiv0.NewGenerationStreamServiceClient(conn),
+		UsageSummaryServiceClient:     genaiv0.NewUsageSummaryServiceClient(conn),
 		conn:                          conn,
 	}, nil
 }
