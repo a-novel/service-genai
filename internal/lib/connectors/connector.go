@@ -108,8 +108,6 @@ type Call struct {
 	CompletedAt *time.Time
 	// Reason is the provider's own account of a failure, for server-side logs only.
 	Reason string
-	// Retryable permits a fresh attempt after this failure is recorded.
-	Retryable bool
 }
 
 // AsyncStartRequest is the input to [Async.Start].

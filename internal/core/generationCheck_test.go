@@ -422,23 +422,7 @@ func TestGenerationCheck(t *testing.T) {
 			name: "Success/ProviderFailed",
 
 			generation: runningGeneration(),
-			observe:    failedCall(false),
-
-			expectSettle: &settle{
-				callID: &callID, status: dao.GenerationStatusFailed, reason: &callFailedMessage,
-				failure: providerFailed,
-			},
-			expectAttempt: testResponse,
-			expectUsage:   true,
-			expectStatus:  dao.GenerationStatusFailed,
-		},
-		{
-			// A failed call settles on its first outcome, even one the provider calls retryable: the
-			// caller resends it.
-			name: "Success/RetryableFailure",
-
-			generation: runningGeneration(),
-			observe:    failedCall(true),
+			observe:    failedCall(),
 
 			expectSettle: &settle{
 				callID: &callID, status: dao.GenerationStatusFailed, reason: &callFailedMessage,

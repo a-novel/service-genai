@@ -156,7 +156,6 @@ func TestOpenAI(t *testing.T) {
 		expectClass     string
 		expectCompleted bool
 		expectReason    string
-		expectRetryable bool
 		expectErr       error
 		// expectHidden is text of the provider's answer the error must leave out.
 		expectHidden string
@@ -235,17 +234,6 @@ func TestOpenAI(t *testing.T) {
 			)},
 
 			expectState: connectors.CallSucceeded,
-		},
-		{
-			name: "Success/RetryableFailure",
-
-			script: &scriptedProvider{status: http.StatusOK, body: response(
-				"failed", `"error": {"code": "server_error", "message": "the model failed"}`,
-			)},
-
-			expectState:     connectors.CallFailed,
-			expectReason:    "the model failed",
-			expectRetryable: true,
 		},
 		{
 			name: "Success/PolicyFailure",
@@ -399,7 +387,6 @@ func TestOpenAI(t *testing.T) {
 			require.Equal(t, "resp_1", call.ID)
 			require.Equal(t, testCase.expectState, call.State)
 			require.Equal(t, testCase.expectReason, call.Reason)
-			require.Equal(t, testCase.expectRetryable, call.Retryable)
 
 			require.Equal(t, testCase.expectUsage, call.Usage)
 			require.Equal(t, testCase.expectTier, call.Tier)

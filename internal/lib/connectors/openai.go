@@ -480,7 +480,6 @@ func providerCallOf(raw json.RawMessage) (*Call, error) {
 	case responses.ResponseStatusFailed:
 		call.State = CallFailed
 		call.Reason = response.Error.Message
-		call.Retryable = retryableFailure(response.Error.Code)
 	case responses.ResponseStatusCancelled:
 		call.State = CallCancelled
 	case responses.ResponseStatusQueued:
@@ -530,18 +529,6 @@ func unixTime(seconds float64) time.Time {
 	whole, fraction := math.Modf(seconds)
 
 	return time.Unix(int64(whole), int64(fraction*float64(time.Second))).UTC()
-}
-
-// retryableFailure reports whether another attempt at a failed call is worth paying for.
-func retryableFailure(code responses.ResponseErrorCode) bool {
-	switch code {
-	case responses.ResponseErrorCodeServerError,
-		responses.ResponseErrorCodeRateLimitExceeded,
-		responses.ResponseErrorCodeVectorStoreTimeout:
-		return true
-	default:
-		return false
-	}
 }
 
 // classifyOpenAIStartError separates definitive rejection from a response that may have been lost.

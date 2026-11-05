@@ -155,10 +155,9 @@ func providerCall(state connectors.CallState) *connectors.Call {
 }
 
 // failedCall is a call the provider reports failed.
-func failedCall(retryable bool) *connectors.Call {
+func failedCall() *connectors.Call {
 	call := providerCall(connectors.CallFailed)
 	call.Reason = "the model failed"
-	call.Retryable = retryable
 
 	return call
 }
