@@ -2,7 +2,6 @@ package dao_test
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 
 	"github.com/google/uuid"
@@ -53,12 +52,11 @@ func TestPgGenerationAttemptList(t *testing.T) {
 
 				generationIDs := []uuid.UUID{generation.ID, other.ID}
 
+				// An earlier release recorded one answer per retried attempt.
 				for _, generationID := range generationIDs {
 					for _, attempt := range testCase.attempts {
-						_, err := dao.NewPgGenerationAttemptInsert().Exec(ctx, &dao.GenerationAttemptInsertRequest{
-							GenerationID: generationID, Attempt: attempt, Response: json.RawMessage(`{}`),
-						})
-						require.NoError(t, err)
+						execute(ctx, t, `INSERT INTO generation_attempts (generation_id, attempt, response)
+							VALUES (?0, ?1, '{}')`, generationID, attempt)
 					}
 				}
 

@@ -58,23 +58,21 @@ func pendingGeneration() *dao.Generation {
 	}
 }
 
-// startingGeneration recorded start intent for attempt 1 the given age ago, with no call id yet, as a
-// submit records it.
+// startingGeneration recorded start intent the given age ago, with no call id yet, as a submit
+// records it.
 func startingGeneration(age time.Duration) *dao.Generation {
 	generation := pendingGeneration()
 	requested := testNow.Add(-age)
-	generation.Attempt = 1
 	generation.StartRequestedAt = &requested
 
 	return generation
 }
 
-// runningGeneration has a known provider call on the given attempt.
-func runningGeneration(attempt int16) *dao.Generation {
+// runningGeneration has a known provider call.
+func runningGeneration() *dao.Generation {
 	generation := startingGeneration(time.Minute)
 	callID := testCallID
 	generation.Status = dao.GenerationStatusRunning
-	generation.Attempt = attempt
 	generation.ProviderCallID = &callID
 
 	return generation
@@ -126,7 +124,7 @@ func withProvider(generation *dao.Generation, provider string) *dao.Generation {
 
 // settledGeneration landed in the given terminal status.
 func settledGeneration(status dao.GenerationStatus) *dao.Generation {
-	generation := runningGeneration(1)
+	generation := runningGeneration()
 	settled := testNow
 	expires := testNow.Add(time.Hour)
 	generation.Status = status

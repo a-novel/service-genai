@@ -57,7 +57,7 @@ func settleTo(ctx context.Context, t *testing.T, generation *dao.Generation, sta
 		settleGeneration(ctx, t, generation)
 	case dao.GenerationStatusCancelled:
 		settleRequest := &dao.GenerationSettleRequest{
-			ID: generation.ID, Attempt: generation.Attempt, StartRequestedAt: generation.StartRequestedAt,
+			ID: generation.ID, StartRequestedAt: generation.StartRequestedAt,
 			Status:    dao.GenerationStatusCancelled,
 			Error:     new("generation cancelled"),
 			Retention: testRetention,
@@ -71,7 +71,7 @@ func settleTo(ctx context.Context, t *testing.T, generation *dao.Generation, sta
 		running := runGeneration(ctx, t, generation.ID)
 
 		settleRequest := &dao.GenerationSettleRequest{
-			ID: running.ID, Attempt: running.Attempt, StartRequestedAt: running.StartRequestedAt,
+			ID: running.ID, StartRequestedAt: running.StartRequestedAt,
 			ProviderCallID: running.ProviderCallID,
 			Status:         dao.GenerationStatusSucceeded,
 			Retention:      testRetention,
@@ -185,11 +185,9 @@ func TestPgGenerationSubmit(t *testing.T) {
 					if sub.expectCreated {
 						require.Equalf(t, request.ID, result.Generation.ID, "submission %d", index+1)
 						require.Equal(t, dao.GenerationStatusPending, result.Generation.Status)
-						// The submit sends the call once it commits: the generation carries its start intent,
-						// on its one attempt, from the insert.
-						require.Equal(t, int16(1), result.Generation.Attempt)
+						// The submit sends the call once it commits: the generation carries its start intent
+						// from the insert.
 						require.NotNil(t, result.Generation.StartRequestedAt)
-						require.Equal(t, result.Generation.StartRequestedAt, result.Generation.FirstStartRequestedAt)
 						require.Nil(t, result.Generation.ProviderCallID)
 						require.Equal(t, request.Purpose, result.Generation.Purpose)
 						require.Equal(t, request.Provider, result.Generation.Provider)
@@ -199,9 +197,7 @@ func TestPgGenerationSubmit(t *testing.T) {
 
 						// The database owns these, and a caller must never supply them.
 						require.False(t, result.Generation.CreatedAt.IsZero())
-						require.False(t, result.Generation.RunAt.IsZero())
 						require.Nil(t, result.Generation.SettledAt)
-						require.False(t, result.Generation.CheckedAt.IsZero())
 					}
 
 					if sub.expectReplayOf > 0 {

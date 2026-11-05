@@ -47,22 +47,19 @@ func seedUnstarted(ctx context.Context, t *testing.T) *dao.Generation {
 
 	generation := seedGeneration(ctx, t)
 
-	execute(ctx, t, `UPDATE generations
-		SET attempt = 0, start_requested_at = NULL, first_start_requested_at = NULL WHERE id = ?0`, generation.ID)
+	execute(ctx, t, `UPDATE generations SET start_requested_at = NULL WHERE id = ?0`, generation.ID)
 
-	generation.Attempt = 0
 	generation.StartRequestedAt = nil
-	generation.FirstStartRequestedAt = nil
 
 	return generation
 }
 
-// runGeneration records the provider call of a generation's start intent, on its first attempt.
+// runGeneration records the provider call of a generation's start intent.
 func runGeneration(ctx context.Context, t *testing.T, id uuid.UUID) *dao.Generation {
 	t.Helper()
 
 	generation, err := dao.NewPgGenerationRecordProviderCall().Exec(ctx, &dao.GenerationRecordProviderCallRequest{
-		ID: id, Attempt: 1, ProviderCallID: testCallID,
+		ID: id, ProviderCallID: testCallID,
 	})
 	if err != nil {
 		panic(err)
@@ -94,7 +91,6 @@ func settleGeneration(ctx context.Context, t *testing.T, generation *dao.Generat
 
 	settleRequest := &dao.GenerationSettleRequest{
 		ID:               generation.ID,
-		Attempt:          generation.Attempt,
 		StartRequestedAt: generation.StartRequestedAt,
 		ProviderCallID:   generation.ProviderCallID,
 		Status:           dao.GenerationStatusFailed,

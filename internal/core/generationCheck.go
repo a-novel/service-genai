@@ -285,7 +285,7 @@ func (service *GenerationCheck) recordCall(
 		defer cancel()
 
 		return service.daoRecord.Exec(recordCtx, &dao.GenerationRecordProviderCallRequest{
-			ID: intent.ID, Attempt: intent.Attempt, ProviderCallID: callID,
+			ID: intent.ID, ProviderCallID: callID,
 		})
 	}
 
@@ -602,7 +602,6 @@ func (service *GenerationCheck) commit(
 
 		daoRequest := &dao.GenerationSettleRequest{
 			ID:               generation.ID,
-			Attempt:          generation.Attempt,
 			StartRequestedAt: generation.StartRequestedAt,
 			ProviderCallID:   generation.ProviderCallID,
 			Status:           status,
@@ -645,7 +644,6 @@ func (service *GenerationCheck) recordUsage(
 
 	daoRequest := &dao.GenerationUsageInsertRequest{
 		GenerationID:      generation.ID,
-		Attempt:           generation.Attempt,
 		OwnerID:           generation.OwnerID,
 		Purpose:           generation.Purpose,
 		Provider:          generation.Provider,
@@ -672,8 +670,8 @@ func (service *GenerationCheck) recordUsage(
 	return nil
 }
 
-// recordAttempt keeps the provider's answer to the generation's current attempt. A call that never
-// produced one has nothing to keep.
+// recordAttempt keeps the provider's answer to the generation's call. A call that never produced one
+// has nothing to keep.
 func (service *GenerationCheck) recordAttempt(
 	ctx context.Context, generation *dao.Generation, response json.RawMessage,
 ) error {
@@ -686,7 +684,6 @@ func (service *GenerationCheck) recordAttempt(
 
 	daoRequest := &dao.GenerationAttemptInsertRequest{
 		GenerationID: generation.ID,
-		Attempt:      generation.Attempt,
 		Response:     response,
 	}
 
@@ -718,8 +715,7 @@ func (service *GenerationCheck) stopOrphan(
 
 	if err != nil {
 		service.logger.Err(ctx, fmt.Sprintf(
-			"generation %s attempt %d: stop orphaned provider call %s: %v",
-			generation.ID, generation.Attempt, callID, err,
+			"generation %s: stop orphaned provider call %s: %v", generation.ID, callID, err,
 		))
 	}
 }

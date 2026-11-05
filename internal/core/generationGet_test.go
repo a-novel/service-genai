@@ -53,9 +53,9 @@ func TestGenerationGet(t *testing.T) {
 			request: &core.GenerationGetRequest{ID: testGenerationID, OwnerID: testOwner},
 			daoMock: &daoMock{resp: &dao.Generation{
 				ID: testGenerationID, OwnerID: testOwner, Purpose: testPurpose, Provider: testProvider,
-				Error:   &generationError,
-				Failure: new(dao.GenerationFailureProviderFailed),
-				Status:  dao.GenerationStatusFailed, Attempt: 1,
+				Error:     &generationError,
+				Failure:   new(dao.GenerationFailureProviderFailed),
+				Status:    dao.GenerationStatusFailed,
 				CreatedAt: createdAt, UpdatedAt: updatedAt, SettledAt: &settledAt,
 				ExpiresAt: &expiresAt,
 			}},
@@ -76,7 +76,7 @@ func TestGenerationGet(t *testing.T) {
 			name: "Success/Checked",
 
 			request:        &core.GenerationGetRequest{ID: testGenerationID, OwnerID: testOwner},
-			daoMock:        &daoMock{resp: runningGeneration(1)},
+			daoMock:        &daoMock{resp: runningGeneration()},
 			checkMock:      &daoMock{resp: settledGeneration(dao.GenerationStatusSucceeded)},
 			expectAttempts: true,
 
@@ -87,8 +87,8 @@ func TestGenerationGet(t *testing.T) {
 			name: "Success/CheckedStillRunning",
 
 			request:   &core.GenerationGetRequest{ID: testGenerationID, OwnerID: testOwner},
-			daoMock:   &daoMock{resp: runningGeneration(1)},
-			checkMock: &daoMock{resp: runningGeneration(1)},
+			daoMock:   &daoMock{resp: runningGeneration()},
+			checkMock: &daoMock{resp: runningGeneration()},
 
 			expectStatus: core.GenerationStatusRunning,
 		},
@@ -107,7 +107,7 @@ func TestGenerationGet(t *testing.T) {
 			name: "Success/CheckFails",
 
 			request:   &core.GenerationGetRequest{ID: testGenerationID, OwnerID: testOwner},
-			daoMock:   &daoMock{resp: runningGeneration(1)},
+			daoMock:   &daoMock{resp: runningGeneration()},
 			checkMock: &daoMock{err: errFoo},
 
 			expectStatus: core.GenerationStatusRunning,
@@ -218,7 +218,7 @@ func TestGenerationGet(t *testing.T) {
 
 		// The two writes of the run, each once.
 		record := coremocks.NewMockGenerationCheckDaoRecordProviderCall(t)
-		record.EXPECT().Exec(mock.Anything, mock.Anything).Return(runningGeneration(1), nil).Once()
+		record.EXPECT().Exec(mock.Anything, mock.Anything).Return(runningGeneration(), nil).Once()
 
 		settle := coremocks.NewMockGenerationCheckDaoSettle(t)
 		settle.EXPECT().Exec(mock.Anything, mock.Anything).
@@ -260,7 +260,7 @@ func TestGenerationGet(t *testing.T) {
 
 		// Every poll reads the row; the ones after the provider finished find it settled.
 		getDao := coremocks.NewMockGenerationGetDao(t)
-		getDao.EXPECT().Exec(mock.Anything, mock.Anything).Return(runningGeneration(1), nil).Times(pollsWhileRunning + 1)
+		getDao.EXPECT().Exec(mock.Anything, mock.Anything).Return(runningGeneration(), nil).Times(pollsWhileRunning + 1)
 		getDao.EXPECT().Exec(mock.Anything, mock.Anything).Return(settledGeneration(dao.GenerationStatusSucceeded), nil)
 
 		attemptList := coremocks.NewMockGenerationGetDaoAttemptList(t)

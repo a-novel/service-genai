@@ -29,7 +29,6 @@ func TestPgGenerationGetByCall(t *testing.T) {
 		Provider:       "openai",
 		RequestKey:     []byte("key"),
 		Status:         dao.GenerationStatusRunning,
-		MaxAttempts:    1,
 		ProviderCallID: lo.ToPtr("resp_1"),
 	}
 

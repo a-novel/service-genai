@@ -3,6 +3,7 @@ package dao_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -29,11 +30,12 @@ func TestPgGenerationSettle(t *testing.T) {
 		// would.
 		recordAfterRead bool
 
-		attempt int16
-		callID  *string
-		status  dao.GenerationStatus
-		error   *string
-		failure *dao.GenerationFailure
+		// otherStart fences the settle on a start the generation does not carry.
+		otherStart bool
+		callID     *string
+		status     dao.GenerationStatus
+		error      *string
+		failure    *dao.GenerationFailure
 		// outcomeUnknown marks a failure whose start the provider may have accepted.
 		outcomeUnknown bool
 
@@ -42,17 +44,15 @@ func TestPgGenerationSettle(t *testing.T) {
 		{
 			name: "Success/Succeeded",
 
-			state:   "running",
-			attempt: 1,
-			callID:  &callID,
-			status:  dao.GenerationStatusSucceeded,
+			state:  "running",
+			callID: &callID,
+			status: dao.GenerationStatusSucceeded,
 		},
 		{
 			// A start intent with no call id, past its timeout: the provider may have accepted it.
 			name: "Success/OutcomeUnknown",
 
 			state:          "starting",
-			attempt:        1,
 			status:         dao.GenerationStatusFailed,
 			error:          &failure,
 			failure:        new(dao.GenerationFailureOutcomeUnknown),
@@ -62,7 +62,6 @@ func TestPgGenerationSettle(t *testing.T) {
 			name: "Success/ProviderFailed",
 
 			state:   "running",
-			attempt: 1,
 			callID:  &callID,
 			status:  dao.GenerationStatusFailed,
 			error:   &failure,
@@ -76,22 +75,21 @@ func TestPgGenerationSettle(t *testing.T) {
 			status: dao.GenerationStatusCancelled,
 		},
 		{
-			name: "Error/OtherAttempt",
+			name: "Error/OtherStart",
 
-			state:   "running",
-			attempt: 2,
-			callID:  &callID,
-			status:  dao.GenerationStatusSucceeded,
+			state:      "running",
+			otherStart: true,
+			callID:     &callID,
+			status:     dao.GenerationStatusSucceeded,
 
 			expectErr: dao.ErrGenerationChanged,
 		},
 		{
 			name: "Error/OtherCall",
 
-			state:   "running",
-			attempt: 1,
-			callID:  &otherCallID,
-			status:  dao.GenerationStatusSucceeded,
+			state:  "running",
+			callID: &otherCallID,
+			status: dao.GenerationStatusSucceeded,
 
 			expectErr: dao.ErrGenerationChanged,
 		},
@@ -102,7 +100,6 @@ func TestPgGenerationSettle(t *testing.T) {
 
 			state:           "starting",
 			recordAfterRead: true,
-			attempt:         1,
 			status:          dao.GenerationStatusFailed,
 			error:           &failure,
 
@@ -114,7 +111,6 @@ func TestPgGenerationSettle(t *testing.T) {
 			name: "Error/Refused",
 
 			state:          "running",
-			attempt:        1,
 			callID:         &callID,
 			status:         dao.GenerationStatusSucceeded,
 			outcomeUnknown: true,
@@ -126,7 +122,6 @@ func TestPgGenerationSettle(t *testing.T) {
 			name: "Error/FailureClassOnSuccess",
 
 			state:   "running",
-			attempt: 1,
 			callID:  &callID,
 			status:  dao.GenerationStatusSucceeded,
 			failure: new(dao.GenerationFailureProviderFailed),
@@ -136,10 +131,9 @@ func TestPgGenerationSettle(t *testing.T) {
 		{
 			name: "Error/AlreadySettled",
 
-			state:   "settled",
-			attempt: 1,
-			callID:  &callID,
-			status:  dao.GenerationStatusSucceeded,
+			state:  "settled",
+			callID: &callID,
+			status: dao.GenerationStatusSucceeded,
 
 			expectErr: dao.ErrGenerationChanged,
 		},
@@ -174,15 +168,19 @@ func TestPgGenerationSettle(t *testing.T) {
 
 				if testCase.recordAfterRead {
 					_, err := dao.NewPgGenerationRecordProviderCall().Exec(ctx, &dao.GenerationRecordProviderCallRequest{
-						ID: generation.ID, Attempt: 1, ProviderCallID: testCallID,
+						ID: generation.ID, ProviderCallID: testCallID,
 					})
 					require.NoError(t, err)
 				}
 
+				start := read.StartRequestedAt
+				if testCase.otherStart {
+					start = new(start.Add(-time.Minute))
+				}
+
 				settleRequest := &dao.GenerationSettleRequest{
 					ID:               generation.ID,
-					Attempt:          testCase.attempt,
-					StartRequestedAt: read.StartRequestedAt,
+					StartRequestedAt: start,
 					ProviderCallID:   testCase.callID,
 					Status:           testCase.status,
 					Error:            testCase.error,

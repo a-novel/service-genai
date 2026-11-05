@@ -18,7 +18,7 @@ const PayloadSizeCeiling = 16 << 20
 type GenerationStatus string
 
 const (
-	// GenerationStatusPending means no provider call has been accepted for the current attempt yet.
+	// GenerationStatusPending means the provider has not accepted the generation's call yet.
 	GenerationStatusPending GenerationStatus = "pending"
 	// GenerationStatusRunning means the provider accepted the call and it has not settled yet.
 	GenerationStatusRunning GenerationStatus = "running"
@@ -110,13 +110,7 @@ func newGeneration(generation *dao.Generation, attempts []*dao.GenerationAttempt
 }
 
 // mayHaveAttempts reports whether a generation can have an attempt answered, so a read with none to
-// find is skipped. An answer is recorded when its attempt settles: an unsettled generation's attempt
-// in flight has none yet.
+// find is skipped. An answer is recorded when the generation settles: an unsettled one has none yet.
 func mayHaveAttempts(generation *dao.Generation) bool {
-	answered := generation.Attempt
-	if generation.SettledAt == nil && generation.StartRequestedAt != nil {
-		answered--
-	}
-
-	return answered > 0
+	return generation.SettledAt != nil
 }

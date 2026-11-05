@@ -16,15 +16,14 @@ import (
 //go:embed pg.generationRecordProviderCall.sql
 var generationRecordProviderCallQuery string
 
-// GenerationRecordProviderCallRequest attaches a provider operation to the attempt that started it.
+// GenerationRecordProviderCallRequest attaches a provider operation to the generation that started it.
 type GenerationRecordProviderCallRequest struct {
-	ID      uuid.UUID
-	Attempt int16
+	ID uuid.UUID
 	// ProviderCallID is the provider's identifier for the accepted operation.
 	ProviderCallID string
 }
 
-// PgGenerationRecordProviderCall records the provider operation an attempt started.
+// PgGenerationRecordProviderCall records the provider operation a generation's start began.
 //
 // [ErrGenerationChanged] means the generation settled while the start was in flight: the
 // accepted operation belongs to nothing and the caller stops it.
@@ -49,7 +48,7 @@ func (dao *PgGenerationRecordProviderCall) Exec(
 	entity := &Generation{}
 
 	err = db.NewRaw(
-		generationRecordProviderCallQuery, request.ID, request.Attempt, request.ProviderCallID,
+		generationRecordProviderCallQuery, request.ID, request.ProviderCallID,
 	).Scan(ctx, entity)
 	if errors.Is(err, sql.ErrNoRows) {
 		err = errors.Join(err, ErrGenerationChanged)

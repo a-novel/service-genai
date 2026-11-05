@@ -9,9 +9,9 @@
 -- time and none misses another's generation.
 --
 -- A created generation carries its start intent: the submit sends its call once the transaction
--- commits, so from then on the provider may hold paid work for its one attempt. The intent reads the
--- clock once the owner's lock is held, and both starts take that instant. The other timestamps are
--- left to the column defaults, since the database is the clock for this table.
+-- commits, so from then on the provider may hold paid work for its one call. The intent reads the
+-- clock once the owner's lock is held. The other timestamps are left to the column defaults, since the
+-- database is the clock for this table.
 WITH
   owner_lock AS MATERIALIZED (
     SELECT
@@ -22,43 +22,50 @@ WITH
       clock_timestamp() AS at
     FROM
       owner_lock
-  ),
-  generation AS (
-    INSERT INTO
-      generations (
-        id,
-        owner_id,
-        purpose,
-        provider,
-        request_key,
-        traceparent,
-        streamed,
-        attempt,
-        start_requested_at,
-        first_start_requested_at
-      )
-    SELECT
-      ?0::uuid,
-      ?1::uuid,
-      ?2::text,
-      ?3::text,
-      ?4::bytea,
-      ?5::text,
-      ?6::boolean,
-      1,
-      intent.at,
-      intent.at
-    FROM
-      intent
-    ON CONFLICT (request_key)
-    WHERE
-      status NOT IN ('failed', 'cancelled') DO UPDATE
-    SET
-      updated_at = generations.updated_at
-    RETURNING
-      *
+  )
+INSERT INTO
+  generations (
+    id,
+    owner_id,
+    purpose,
+    provider,
+    request_key,
+    traceparent,
+    streamed,
+    start_requested_at
   )
 SELECT
-  *
+  ?0::uuid,
+  ?1::uuid,
+  ?2::text,
+  ?3::text,
+  ?4::bytea,
+  ?5::text,
+  ?6::boolean,
+  intent.at
 FROM
-  generation;
+  intent
+ON CONFLICT (request_key)
+WHERE
+  status NOT IN ('failed', 'cancelled') DO UPDATE
+SET
+  updated_at = generations.updated_at
+RETURNING
+  id,
+  owner_id,
+  purpose,
+  provider,
+  request_key,
+  error,
+  failure,
+  status,
+  start_requested_at,
+  provider_call_id,
+  cancel_requested_at,
+  traceparent,
+  outcome_unknown_at,
+  streamed,
+  created_at,
+  updated_at,
+  settled_at,
+  expires_at;

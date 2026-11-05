@@ -63,7 +63,7 @@ func TestPgGenerationAttemptInsert(t *testing.T) {
 				running := runGeneration(ctx, t, generation.ID)
 
 				attempt, err := daoAttemptInsert.Exec(ctx, &dao.GenerationAttemptInsertRequest{
-					GenerationID: running.ID, Attempt: running.Attempt, Response: testCase.response,
+					GenerationID: running.ID, Response: testCase.response,
 				})
 				require.ErrorIs(t, err, testCase.expectErr)
 
@@ -71,7 +71,8 @@ func TestPgGenerationAttemptInsert(t *testing.T) {
 					return
 				}
 
-				require.Equal(t, running.Attempt, attempt.Attempt)
+				// A generation runs one call, recorded as its first attempt.
+				require.Equal(t, int16(1), attempt.Attempt)
 
 				// Stored as sent: the caller reads the provider's own bytes back.
 				stored, err := dao.NewPgGenerationAttemptList().Exec(ctx, &dao.GenerationAttemptListRequest{
