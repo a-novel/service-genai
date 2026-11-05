@@ -63,7 +63,7 @@ Every server does its work inside a request, so none needs CPU outside of one. A
 ```yaml
 services:
   postgres-genai:
-    image: ghcr.io/a-novel/service-genai/database:v0.9.0
+    image: ghcr.io/a-novel/service-genai/database:v0.10.0
     networks: [api]
     environment:
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
@@ -81,7 +81,7 @@ services:
       retries: 10
 
   migrations-genai:
-    image: ghcr.io/a-novel/service-genai/jobs/migrations:v0.9.0
+    image: ghcr.io/a-novel/service-genai/jobs/migrations:v0.10.0
     depends_on:
       postgres-genai: { condition: service_healthy }
     environment:
@@ -94,7 +94,7 @@ services:
     networks: [api]
 
   service-genai:
-    image: ghcr.io/a-novel/service-genai/grpc:v0.9.0
+    image: ghcr.io/a-novel/service-genai/grpc:v0.10.0
     ports: ["${SERVICE_GENAI_GRPC_PORT}:8080"] # the container always listens on 8080
     depends_on:
       postgres-genai: { condition: service_healthy }
@@ -110,7 +110,7 @@ services:
     networks: [api]
 
   sweep-genai:
-    image: ghcr.io/a-novel/service-genai/sweep:v0.9.0
+    image: ghcr.io/a-novel/service-genai/sweep:v0.10.0
     depends_on:
       postgres-genai: { condition: service_healthy }
       migrations-genai: { condition: service_completed_successfully }
