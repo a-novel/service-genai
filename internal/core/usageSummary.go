@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -29,7 +30,7 @@ type UsageSummaryDaoUsageSum interface {
 type UsageSummaryRequest struct {
 	// OwnerID is the user to report on.
 	OwnerID uuid.UUID `validate:"required"`
-	// Purpose is the purpose to report on. It must be declared in the caps.
+	// Purpose is the purpose to report on. It must be declared.
 	Purpose string `validate:"required,notblank,max=255"`
 	// Windows are how far back each sum reaches, within the bounds of a caps window.
 	Windows []time.Duration `validate:"max=10,unique,dive,gt=0,lte=8760h"`
@@ -60,14 +61,14 @@ type UsageSummaryWindow struct {
 type UsageSummary struct {
 	daoCountLive UsageSummaryDaoCountLive
 	daoUsageSum  UsageSummaryDaoUsageSum
-	caps         config.Caps
+	purposes     []string
 }
 
 // NewUsageSummary returns a new UsageSummary service.
 func NewUsageSummary(
-	daoCountLive UsageSummaryDaoCountLive, daoUsageSum UsageSummaryDaoUsageSum, caps config.Caps,
+	daoCountLive UsageSummaryDaoCountLive, daoUsageSum UsageSummaryDaoUsageSum, purposes []string,
 ) *UsageSummary {
-	return &UsageSummary{daoCountLive: daoCountLive, daoUsageSum: daoUsageSum, caps: caps}
+	return &UsageSummary{daoCountLive: daoCountLive, daoUsageSum: daoUsageSum, purposes: purposes}
 }
 
 func (service *UsageSummary) Exec(ctx context.Context, request *UsageSummaryRequest) (*UsageSummaryResult, error) {
@@ -84,10 +85,8 @@ func (service *UsageSummary) Exec(ctx context.Context, request *UsageSummaryRequ
 		return nil, otel.ReportError(span, errors.Join(err, ErrInvalidRequest))
 	}
 
-	if _, declared := service.caps.Purposes[request.Purpose]; !declared {
-		return nil, otel.ReportError(span, fmt.Errorf(
-			"%w: purpose %q is not declared in the caps", ErrInvalidRequest, request.Purpose,
-		))
+	if !slices.Contains(service.purposes, request.Purpose) {
+		return nil, otel.ReportError(span, fmt.Errorf("%w: purpose %q is not declared", ErrInvalidRequest, request.Purpose))
 	}
 
 	live, err := service.daoCountLive.Exec(ctx, &dao.GenerationCountLiveRequest{

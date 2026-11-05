@@ -27,7 +27,7 @@ type UsageSummaryRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// OwnerID is the user to report on, formatted as a UUID.
 	OwnerId string `protobuf:"bytes,1,opt,name=owner_id,json=ownerId,proto3" json:"owner_id,omitempty"`
-	// Purpose is the purpose to report on, declared in the service's caps file.
+	// Purpose is the purpose to report on, declared in the service's configuration.
 	Purpose string `protobuf:"bytes,2,opt,name=purpose,proto3" json:"purpose,omitempty"`
 	// Windows are how far back each sum reaches, as caps windows: at most 10, each of a distinct
 	// duration above zero and at most 8760 hours.

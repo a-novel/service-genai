@@ -88,8 +88,9 @@ type App struct {
 	Sweep Sweep `json:"sweep" yaml:"sweep"`
 	// OpenAI configures the OpenAI connector.
 	OpenAI OpenAI `json:"openAi" yaml:"openAi"`
-	// Caps is the usage policy a submit without caps of its own answers to.
-	Caps Caps `json:"caps" yaml:"caps"`
+	// Purposes lists the purposes a caller may submit generations for. A submit or a usage summary
+	// naming any other is refused.
+	Purposes []string `json:"purposes" yaml:"purposes"`
 	// Otel configures the OpenTelemetry exporter for traces and metrics.
 	Otel otel.Config `json:"otel" yaml:"otel"`
 	// Logger is the base application logger: checks log provider failures to it, and the REST handlers
@@ -114,11 +115,6 @@ func (app App) Validate() error {
 		return fmt.Errorf("%w: the sweep batch size must be between 1 and 100", ErrInvalidConfig)
 	case app.Sweep.Concurrency < 1:
 		return fmt.Errorf("%w: the sweep concurrency must be positive", ErrInvalidConfig)
-	}
-
-	err := app.Caps.Validate()
-	if err != nil {
-		return fmt.Errorf("caps: %w", err)
 	}
 
 	return nil

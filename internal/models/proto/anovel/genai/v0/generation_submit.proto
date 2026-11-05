@@ -15,10 +15,10 @@ service GenerationSubmitService {
   //
   // Returns INVALID_ARGUMENT with the reason for an invalid request, an undeclared purpose or an
   // unknown provider included; UNIMPLEMENTED for a provider without the Async mode; and
-  // RESOURCE_EXHAUSTED, naming the limit, when the user already reached one. That refusal carries a
-  // google.rpc.QuotaFailure with one violation: its subject names the limits that refused, such as
-  // `purpose "studio.generation"`, or `global` for a submit without caps, and its description the
-  // limit, such as `concurrency 2` or `input tokens over 5h`. A window's refusal adds a google.rpc.RetryInfo when
+  // RESOURCE_EXHAUSTED, naming the limit, when the user already reached one of the request's caps.
+  // That refusal carries a google.rpc.QuotaFailure with one violation: its subject names the limits
+  // that refused, such as `purpose "studio.generation"`, and its description the limit, such as
+  // `concurrency 2` or `input tokens over 5h`. A window's refusal adds a google.rpc.RetryInfo when
   // the window frees usage at a known time: its delay runs until the window's oldest usage leaves
   // it.
   rpc GenerationSubmit(GenerationSubmitRequest) returns (GenerationSubmitResponse);
@@ -30,8 +30,7 @@ message GenerationSubmitRequest {
   // its own credential, and this service trusts it as sent.
   string owner_id = 1;
   // Purpose labels why the call is made, such as "studio.generation". Required, and declared in the
-  // service's caps file, which also sets how much each user may consume for it when the submit
-  // carries no caps.
+  // service's configuration: any other is refused.
   string purpose = 2;
   // Provider names the service to run the call on, such as "openai". Required.
   string provider = 11;
@@ -40,11 +39,6 @@ message GenerationSubmitRequest {
   // no unpaired surrogates, no duplicate names in an object. The provider's connector sets the fields
   // the Async mode needs, such as OpenAI's background and stream, over the payload's own values.
   bytes payload = 12;
-  // UserTier is the usage tier the caller assigns its user, such as "premium". Without caps, it
-  // selects the caps of the service's caps file that the submit answers to; an empty or unrecognized
-  // tier answers to the default caps. With caps, it is ignored. It is left out of the request's
-  // identity, so resending a request under another tier returns the same generation.
-  string user_tier = 13;
   // Variant asks for another generation of a request that already succeeded, such as a regenerate.
   // It defaults to zero. A caller recovering from a crash counts variants from zero again, and each
   // one already run returns its stored result.
@@ -54,16 +48,19 @@ message GenerationSubmitRequest {
   // time, or after 30 seconds with the call still queued. It is part of the request: the same
   // payload with and without it are two generations.
   bool stream = 14;
-  // Caps are the limits the caller sets for its user on the request's purpose. Set, they alone limit
-  // the submit: the caller owns every limit, user_tier is ignored, and empty caps limit nothing.
-  // Unset, the submit answers to the service's caps file. Caps are left out of the request's
-  // identity, so resending a request under other caps returns the same generation.
+  // Caps are the limits the caller sets for its user on the request's purpose. The caller owns every
+  // limit: unset or empty caps limit nothing. Caps are left out of the request's identity, so
+  // resending a request under other caps returns the same generation.
   GenerationCaps caps = 15;
 
   // A request is identified by its own content and owner: the caller keeps no key to recover it.
   // Retries are this service's policy, and what runs is the caller's payload.
   reserved 3, 4, 5, 6, 7, 8, 9;
   reserved "idempotency_key", "request", "max_attempts", "tier", "instructions", "input", "output_schema";
+
+  // The caller sets each user's limits through caps.
+  reserved 13;
+  reserved "user_tier";
 }
 
 // GenerationCaps limits one owner's generations of the request's purpose.

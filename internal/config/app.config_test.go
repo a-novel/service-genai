@@ -15,7 +15,6 @@ func TestApp(t *testing.T) {
 	valid := config.App{
 		Generations: config.Generations{Retention: time.Hour},
 		Sweep:       config.Sweep{Interval: time.Minute, BatchSize: 50, Concurrency: 8},
-		Caps:        config.CapsDefault,
 	}
 
 	testCases := []struct {
@@ -56,13 +55,6 @@ func TestApp(t *testing.T) {
 			name: "Error/SweepBatchSizeAboveCeiling",
 
 			adjust: func(app *config.App) { app.Sweep.BatchSize = 101 },
-
-			expectErr: config.ErrInvalidConfig,
-		},
-		{
-			name: "Error/Caps",
-
-			adjust: func(app *config.App) { app.Caps = config.Caps{} },
 
 			expectErr: config.ErrInvalidConfig,
 		},

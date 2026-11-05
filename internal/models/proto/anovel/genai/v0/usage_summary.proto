@@ -16,7 +16,7 @@ service UsageSummaryService {
 message UsageSummaryRequest {
   // OwnerID is the user to report on, formatted as a UUID.
   string owner_id = 1;
-  // Purpose is the purpose to report on, declared in the service's caps file.
+  // Purpose is the purpose to report on, declared in the service's configuration.
   string purpose = 2;
   // Windows are how far back each sum reaches, as caps windows: at most 10, each of a distinct
   // duration above zero and at most 8760 hours.

@@ -18,7 +18,6 @@ import (
 
 	"github.com/a-novel-kit/golib/transaction/transactiontest"
 
-	"github.com/a-novel/service-genai/internal/config"
 	"github.com/a-novel/service-genai/internal/core"
 	coremocks "github.com/a-novel/service-genai/internal/core/mocks"
 	"github.com/a-novel/service-genai/internal/dao"
@@ -63,37 +62,8 @@ func testConnectors(t *testing.T) connectors.Registry {
 	}
 }
 
-// testCaps declare the test purpose, limited to 2 live generations and capped over 5h for the default
-// tier, and a global limit of 3 live generations and cap over 720h.
-var testCaps = config.Caps{
-	Purposes: map[string]config.TierCaps{
-		testPurpose: {
-			config.DefaultTier: {
-				Concurrency: new(2),
-				Windows:     map[time.Duration]config.Limit{5 * time.Hour: {InputTokens: new(int64(1000))}},
-			},
-			"unthrottled": {
-				Concurrency: new(-1),
-				Windows:     map[time.Duration]config.Limit{5 * time.Hour: {InputTokens: new(int64(1000))}},
-			},
-			"unlimited": {Concurrency: new(-1)},
-			"forbidden": {Forbidden: true},
-			"windowed": {
-				Windows: map[time.Duration]config.Limit{
-					5 * time.Hour:   {InputTokens: new(int64(1000))},
-					720 * time.Hour: {OutputTokens: new(int64(500))},
-				},
-			},
-		},
-		"studio.analysis": {config.DefaultTier: {Concurrency: new(-1)}},
-	},
-	Global: config.TierCaps{
-		config.DefaultTier: {
-			Concurrency: new(3),
-			Windows:     map[time.Duration]config.Limit{720 * time.Hour: {OutputTokens: new(int64(500))}},
-		},
-	},
-}
+// testPurposes declare the test purpose and another one.
+var testPurposes = []string{testPurpose, "studio.analysis"}
 
 func TestGenerationSubmit(t *testing.T) {
 	t.Parallel()
@@ -112,30 +82,40 @@ func TestGenerationSubmit(t *testing.T) {
 		err  error
 	}
 
-	// liveMock is one count of live generations admission reads, and what it finds. The count includes
-	// the generation the submit just created.
+	// liveMock is one count of the purpose's live generations admission reads, and what it finds. The
+	// count includes the generation the submit just created.
 	type liveMock struct {
-		purpose bool
-		count   int64
-		err     error
+		count int64
+		err   error
 	}
 
-	// usageMock is the window sums of one scope admission reads, and what it finds: one total per
+	// usageMock is the window sums of the purpose admission reads, and what it finds: one total per
 	// window, in the order of the windows.
 	type usageMock struct {
-		purpose bool
 		windows []time.Duration
 		used    []*dao.GenerationUsageTotals
 		err     error
 	}
 
-	// alone is the admission of a default-tier user whose only live generation is the one just created.
-	alone := []liveMock{{purpose: true, count: 1}, {count: 1}}
+	// testCaps limit the test purpose to 2 live generations, and cap its input tokens over 5h.
+	testCaps := &core.GenerationCaps{
+		Concurrency: new(2),
+		Windows:     []core.GenerationCapWindow{{Duration: 5 * time.Hour, InputTokens: new(int64(1000))}},
+	}
 
-	// underCaps is the admission of a default-tier user with room left under every cap.
+	// severalWindows cap the test purpose over two windows, longest first, and no concurrency.
+	severalWindows := &core.GenerationCaps{Windows: []core.GenerationCapWindow{
+		{Duration: 720 * time.Hour, OutputTokens: new(int64(500))},
+		{Duration: 5 * time.Hour, InputTokens: new(int64(1000))},
+	}}
+
+	// alone is the admission under the test caps of a user whose only live generation is the one just
+	// created.
+	alone := []liveMock{{count: 1}}
+
+	// underCaps is the admission under the test caps of a user with room left in the window.
 	underCaps := []usageMock{
-		{purpose: true, windows: []time.Duration{5 * time.Hour}, used: []*dao.GenerationUsageTotals{{}}},
-		{windows: []time.Duration{720 * time.Hour}, used: []*dao.GenerationUsageTotals{{}}},
+		{windows: []time.Duration{5 * time.Hour}, used: []*dao.GenerationUsageTotals{{}}},
 	}
 
 	testCases := []struct {
@@ -147,8 +127,7 @@ func TestGenerationSubmit(t *testing.T) {
 		// live lists the counts of live generations admission reads. Only a created generation is
 		// admitted.
 		live []liveMock
-		// usage lists the scopes whose window sums admission reads, in order. Only a created generation
-		// is admitted.
+		// usage lists the window sums admission reads. Only a created generation is admitted.
 		usage []usageMock
 		// expectRefusal refuses the created generation for a reached limit: its transaction rolls it
 		// back, so nothing ever sends it. The refusal names the scope and the limit that refused, and
@@ -169,10 +148,28 @@ func TestGenerationSubmit(t *testing.T) {
 		{
 			name: "Success",
 
-			request: submitRequest(nil),
+			request: submitRequest(withCaps(testCaps)),
 			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: startingGeneration(0), Created: true}},
 			live:    alone,
 			usage:   underCaps,
+
+			expectCreated: true,
+		},
+		{
+			// The caller owns every limit: without caps, admission reads no count and no sum.
+			name: "Success/NoCaps",
+
+			request: submitRequest(nil),
+			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: startingGeneration(0), Created: true}},
+
+			expectCreated: true,
+		},
+		{
+			// Empty caps limit nothing either.
+			name: "Success/EmptyCaps",
+
+			request: submitRequest(withCaps(&core.GenerationCaps{})),
+			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: startingGeneration(0), Created: true}},
 
 			expectCreated: true,
 		},
@@ -180,7 +177,7 @@ func TestGenerationSubmit(t *testing.T) {
 			// A resend attaches to the recorded generation; whoever polls it next checks it.
 			name: "Success/Replayed",
 
-			request: submitRequest(nil),
+			request: submitRequest(withCaps(testCaps)),
 			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: startingGeneration(time.Minute)}},
 		},
 		{
@@ -188,52 +185,28 @@ func TestGenerationSubmit(t *testing.T) {
 
 			request: submitRequest(payloadOfSize(core.PayloadSizeCeiling)),
 			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: startingGeneration(0), Created: true}},
-			live:    alone,
-			usage:   underCaps,
 
 			expectCreated: true,
 		},
 		{
-			// The purpose's limits are lifted for this tier; the global ones still apply.
-			name: "Success/UnlimitedTier",
-
-			request: submitRequest(func(request *core.GenerationSubmitRequest) { request.UserTier = "unlimited" }),
-			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: startingGeneration(0), Created: true}},
-			live:    []liveMock{{count: 1}},
-			usage:   []usageMock{underCaps[1]},
-
-			expectCreated: true,
-		},
-		{
-			// -1 lifts the purpose's concurrency alone: its windows and the global limits still apply.
-			name: "Success/ConcurrencyLifted",
-
-			request: submitRequest(func(request *core.GenerationSubmitRequest) { request.UserTier = "unthrottled" }),
-			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: startingGeneration(0), Created: true}},
-			live:    []liveMock{{count: 1}},
-			usage:   underCaps,
-
-			expectCreated: true,
-		},
-		{
-			// The created generation is the second of its purpose and the third overall: exactly both
-			// limits.
+			// The created generation is the second of its purpose: exactly the limit.
 			name: "Success/AtConcurrencyLimit",
 
-			request: submitRequest(nil),
+			request: submitRequest(withCaps(testCaps)),
 			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: startingGeneration(0), Created: true}},
-			live:    []liveMock{{purpose: true, count: 2}, {count: 3}},
+			live:    []liveMock{{count: 2}},
 			usage:   underCaps,
 
 			expectCreated: true,
 		},
 		{
-			// Refused before any usage is read.
-			name: "Error/PurposeConcurrencyReached",
+			// Refused before any usage is read. The count includes the generations whose call may still
+			// run, within the hold.
+			name: "Error/ConcurrencyReached",
 
-			request:       submitRequest(nil),
+			request:       submitRequest(withCaps(testCaps)),
 			daoMock:       &daoMock{resp: &dao.GenerationSubmitResult{Generation: startingGeneration(0), Created: true}},
-			live:          []liveMock{{purpose: true, count: 3}},
+			live:          []liveMock{{count: 3}},
 			expectRefusal: true,
 			expectScope:   purposeScope,
 			expectLimit:   "concurrency 2",
@@ -243,36 +216,22 @@ func TestGenerationSubmit(t *testing.T) {
 			expectErr: core.ErrUsageCapReached,
 		},
 		{
-			// Room left in the purpose, but not across every purpose.
-			name: "Error/GlobalConcurrencyReached",
-
-			request:       submitRequest(nil),
-			daoMock:       &daoMock{resp: &dao.GenerationSubmitResult{Generation: startingGeneration(0), Created: true}},
-			live:          []liveMock{{purpose: true, count: 1}, {count: 4}},
-			usage:         []usageMock{underCaps[0]},
-			expectRefusal: true,
-			expectScope:   "global",
-			expectLimit:   "concurrency 3",
-
-			expectErr: core.ErrUsageCapReached,
-		},
-		{
 			name: "Error/CountLive",
 
-			request: submitRequest(nil),
+			request: submitRequest(withCaps(testCaps)),
 			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: startingGeneration(0), Created: true}},
-			live:    []liveMock{{purpose: true, err: errFoo}},
+			live:    []liveMock{{err: errFoo}},
 
 			expectErr: errFoo,
 		},
 		{
-			name: "Error/PurposeCapReached",
+			// The refusal tells when the window frees usage: its oldest record then leaves it.
+			name: "Error/WindowReached",
 
-			request: submitRequest(nil),
+			request: submitRequest(withCaps(testCaps)),
 			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: startingGeneration(0), Created: true}},
-			live:    []liveMock{{purpose: true, count: 1}},
+			live:    alone,
 			usage: []usageMock{{
-				purpose: true,
 				windows: []time.Duration{5 * time.Hour},
 				used:    []*dao.GenerationUsageTotals{{InputTokens: 1000, OldestAt: &fourHoursAgo}},
 			}},
@@ -285,52 +244,27 @@ func TestGenerationSubmit(t *testing.T) {
 			expectErr: core.ErrUsageCapReached,
 		},
 		{
-			name: "Error/GlobalCapReached",
-
-			request: submitRequest(nil),
-			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: startingGeneration(0), Created: true}},
-			live:    alone,
-			usage: []usageMock{
-				{
-					purpose: true,
-					windows: []time.Duration{5 * time.Hour},
-					used:    []*dao.GenerationUsageTotals{{InputTokens: 999}},
-				},
-				{windows: []time.Duration{720 * time.Hour}, used: []*dao.GenerationUsageTotals{{OutputTokens: 500}}},
-			},
-			expectRefusal: true,
-			expectScope:   "global",
-			// No record dates the window's usage, so nothing tells when it frees.
-			expectLimit: "output tokens over 720h",
-
-			expectErr: core.ErrUsageCapReached,
-		},
-		{
-			// One read sums every window of the purpose, shortest first.
+			// Windows alone read no count. One read sums every window, shortest first, whatever the
+			// caller's order.
 			name: "Success/SeveralWindows",
 
-			request: submitRequest(func(request *core.GenerationSubmitRequest) { request.UserTier = "windowed" }),
+			request: submitRequest(withCaps(severalWindows)),
 			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: startingGeneration(0), Created: true}},
-			live:    []liveMock{{count: 1}},
-			usage: []usageMock{
-				{
-					purpose: true,
-					windows: []time.Duration{5 * time.Hour, 720 * time.Hour},
-					used:    []*dao.GenerationUsageTotals{{InputTokens: 999}, {OutputTokens: 499}},
-				},
-				underCaps[1],
-			},
+			usage: []usageMock{{
+				windows: []time.Duration{5 * time.Hour, 720 * time.Hour},
+				used:    []*dao.GenerationUsageTotals{{InputTokens: 999}, {OutputTokens: 499}},
+			}},
 
 			expectCreated: true,
 		},
 		{
-			// A window past the first can refuse the generation too.
+			// A window past the first can refuse the generation too. No record dates the window's usage,
+			// so nothing tells when it frees.
 			name: "Error/LaterWindowReached",
 
-			request: submitRequest(func(request *core.GenerationSubmitRequest) { request.UserTier = "windowed" }),
+			request: submitRequest(withCaps(severalWindows)),
 			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: startingGeneration(0), Created: true}},
 			usage: []usageMock{{
-				purpose: true,
 				windows: []time.Duration{5 * time.Hour, 720 * time.Hour},
 				used:    []*dao.GenerationUsageTotals{{InputTokens: 999}, {OutputTokens: 500}},
 			}},
@@ -341,79 +275,14 @@ func TestGenerationSubmit(t *testing.T) {
 			expectErr: core.ErrUsageCapReached,
 		},
 		{
-			// Refused before anything is counted.
-			name: "Error/ForbiddenTier",
+			name: "Error/UsageSum",
 
-			request:       submitRequest(func(request *core.GenerationSubmitRequest) { request.UserTier = "forbidden" }),
-			daoMock:       &daoMock{resp: &dao.GenerationSubmitResult{Generation: startingGeneration(0), Created: true}},
-			expectRefusal: true,
-			expectScope:   purposeScope,
-			expectLimit:   "no usage",
-
-			expectErr: core.ErrUsageCapReached,
-		},
-		{
-			// The caller owns every limit: its caps alone limit the purpose, nothing counts the user's
-			// other purposes, and the caps file's tier is ignored, a forbidden one included.
-			name: "Success/Caps",
-
-			request: submitRequest(func(request *core.GenerationSubmitRequest) {
-				request.UserTier = "forbidden"
-				request.Caps = &core.GenerationCaps{
-					Concurrency: new(1),
-					Windows:     []core.GenerationCapWindow{{Duration: time.Hour, InputTokens: new(int64(100))}},
-				}
-			}),
+			request: submitRequest(withCaps(testCaps)),
 			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: startingGeneration(0), Created: true}},
-			live:    []liveMock{{purpose: true, count: 1}},
-			usage: []usageMock{
-				{purpose: true, windows: []time.Duration{time.Hour}, used: []*dao.GenerationUsageTotals{{InputTokens: 99}}},
-			},
+			live:    alone,
+			usage:   []usageMock{{windows: []time.Duration{5 * time.Hour}, err: errFoo}},
 
-			expectCreated: true,
-		},
-		{
-			// Empty caps limit nothing: admission reads no count and no sum.
-			name: "Success/EmptyCaps",
-
-			request: submitRequest(withCaps(&core.GenerationCaps{})),
-			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: startingGeneration(0), Created: true}},
-
-			expectCreated: true,
-		},
-		{
-			// The count includes the generations whose call may still run, within the hold.
-			name: "Error/CapsConcurrencyReached",
-
-			request:       submitRequest(withCaps(&core.GenerationCaps{Concurrency: new(1)})),
-			daoMock:       &daoMock{resp: &dao.GenerationSubmitResult{Generation: startingGeneration(0), Created: true}},
-			live:          []liveMock{{purpose: true, count: 2}},
-			expectRefusal: true,
-			expectScope:   purposeScope,
-			expectLimit:   "concurrency 1",
-			expectMessage: `usage cap reached: purpose "studio.generation" concurrency: 1 generations already in flight`,
-
-			expectErr: core.ErrUsageCapReached,
-		},
-		{
-			// The refusal tells when the window frees usage: its oldest record then leaves it.
-			name: "Error/CapsWindowReached",
-
-			request: submitRequest(withCaps(&core.GenerationCaps{
-				Windows: []core.GenerationCapWindow{{Duration: 5 * time.Hour, OutputTokens: new(int64(10))}},
-			})),
-			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: startingGeneration(0), Created: true}},
-			usage: []usageMock{{
-				purpose: true,
-				windows: []time.Duration{5 * time.Hour},
-				used:    []*dao.GenerationUsageTotals{{OutputTokens: 10, OldestAt: &fourHoursAgo}},
-			}},
-			expectRefusal:    true,
-			expectScope:      purposeScope,
-			expectLimit:      "output tokens over 5h",
-			expectRetryAfter: time.Hour,
-
-			expectErr: core.ErrUsageCapReached,
+			expectErr: errFoo,
 		},
 		{
 			name: "Error/CapsNegativeConcurrency",
@@ -479,16 +348,6 @@ func TestGenerationSubmit(t *testing.T) {
 			expectErr: core.ErrInvalidRequest,
 		},
 		{
-			name: "Error/UsageSum",
-
-			request: submitRequest(nil),
-			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: startingGeneration(0), Created: true}},
-			live:    []liveMock{{purpose: true, count: 1}},
-			usage:   []usageMock{{purpose: true, windows: []time.Duration{5 * time.Hour}, err: errFoo}},
-
-			expectErr: errFoo,
-		},
-		{
 			name: "Error/NoOwner",
 
 			request: submitRequest(func(request *core.GenerationSubmitRequest) { request.OwnerID = uuid.Nil }),
@@ -540,8 +399,6 @@ func TestGenerationSubmit(t *testing.T) {
 				request.Stream = true
 			}),
 			daoMock: &daoMock{resp: &dao.GenerationSubmitResult{Generation: startingGeneration(0), Created: true}},
-			live:    alone,
-			usage:   underCaps,
 
 			expectCreated: true,
 		},
@@ -598,8 +455,6 @@ func TestGenerationSubmit(t *testing.T) {
 
 			request:  submitRequest(nil),
 			daoMock:  &daoMock{resp: &dao.GenerationSubmitResult{Generation: startingGeneration(0), Created: true}},
-			live:     alone,
-			usage:    underCaps,
 			checkErr: errFoo,
 
 			expectCreated: true,
@@ -638,15 +493,10 @@ func TestGenerationSubmit(t *testing.T) {
 			admitted := !testCase.expectRefusal
 			created := testCase.daoMock != nil && testCase.daoMock.resp != nil && testCase.daoMock.resp.Created
 
-			// A purpose scope reads the request's purpose; the global one reads every purpose.
-			purpose := &testCase.request.Purpose
-
 			for _, live := range testCase.live {
+				// The count includes a generation whose call may still run untracked.
 				liveRequest := &dao.GenerationCountLiveRequest{
-					OwnerID: testCase.request.OwnerID,
-					Purpose: lo.Ternary(live.purpose, purpose, nil),
-					// Only the purpose scope counts a generation whose call may still run untracked.
-					UnknownOutcomeWindow: lo.Ternary(live.purpose, 15*time.Minute, 0),
+					OwnerID: testCase.request.OwnerID, Purpose: &testCase.request.Purpose, UnknownOutcomeWindow: 15 * time.Minute,
 				}
 
 				liveDao.EXPECT().
@@ -659,7 +509,7 @@ func TestGenerationSubmit(t *testing.T) {
 			for _, usage := range testCase.usage {
 				usageDao.EXPECT().
 					Exec(mock.Anything, &dao.GenerationUsageSumRequest{
-						OwnerID: testCase.request.OwnerID, Purpose: lo.Ternary(usage.purpose, purpose, nil), Windows: usage.windows,
+						OwnerID: testCase.request.OwnerID, Purpose: &testCase.request.Purpose, Windows: usage.windows,
 					}).
 					Return(usage.used, usage.err)
 
@@ -704,7 +554,7 @@ func TestGenerationSubmit(t *testing.T) {
 				submitDao, attemptDao, usageDao, liveDao, check,
 				testConnectors(t),
 				transactiontest.NewTransactor(),
-				testCaps,
+				testPurposes,
 			)
 
 			result, err := service.Exec(trace.ContextWithSpanContext(t.Context(), testCaller), testCase.request)
@@ -851,7 +701,7 @@ func submittedKey(t *testing.T, request *core.GenerationSubmitRequest) []byte {
 		coremocks.NewMockGenerationSubmitServiceCheck(t),
 		testConnectors(t),
 		transactiontest.NewTransactor(),
-		testCaps,
+		testPurposes,
 	)
 
 	_, err := service.Exec(t.Context(), request)

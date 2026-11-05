@@ -161,7 +161,7 @@ func TestUsageSummary(t *testing.T) {
 					Return(testCase.usageMock.used, testCase.usageMock.err)
 			}
 
-			result, err := core.NewUsageSummary(liveDao, usageDao, testCaps).Exec(t.Context(), testCase.request)
+			result, err := core.NewUsageSummary(liveDao, usageDao, testPurposes).Exec(t.Context(), testCase.request)
 			require.ErrorIs(t, err, testCase.expectErr)
 			require.Equal(t, testCase.expect, result)
 

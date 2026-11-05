@@ -103,13 +103,13 @@ func main() {
 		serviceCheck,
 		registry,
 		transactor,
-		cfg.Caps,
+		cfg.Purposes,
 	)
 	serviceGet := core.NewGenerationGet(daoGet, daoAttemptList, serviceCheck)
 	serviceCancel := core.NewGenerationCancel(daoRequestCancel, daoGet, daoAttemptList, serviceCheck, cfg.Generations)
 	serviceStream := core.NewGenerationStream(daoGet, registry)
 	serviceQueueDepth := core.NewGenerationQueueDepth(daoQueueDepth)
-	serviceUsageSummary := core.NewUsageSummary(daoCountLive, daoUsageSum, cfg.Caps)
+	serviceUsageSummary := core.NewUsageSummary(daoCountLive, daoUsageSum, cfg.Purposes)
 
 	// =================================================================================================================
 	// HANDLERS

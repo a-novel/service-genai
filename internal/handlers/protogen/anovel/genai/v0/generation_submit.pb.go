@@ -29,8 +29,7 @@ type GenerationSubmitRequest struct {
 	// its own credential, and this service trusts it as sent.
 	OwnerId string `protobuf:"bytes,1,opt,name=owner_id,json=ownerId,proto3" json:"owner_id,omitempty"`
 	// Purpose labels why the call is made, such as "studio.generation". Required, and declared in the
-	// service's caps file, which also sets how much each user may consume for it when the submit
-	// carries no caps.
+	// service's configuration: any other is refused.
 	Purpose string `protobuf:"bytes,2,opt,name=purpose,proto3" json:"purpose,omitempty"`
 	// Provider names the service to run the call on, such as "openai". Required.
 	Provider string `protobuf:"bytes,11,opt,name=provider,proto3" json:"provider,omitempty"`
@@ -39,11 +38,6 @@ type GenerationSubmitRequest struct {
 	// no unpaired surrogates, no duplicate names in an object. The provider's connector sets the fields
 	// the Async mode needs, such as OpenAI's background and stream, over the payload's own values.
 	Payload []byte `protobuf:"bytes,12,opt,name=payload,proto3" json:"payload,omitempty"`
-	// UserTier is the usage tier the caller assigns its user, such as "premium". Without caps, it
-	// selects the caps of the service's caps file that the submit answers to; an empty or unrecognized
-	// tier answers to the default caps. With caps, it is ignored. It is left out of the request's
-	// identity, so resending a request under another tier returns the same generation.
-	UserTier string `protobuf:"bytes,13,opt,name=user_tier,json=userTier,proto3" json:"user_tier,omitempty"`
 	// Variant asks for another generation of a request that already succeeded, such as a regenerate.
 	// It defaults to zero. A caller recovering from a crash counts variants from zero again, and each
 	// one already run returns its stored result.
@@ -53,10 +47,9 @@ type GenerationSubmitRequest struct {
 	// time, or after 30 seconds with the call still queued. It is part of the request: the same
 	// payload with and without it are two generations.
 	Stream bool `protobuf:"varint,14,opt,name=stream,proto3" json:"stream,omitempty"`
-	// Caps are the limits the caller sets for its user on the request's purpose. Set, they alone limit
-	// the submit: the caller owns every limit, user_tier is ignored, and empty caps limit nothing.
-	// Unset, the submit answers to the service's caps file. Caps are left out of the request's
-	// identity, so resending a request under other caps returns the same generation.
+	// Caps are the limits the caller sets for its user on the request's purpose. The caller owns every
+	// limit: unset or empty caps limit nothing. Caps are left out of the request's identity, so
+	// resending a request under other caps returns the same generation.
 	Caps          *GenerationCaps `protobuf:"bytes,15,opt,name=caps,proto3" json:"caps,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -118,13 +111,6 @@ func (x *GenerationSubmitRequest) GetPayload() []byte {
 		return x.Payload
 	}
 	return nil
-}
-
-func (x *GenerationSubmitRequest) GetUserTier() string {
-	if x != nil {
-		return x.UserTier
-	}
-	return ""
 }
 
 func (x *GenerationSubmitRequest) GetVariant() uint32 {
@@ -333,18 +319,17 @@ var File_anovel_genai_v0_generation_submit_proto protoreflect.FileDescriptor
 
 const file_anovel_genai_v0_generation_submit_proto_rawDesc = "" +
 	"\n" +
-	"'anovel/genai/v0/generation_submit.proto\x12\x0fanovel.genai.v0\x1a anovel/genai/v0/generation.proto\x1a\x1egoogle/protobuf/duration.proto\"\x84\x03\n" +
+	"'anovel/genai/v0/generation_submit.proto\x12\x0fanovel.genai.v0\x1a anovel/genai/v0/generation.proto\x1a\x1egoogle/protobuf/duration.proto\"\xf8\x02\n" +
 	"\x17GenerationSubmitRequest\x12\x19\n" +
 	"\bowner_id\x18\x01 \x01(\tR\aownerId\x12\x18\n" +
 	"\apurpose\x18\x02 \x01(\tR\apurpose\x12\x1a\n" +
 	"\bprovider\x18\v \x01(\tR\bprovider\x12\x18\n" +
-	"\apayload\x18\f \x01(\fR\apayload\x12\x1b\n" +
-	"\tuser_tier\x18\r \x01(\tR\buserTier\x12\x18\n" +
+	"\apayload\x18\f \x01(\fR\apayload\x12\x18\n" +
 	"\avariant\x18\n" +
 	" \x01(\rR\avariant\x12\x16\n" +
 	"\x06stream\x18\x0e \x01(\bR\x06stream\x123\n" +
 	"\x04caps\x18\x0f \x01(\v2\x1f.anovel.genai.v0.GenerationCapsR\x04capsJ\x04\b\x03\x10\x04J\x04\b\x04\x10\x05J\x04\b\x05\x10\x06J\x04\b\x06\x10\aJ\x04\b\a\x10\bJ\x04\b\b\x10\tJ\x04\b\t\x10\n" +
-	"R\x0fidempotency_keyR\arequestR\fmax_attemptsR\x04tierR\finstructionsR\x05inputR\routput_schema\"\x87\x01\n" +
+	"J\x04\b\r\x10\x0eR\x0fidempotency_keyR\arequestR\fmax_attemptsR\x04tierR\finstructionsR\x05inputR\routput_schemaR\tuser_tier\"\x87\x01\n" +
 	"\x0eGenerationCaps\x12%\n" +
 	"\vconcurrency\x18\x01 \x01(\x05H\x00R\vconcurrency\x88\x01\x01\x12>\n" +
 	"\awindows\x18\x02 \x03(\v2$.anovel.genai.v0.GenerationCapWindowR\awindowsB\x0e\n" +

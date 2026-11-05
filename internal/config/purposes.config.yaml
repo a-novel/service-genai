@@ -1,0 +1,3 @@
+# The purposes a caller may submit generations for, and read the usage of. A submit or a usage summary
+# naming any other is refused.
+- studio.generation

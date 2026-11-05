@@ -226,7 +226,7 @@ func TestClient(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, variant.GetCreated())
 
-		// A purpose the caps do not declare cannot be spent on: the embedded caps reach the image.
+		// A purpose the service does not declare cannot be spent on: the embedded purposes reach the image.
 		undeclared := submitRequest(owner)
 		undeclared.Purpose = "studio.undeclared"
 		_, err = client.GenerationSubmit(t.Context(), undeclared)
@@ -392,7 +392,7 @@ func TestClient(t *testing.T) {
 		require.Equal(t, 5*time.Hour, summary.GetWindows()[1].GetDuration().AsDuration())
 		require.Zero(t, summary.GetWindows()[0].GetInputTokens())
 
-		// A purpose the caps do not declare has no usage to report.
+		// A purpose the service does not declare has no usage to report.
 		_, err = client.UsageSummary(t.Context(), &servicegenai.UsageSummaryRequest{
 			OwnerId: owner, Purpose: "studio.undeclared",
 		})
