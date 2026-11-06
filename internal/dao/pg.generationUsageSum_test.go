@@ -31,23 +31,16 @@ func TestPgGenerationUsageSum(t *testing.T) {
 	testCases := []struct {
 		name string
 
-		purpose *string
+		purpose string
 		windows []time.Duration
 
 		expect []totals
 	}{
 		{
-			// Within the hour: the recent generation and the recent analysis, not the old one.
-			name: "Success/AllPurposes",
+			// Within the hour: the recent generation, not the old one, nor the analysis.
+			name: "Success",
 
-			windows: []time.Duration{time.Hour},
-
-			expect: []totals{{input: 300, output: 30, oldest: 20 * time.Minute}},
-		},
-		{
-			name: "Success/OnePurpose",
-
-			purpose: &generation,
+			purpose: generation,
 			windows: []time.Duration{time.Hour},
 
 			expect: []totals{{input: 100, output: 10, oldest: 10 * time.Minute}},
@@ -56,7 +49,7 @@ func TestPgGenerationUsageSum(t *testing.T) {
 			// The day reaches the old record too.
 			name: "Success/LongerWindow",
 
-			purpose: &generation,
+			purpose: generation,
 			windows: []time.Duration{24 * time.Hour},
 
 			expect: []totals{{input: 1100, output: 110, oldest: 2 * time.Hour}},
@@ -65,7 +58,7 @@ func TestPgGenerationUsageSum(t *testing.T) {
 			// The analysis is twenty minutes old.
 			name: "Success/Nothing",
 
-			purpose: &analysis,
+			purpose: analysis,
 			windows: []time.Duration{time.Minute},
 
 			expect: []totals{{}},
@@ -74,12 +67,13 @@ func TestPgGenerationUsageSum(t *testing.T) {
 			// One query sums every window, each in the order given, an empty one included.
 			name: "Success/SeveralWindows",
 
+			purpose: generation,
 			windows: []time.Duration{24 * time.Hour, time.Minute, time.Hour},
 
 			expect: []totals{
-				{input: 1300, output: 130, oldest: 2 * time.Hour},
+				{input: 1100, output: 110, oldest: 2 * time.Hour},
 				{},
-				{input: 300, output: 30, oldest: 20 * time.Minute},
+				{input: 100, output: 10, oldest: 10 * time.Minute},
 			},
 		},
 	}

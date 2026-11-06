@@ -20,8 +20,7 @@ var generationUsageSumQuery string
 // GenerationUsageSumRequest bounds the sums of one cap.
 type GenerationUsageSumRequest struct {
 	OwnerID uuid.UUID
-	// Purpose restricts the sums to one purpose; nil sums every purpose.
-	Purpose *string
+	Purpose string
 	// Windows are how far back each sum reaches, from now, by the database clock. At least one.
 	Windows []time.Duration
 }
@@ -35,8 +34,8 @@ type GenerationUsageTotals struct {
 	OldestAt *time.Time `bun:"oldest_at"`
 }
 
-// PgGenerationUsageSum adds up an owner's Usage Records over rolling windows, in one query. It
-// returns one total per window, in the order of the windows.
+// PgGenerationUsageSum adds up an owner's Usage Records of one purpose over rolling windows, in one
+// query. It returns one total per window, in the order of the windows.
 type PgGenerationUsageSum struct{}
 
 // NewPgGenerationUsageSum returns a new PgGenerationUsageSum dao.

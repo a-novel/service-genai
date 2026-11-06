@@ -90,7 +90,7 @@ func (service *UsageSummary) Exec(ctx context.Context, request *UsageSummaryRequ
 	}
 
 	live, err := service.daoCountLive.Exec(ctx, &dao.GenerationCountLiveRequest{
-		OwnerID: request.OwnerID, Purpose: &request.Purpose, UnknownOutcomeWindow: config.UnknownOutcomeHold,
+		OwnerID: request.OwnerID, Purpose: request.Purpose, UnknownOutcomeWindow: config.UnknownOutcomeHold,
 	})
 	if err != nil {
 		return nil, otel.ReportError(span, fmt.Errorf("count live generations: %w", err))
@@ -103,7 +103,7 @@ func (service *UsageSummary) Exec(ctx context.Context, request *UsageSummaryRequ
 	}
 
 	used, err := service.daoUsageSum.Exec(ctx, &dao.GenerationUsageSumRequest{
-		OwnerID: request.OwnerID, Purpose: &request.Purpose, Windows: request.Windows,
+		OwnerID: request.OwnerID, Purpose: request.Purpose, Windows: request.Windows,
 	})
 	if err != nil {
 		return nil, otel.ReportError(span, fmt.Errorf("sum usage: %w", err))

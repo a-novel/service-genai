@@ -15,13 +15,12 @@ import (
 //go:embed pg.generationCountLive.sql
 var generationCountLiveQuery string
 
-// GenerationCountLiveRequest names the owner whose live generations to count.
+// GenerationCountLiveRequest names the owner and the purpose whose live generations to count.
 type GenerationCountLiveRequest struct {
 	OwnerID uuid.UUID
-	// Purpose restricts the count to one purpose; nil counts every purpose.
-	Purpose *string
+	Purpose string
 	// UnknownOutcomeWindow is how long a generation that failed with its start's outcome unknown
-	// still counts. Zero counts none.
+	// still counts.
 	UnknownOutcomeWindow time.Duration
 }
 
@@ -30,8 +29,8 @@ type GenerationLiveCount struct {
 	Count int64 `bun:"count"`
 }
 
-// PgGenerationCountLive counts an owner's generations in flight: pending, running, or failed within
-// the window with an outcome unknown.
+// PgGenerationCountLive counts an owner's generations of one purpose in flight: pending, running, or
+// failed within the window with an outcome unknown.
 type PgGenerationCountLive struct{}
 
 // NewPgGenerationCountLive returns a new PgGenerationCountLive dao.
