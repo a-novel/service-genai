@@ -60,7 +60,7 @@ func TestGenerationCheck(t *testing.T) {
 		status  dao.GenerationStatus
 		reason  *string
 		failure *dao.GenerationFailure
-		// outcomeUnknown marks a start the provider may have accepted: the slot stays held.
+		// outcomeUnknown marks a call the provider may still run, untracked: the slot stays held.
 		outcomeUnknown bool
 	}
 
@@ -312,14 +312,14 @@ func TestGenerationCheck(t *testing.T) {
 			expectStatus: dao.GenerationStatusFailed,
 		},
 		{
-			// The call runs on out of this service's reach: it may still be paid for.
+			// The call runs on out of this service's reach and may still be paid for: the slot stays held.
 			name: "Success/ProviderUnavailableWhileRunning",
 
 			generation: withProvider(runningGeneration(), "gone"),
 
 			expectSettle: &settle{
 				callID: &callID, status: dao.GenerationStatusFailed, reason: &unavailableMessage,
-				failure: unknown,
+				failure: unknown, outcomeUnknown: true,
 			},
 			expectStatus: dao.GenerationStatusFailed,
 		},
