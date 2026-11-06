@@ -146,7 +146,7 @@ func TestUsageSummary(t *testing.T) {
 				// The count a submit's concurrency reads, with the generations whose call may still run.
 				liveDao.EXPECT().
 					Exec(mock.Anything, &dao.GenerationCountLiveRequest{
-						OwnerID: testCase.request.OwnerID, Purpose: &testCase.request.Purpose,
+						OwnerID: testCase.request.OwnerID, Purpose: testCase.request.Purpose,
 						UnknownOutcomeWindow: 15 * time.Minute,
 					}).
 					Return(&dao.GenerationLiveCount{Count: testCase.liveMock.count}, testCase.liveMock.err)
@@ -155,7 +155,7 @@ func TestUsageSummary(t *testing.T) {
 			if testCase.usageMock != nil {
 				usageDao.EXPECT().
 					Exec(mock.Anything, &dao.GenerationUsageSumRequest{
-						OwnerID: testCase.request.OwnerID, Purpose: &testCase.request.Purpose,
+						OwnerID: testCase.request.OwnerID, Purpose: testCase.request.Purpose,
 						Windows: testCase.request.Windows,
 					}).
 					Return(testCase.usageMock.used, testCase.usageMock.err)

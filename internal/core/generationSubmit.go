@@ -336,7 +336,7 @@ func (service *GenerationSubmit) admit(ctx context.Context, request *GenerationS
 
 	if caps.Concurrency != nil {
 		live, err := service.daoCountLive.Exec(ctx, &dao.GenerationCountLiveRequest{
-			OwnerID: request.OwnerID, Purpose: &request.Purpose, UnknownOutcomeWindow: config.UnknownOutcomeHold,
+			OwnerID: request.OwnerID, Purpose: request.Purpose, UnknownOutcomeWindow: config.UnknownOutcomeHold,
 		})
 		if err != nil {
 			return otel.ReportError(span, fmt.Errorf("count live generations: %w", err))
@@ -362,7 +362,7 @@ func (service *GenerationSubmit) admit(ctx context.Context, request *GenerationS
 
 	used, err := service.daoUsageSum.Exec(ctx, &dao.GenerationUsageSumRequest{
 		OwnerID: request.OwnerID,
-		Purpose: &request.Purpose,
+		Purpose: request.Purpose,
 		Windows: lo.Map(windows, func(window GenerationCapWindow, _ int) time.Duration { return window.Duration }),
 	})
 	if err != nil {

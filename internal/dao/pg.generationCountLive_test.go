@@ -21,31 +21,20 @@ func TestPgGenerationCountLive(t *testing.T) {
 	testCases := []struct {
 		name string
 
-		owner   uuid.UUID
-		purpose *string
+		owner uuid.UUID
 		// unknownSince seeds a generation that failed with its start's outcome unknown, that long ago.
 		unknownSince time.Duration
-		// noWindow counts with a zero unknown-outcome window, as the global scope does.
-		noWindow bool
 
 		expect int64
 	}{
 		{
-			// A pending and a running generation; the settled one no longer runs.
+			// A pending and a running generation; the settled one no longer runs, and the analysis
+			// counts toward its own purpose.
 			name: "Success",
 
 			owner: testOwner,
 
 			expect: 2,
-		},
-		{
-			// The running generation was submitted for another purpose.
-			name: "Success/OnePurpose",
-
-			owner:   testOwner,
-			purpose: new("studio.generation"),
-
-			expect: 1,
 		},
 		{
 			// The provider may still run its call, so it holds a slot within the window.
@@ -55,15 +44,6 @@ func TestPgGenerationCountLive(t *testing.T) {
 			unknownSince: time.Minute,
 
 			expect: 3,
-		},
-		{
-			name: "Success/UnknownOutcomeWithoutWindow",
-
-			owner:        testOwner,
-			unknownSince: time.Minute,
-			noWindow:     true,
-
-			expect: 2,
 		},
 		{
 			name: "Success/UnknownOutcomeReleased",
@@ -92,9 +72,11 @@ func TestPgGenerationCountLive(t *testing.T) {
 				t.Helper()
 
 				seedGeneration(ctx, t)
-				running := runGeneration(ctx, t, seedGeneration(ctx, t).ID)
-				execute(ctx, t, "UPDATE generations SET purpose = 'studio.analysis' WHERE id = ?0", running.ID)
+				runGeneration(ctx, t, seedGeneration(ctx, t).ID)
 				settleGeneration(ctx, t, runGeneration(ctx, t, seedGeneration(ctx, t).ID))
+
+				analysis := seedGeneration(ctx, t)
+				execute(ctx, t, "UPDATE generations SET purpose = 'studio.analysis' WHERE id = ?0", analysis.ID)
 
 				if testCase.unknownSince > 0 {
 					unknown := settleGeneration(ctx, t, seedGeneration(ctx, t))
@@ -104,13 +86,8 @@ func TestPgGenerationCountLive(t *testing.T) {
 					)
 				}
 
-				window := 15 * time.Minute
-				if testCase.noWindow {
-					window = 0
-				}
-
 				live, err := daoCountLive.Exec(ctx, &dao.GenerationCountLiveRequest{
-					OwnerID: testCase.owner, Purpose: testCase.purpose, UnknownOutcomeWindow: window,
+					OwnerID: testCase.owner, Purpose: "studio.generation", UnknownOutcomeWindow: 15 * time.Minute,
 				})
 				require.NoError(t, err)
 				require.Equal(t, testCase.expect, live.Count)

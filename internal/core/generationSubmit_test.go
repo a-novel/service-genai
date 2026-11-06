@@ -496,7 +496,7 @@ func TestGenerationSubmit(t *testing.T) {
 			for _, live := range testCase.live {
 				// The count includes a generation whose call may still run untracked.
 				liveRequest := &dao.GenerationCountLiveRequest{
-					OwnerID: testCase.request.OwnerID, Purpose: &testCase.request.Purpose, UnknownOutcomeWindow: 15 * time.Minute,
+					OwnerID: testCase.request.OwnerID, Purpose: testCase.request.Purpose, UnknownOutcomeWindow: 15 * time.Minute,
 				}
 
 				liveDao.EXPECT().
@@ -509,7 +509,7 @@ func TestGenerationSubmit(t *testing.T) {
 			for _, usage := range testCase.usage {
 				usageDao.EXPECT().
 					Exec(mock.Anything, &dao.GenerationUsageSumRequest{
-						OwnerID: testCase.request.OwnerID, Purpose: &testCase.request.Purpose, Windows: usage.windows,
+						OwnerID: testCase.request.OwnerID, Purpose: testCase.request.Purpose, Windows: usage.windows,
 					}).
 					Return(usage.used, usage.err)
 
