@@ -608,7 +608,7 @@ func (service *GenerationCheck) commit(
 			Error:            message,
 			Failure:          class,
 			Retention:        service.generations.Retention,
-			OutcomeUnknown:   outcomeUnknown[lo.FromPtr(message)],
+			OutcomeUnknown:   lo.FromPtr(class) == dao.GenerationFailureOutcomeUnknown,
 		}
 
 		settled, err = service.daoSettle.Exec(ctx, daoRequest)
@@ -804,9 +804,3 @@ const (
 	failureResponseTooLarge    = "the provider's response is larger than the 24 MiB this service reads"
 	failureNotRecorded         = "the provider's answer could not be recorded"
 )
-
-// outcomeUnknown holds the failures after which the provider may still run a call nothing tracks or
-// meters, so admission keeps counting the generation for a while.
-var outcomeUnknown = map[string]bool{
-	failureOutcomeUnknown: true, failureNotStopped: true, failureResponseTooLarge: true,
-}

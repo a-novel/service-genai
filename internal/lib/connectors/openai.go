@@ -39,7 +39,7 @@ const healthCheckTimeout = 5 * time.Second
 
 // ResponseSizeCeiling bounds a provider response that a start or a check reads whole. It holds twice
 // the largest output OpenAI writes, plus the instructions a response echoes from a payload at its
-// ceiling. Two attempts' responses still fit the client's 64 MiB message.
+// ceiling. A generation runs one call, so its response fits the client's 64 MiB message.
 const ResponseSizeCeiling = 24 << 20
 
 // readOptions make a read a single bounded attempt: the next check is the retry. A response past
@@ -553,9 +553,9 @@ func classifyOpenAIStartError(err error, sent bool) error {
 		// Retrying cannot help until an operator adds credit, so the caller gets an answer instead.
 		return &RejectionError{Response: errorBody(apiErr), Err: err}
 	case status == http.StatusTooManyRequests, status == http.StatusUnauthorized, status == http.StatusConflict:
-		// Nothing ran, so the start is retried. Refused credentials are this service's configuration,
-		// not a fault in the caller's request, and their error body can echo part of the key. A
-		// conflict is a lock the provider releases.
+		// Nothing ran, so the generation fails as not started and its caller may resend. Refused
+		// credentials are this service's configuration, not a fault in the caller's request, and their
+		// error body can echo part of the key. A conflict is a lock the provider releases.
 		return fmt.Errorf("%w: %w", ErrRetryable, err)
 	case status == http.StatusRequestTimeout, status >= http.StatusInternalServerError:
 		return fmt.Errorf("%w: %w", ErrStartAmbiguous, err)

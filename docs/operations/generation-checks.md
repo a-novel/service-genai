@@ -16,13 +16,13 @@ Every age a check measures, such as how long a call has run, comes from the data
 
 ## What a check does
 
-| Generation                                        | Transition                                                                                                                                     |
-| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| Its provider has no connector any more            | Settle `failed`: nothing can run or read its calls.                                                                                            |
-| Just inserted by the submit                       | Send the payload through the connector, record the call's id, and stop the call if its owner asked to cancel meanwhile.                        |
-| Provider call known                               | Ask the provider once (cancel it if requested). Settle with its answer when terminal, whatever the answer.                                     |
-| Start without an id, older than three minutes     | Settle `failed`, `OUTCOME_UNKNOWN`: the provider may have accepted the call. Nothing sends it again.                                           |
-| Pending with no start, left by an earlier release | Settle `failed`, `NOT_STARTED`, or `cancelled` when its owner asked to cancel. Its payload is out of reach, so the caller resends the request. |
+| Generation                                        | Transition                                                                                                                                                                                                                |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Its provider has no connector any more            | Settle `failed`: nothing can run or read its calls. A recorded call fails `OUTCOME_UNKNOWN` and holds its owner's slot in its purpose for 15 minutes, since the provider may still run it. Any other fails `NOT_STARTED`. |
+| Just inserted by the submit                       | Send the payload through the connector, record the call's id, and stop the call if its owner asked to cancel meanwhile.                                                                                                   |
+| Provider call known                               | Ask the provider once (cancel it if requested). Settle with its answer when terminal, whatever the answer.                                                                                                                |
+| Start without an id, older than three minutes     | Settle `failed`, `OUTCOME_UNKNOWN`: the provider may have accepted the call. Nothing sends it again.                                                                                                                      |
+| Pending with no start, left by an earlier release | Settle `failed`, `NOT_STARTED`, or `cancelled` when its owner asked to cancel. Its payload is out of reach, so the caller resends the request.                                                                            |
 
 A generation is one provider call. Its call is recorded the moment the provider names it, before a streamed creation's hold ends, so a process stopped during the hold still tracks the call.
 
