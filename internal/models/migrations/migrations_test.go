@@ -38,15 +38,14 @@ func TestPurgeSettledGenerations(t *testing.T) {
 	// purge must take with it, and a Usage Record it must leave.
 	seeds := []string{
 		`INSERT INTO generations (
-			id, owner_id, purpose, provider, request_key, status, attempt, start_requested_at,
-			provider_call_id, settled_at, expires_at
+			id, owner_id, purpose, provider, request_key, status, start_requested_at, provider_call_id,
+			settled_at, expires_at
 		) SELECT
 			?0, ?0, 'studio.generation', 'openai', ?0::text::bytea,
-			(CASE WHEN secs IS NULL THEN 'running' ELSE 'succeeded' END)::generation_status, 1,
+			(CASE WHEN secs IS NULL THEN 'running' ELSE 'succeeded' END)::generation_status,
 			CURRENT_TIMESTAMP, 'resp_1', CASE WHEN secs IS NOT NULL THEN CURRENT_TIMESTAMP END,
 			CURRENT_TIMESTAMP + make_interval(secs => secs)
 		FROM (SELECT ?1::float8 AS secs) AS expiry`,
-		"INSERT INTO generation_payloads (generation_id, payload) VALUES (?0, '{}')",
 		"INSERT INTO generation_attempts (generation_id, attempt, response) VALUES (?0, 1, '{}')",
 		`INSERT INTO generation_usage (
 			generation_id, attempt, owner_id, purpose, provider, model, class, input_tokens,
@@ -63,7 +62,7 @@ func TestPurgeSettledGenerations(t *testing.T) {
 		expectPurged bool
 	}{
 		{
-			// Its payload and attempts go with it; its Usage Record stays.
+			// Its attempts go with it; its Usage Record stays.
 			name: "Success/Expired",
 
 			expiresInSecs: lo.ToPtr(-60.0),
@@ -105,7 +104,6 @@ func TestPurgeSettledGenerations(t *testing.T) {
 				remaining := lo.Ternary(testCase.expectPurged, 0, 1)
 				expectCounts := map[string]int{
 					"SELECT count(*) FROM generations WHERE id = ?0":                    remaining,
-					"SELECT count(*) FROM generation_payloads WHERE generation_id = ?0": remaining,
 					"SELECT count(*) FROM generation_attempts WHERE generation_id = ?0": remaining,
 					"SELECT count(*) FROM generation_usage WHERE generation_id = ?0":    1,
 				}
@@ -123,10 +121,10 @@ func TestPurgeSettledGenerations(t *testing.T) {
 
 	// expiredGenerations inserts ?0 generations whose retention ended a minute ago.
 	expiredGenerations := `INSERT INTO generations (
-		owner_id, purpose, provider, request_key, status, attempt, start_requested_at, provider_call_id,
+		owner_id, purpose, provider, request_key, status, start_requested_at, provider_call_id,
 		settled_at, expires_at
 	) SELECT
-		gen_random_uuid(), 'studio.generation', 'openai', uuid_send(gen_random_uuid()), 'succeeded', 1,
+		gen_random_uuid(), 'studio.generation', 'openai', uuid_send(gen_random_uuid()), 'succeeded',
 		CURRENT_TIMESTAMP, 'resp_1', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP - interval '1 minute'
 	FROM generate_series(1, ?0)`
 
@@ -156,7 +154,6 @@ func TestPurgeSettledGenerations(t *testing.T) {
 
 			generations: 2,
 			content: []string{
-				"INSERT INTO generation_payloads (generation_id, payload) SELECT id, '{}' FROM generations",
 				"INSERT INTO generation_attempts (generation_id, attempt, response) SELECT id, 1, '{}' FROM generations",
 			},
 			purge: "SELECT purge_settled_generations(1)",

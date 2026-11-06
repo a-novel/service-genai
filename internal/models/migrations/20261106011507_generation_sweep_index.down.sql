@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS generations_sweep_idx;
