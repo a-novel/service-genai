@@ -1,9 +1,9 @@
 charm.land/lipgloss/v2 v2.0.6 h1:EaGKeuA8FvF+v2BT5VmZd2LoYLaMZJXA5n34th8nCIQ=
 charm.land/lipgloss/v2 v2.0.6/go.mod h1:ipDDJNSGa1hlwDtSfW1s2/xR8Vdhbut4PXh2zEKZd0Q=
-github.com/Azure/azure-sdk-for-go/sdk/azcore v1.23.2 h1:utpeoEeZjd+A8J41zvoLsOOrqXHhX1Kx/X/tCW9dEYQ=
-github.com/Azure/azure-sdk-for-go/sdk/azcore v1.23.2/go.mod h1:iptorS+VYKFL2N6PnebpS91dubG35eAOEERnT4PJbQU=
-github.com/Azure/azure-sdk-for-go/sdk/internal v1.12.0 h1:fhqpLE3UEXi9lPaBRpQ6XuRW0nU7hgg4zlmZZa+a9q4=
-github.com/Azure/azure-sdk-for-go/sdk/internal v1.12.0/go.mod h1:7dCRMLwisfRH3dBupKeNCioWYUZ4SS09Z14H+7i8ZoY=
+github.com/Azure/azure-sdk-for-go/sdk/azcore v1.23.3 h1:qgnWTiWs1G7AqcKZegFvkJD1bmXJcaDU3uC0ELSgZ5U=
+github.com/Azure/azure-sdk-for-go/sdk/azcore v1.23.3/go.mod h1:XtxD48QPInqoj+GMlcRlXHEYsoOxFnP6w2JgIZ9rDS4=
+github.com/Azure/azure-sdk-for-go/sdk/internal v1.13.0 h1:Terj1CMW4+NY5CpWjSRkqLoxh2DkYDdv/FH2z0897Uc=
+github.com/Azure/azure-sdk-for-go/sdk/internal v1.13.0/go.mod h1:7Ut2Qw9vcwpLW5Q4MBy43uSxXS7tK2yjs94OJ6j5thE=
 github.com/a-novel-kit/golib v0.63.0 h1:aNmiOb54Oonz5uSA/2l2Krw5iAStrzA3xyPtcCnqL14=
 github.com/a-novel-kit/golib v0.63.0/go.mod h1:/Qra2KJv99yV2jvThnp0nnJXFJlf0wMpenpYVZJ/qpI=
 github.com/a-novel-kit/jwt/v2 v2.6.1 h1:8iQ8ZcvU4L2CKReYeCX8ctK9ABgYEvAOycrggKgl4cM=
@@ -85,8 +85,8 @@ github.com/mattn/go-runewidth v0.0.24 h1:cpokDiIn0MGnhdHwuWnJBITySJ20QyNGnY2kR/a
 github.com/mattn/go-runewidth v0.0.24/go.mod h1:XBkDxAl56ILZc9knddidhrOlY5R/pDhgLpndooCuJAs=
 github.com/muesli/cancelreader v0.2.2 h1:3I4Kt4BQjOR54NavqnDogx/MIoWBFa0StPA8ELUXHmA=
 github.com/muesli/cancelreader v0.2.2/go.mod h1:3XuTXfFS2VjM+HTLZY9Ak0l6eUKfijIfMUZ4EgX0QYo=
-github.com/openai/openai-go/v3 v3.93.0 h1:PXzlWMd/KnXlFTOyweFqXGBDh+tncbSf1DFcA/9ZxpY=
-github.com/openai/openai-go/v3 v3.93.0/go.mod h1:54ICDElvSOxZ7bD70xsQ8zkEYOMN6as4QjUQrs7KSWM=
+github.com/openai/openai-go/v3 v3.94.0 h1:i6g80zPCgwYRLf5lXyGnvhjXDs/2hXt7nDE7n7opevQ=
+github.com/openai/openai-go/v3 v3.94.0/go.mod h1:uMht5xIbHFTRAD05AiQXzNT9hJGklZHsCnyzeWiteGo=
 github.com/puzpuzpuz/xsync/v3 v3.5.1 h1:GJYJZwO6IdxN/IKbneznS6yPkVC+c3zyY/j19c++5Fg=
 github.com/puzpuzpuz/xsync/v3 v3.5.1/go.mod h1:VjzYrABPabuM4KyBh1Ftq6u8nhwY5tBPKP9jpmh0nnA=
 github.com/redis/go-redis/v9 v9.23.0 h1:/TTVdJa8BRNsybwwGGnmiYktHNlUXtbOQxlWpHBPL3s=
