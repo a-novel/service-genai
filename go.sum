@@ -4,8 +4,8 @@ github.com/Azure/azure-sdk-for-go/sdk/azcore v1.23.3 h1:qgnWTiWs1G7AqcKZegFvkJD1
 github.com/Azure/azure-sdk-for-go/sdk/azcore v1.23.3/go.mod h1:XtxD48QPInqoj+GMlcRlXHEYsoOxFnP6w2JgIZ9rDS4=
 github.com/Azure/azure-sdk-for-go/sdk/internal v1.13.0 h1:Terj1CMW4+NY5CpWjSRkqLoxh2DkYDdv/FH2z0897Uc=
 github.com/Azure/azure-sdk-for-go/sdk/internal v1.13.0/go.mod h1:7Ut2Qw9vcwpLW5Q4MBy43uSxXS7tK2yjs94OJ6j5thE=
-github.com/a-novel-kit/golib v0.64.0 h1:4ZkH/cyKPdSHoQ5jyeKMGmh2gcz3JLJTEF6LQKJeNGw=
-github.com/a-novel-kit/golib v0.64.0/go.mod h1:4PGqU/CO5hsLsFEoyinK2jJ6HQhd1sFkUQ+PEvJp1kI=
+github.com/a-novel-kit/golib v0.65.0 h1:JKo9zpzX2zOJ3+H5rHi1g48BLOKTgNgdqSkm51n0TB4=
+github.com/a-novel-kit/golib v0.65.0/go.mod h1:4PGqU/CO5hsLsFEoyinK2jJ6HQhd1sFkUQ+PEvJp1kI=
 github.com/a-novel-kit/jwt/v2 v2.6.1 h1:8iQ8ZcvU4L2CKReYeCX8ctK9ABgYEvAOycrggKgl4cM=
 github.com/a-novel-kit/jwt/v2 v2.6.1/go.mod h1:pkDVhDrwshhk8U2FJiZciPHVh8zq5WYDJCMBKOmd1PQ=
 github.com/alicebob/miniredis/v2 v2.40.0 h1:6IgTQbvm2JiMYZ8yur/acNJzVjtSOWCelxXbk/LUBXc=
