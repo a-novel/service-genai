@@ -67,6 +67,8 @@ services:
       # The server refuses to start without a key. The placeholder starts it; generations fail until a
       # real key is exported.
       OPENAI_API_KEY: "${OPENAI_API_KEY:-placeholder}"
+      # The standalone image sets it too, but a go-exec target reads only this block.
+      SERVICE_ISSUER_OPTIONAL: true
     networks:
       - api
 
