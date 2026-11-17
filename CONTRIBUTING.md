@@ -125,4 +125,4 @@ The Project Owner records signatures and matches them to accepted pull requests 
 
 ## Questions?
 
-[Open an issue](https://github.com/a-novel/service-genai/issues) — include logs and environment details.
+[Open an issue](https://github.com/a-novel/service-genai/issues): include logs and environment details.
