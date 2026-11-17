@@ -164,8 +164,6 @@ func TestUsageSummary(t *testing.T) {
 			result, err := core.NewUsageSummary(liveDao, usageDao, testPurposes).Exec(t.Context(), testCase.request)
 			require.ErrorIs(t, err, testCase.expectErr)
 			require.Equal(t, testCase.expect, result)
-
-			mock.AssertExpectationsForObjects(t, liveDao, usageDao)
 		})
 	}
 }

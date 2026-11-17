@@ -67,8 +67,6 @@ func TestGenerationQueueDepth(t *testing.T) {
 			result, err := core.NewGenerationQueueDepth(depthDao).Exec(t.Context(), &core.GenerationQueueDepthRequest{})
 			require.ErrorIs(t, err, testCase.expectErr)
 			require.Equal(t, testCase.expect, result)
-
-			depthDao.AssertExpectations(t)
 		})
 	}
 }

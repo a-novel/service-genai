@@ -14,13 +14,6 @@ import (
 	genaiv0 "github.com/a-novel/service-genai/internal/handlers/protogen/anovel/genai/v0"
 )
 
-// NewGrpcHealthStatus reports a successfully probed dependency.
-func NewGrpcHealthStatus() *genaiv0.DependencyHealth {
-	return &genaiv0.DependencyHealth{
-		Status: genaiv0.DependencyStatus_DEPENDENCY_STATUS_UP,
-	}
-}
-
 // GrpcStatusService is the service dependency of [GrpcStatus].
 type GrpcStatusService interface {
 	Exec(ctx context.Context, request *core.GenerationQueueDepthRequest) (*core.GenerationQueueDepthResult, error)
@@ -56,7 +49,7 @@ func (handler *GrpcStatus) Status(ctx context.Context, _ *genaiv0.StatusRequest)
 	}
 
 	return &genaiv0.StatusResponse{
-		Postgres: NewGrpcHealthStatus(),
+		Postgres: &genaiv0.DependencyHealth{Status: genaiv0.DependencyStatus_DEPENDENCY_STATUS_UP},
 		Queue: &genaiv0.QueueDepth{
 			Pending:          depth.Pending,
 			OldestPendingAge: durationpb.New(depth.OldestPendingAge),

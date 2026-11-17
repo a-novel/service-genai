@@ -14,6 +14,10 @@ import (
 // re-reads rather than retrying the write.
 var ErrGenerationChanged = errors.New("generation changed before the transition")
 
+// ErrGenerationNotFound is returned when the owner has no generation with the requested ID. Another
+// owner's generation reports this too, so an identifier cannot be probed for existence.
+var ErrGenerationNotFound = errors.New("generation not found")
+
 // ErrRefused is returned when the database refuses the values a statement writes: a value its column
 // cannot hold, a constraint it breaks, a limit it exceeds. The same values fail the same way however
 // often they are sent, unlike a lock wait or a lost connection.
@@ -25,8 +29,8 @@ var refusedClasses = []string{"22", "23", "54"}
 
 // refused joins [ErrRefused] to an error the database raised for a statement's values.
 func refused(err error) error {
-	var pgErr pgdriver.Error
-	if !errors.As(err, &pgErr) {
+	pgErr, ok := errors.AsType[pgdriver.Error](err)
+	if !ok {
 		return err
 	}
 

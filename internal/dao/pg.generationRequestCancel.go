@@ -6,7 +6,6 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/google/uuid"
 
@@ -25,13 +24,9 @@ var ErrGenerationNotCancellable = errors.New("generation cannot be cancelled")
 type GenerationRequestCancelRequest struct {
 	ID      uuid.UUID
 	OwnerID uuid.UUID
-	// Error names the cancellation of a generation that never started, which the cancel settles.
-	Error string
-	// Retention is how long such a settled generation survives before the purge.
-	Retention time.Duration
 }
 
-// PgGenerationRequestCancel cancels a generation that never started, and marks one that did.
+// PgGenerationRequestCancel marks a generation its owner asked to stop.
 type PgGenerationRequestCancel struct{}
 
 // NewPgGenerationRequestCancel returns a new PgGenerationRequestCancel dao.
@@ -52,13 +47,7 @@ func (dao *PgGenerationRequestCancel) Exec(
 
 	entity := &Generation{}
 
-	err = db.NewRaw(
-		generationRequestCancelQuery,
-		request.ID,
-		request.OwnerID,
-		request.Error,
-		request.Retention.Seconds(),
-	).Scan(ctx, entity)
+	err = db.NewRaw(generationRequestCancelQuery, request.ID, request.OwnerID).Scan(ctx, entity)
 	if errors.Is(err, sql.ErrNoRows) {
 		err = errors.Join(err, ErrGenerationNotCancellable)
 	}

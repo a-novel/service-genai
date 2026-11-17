@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/google/uuid"
 
@@ -14,10 +13,6 @@ import (
 	"github.com/a-novel/service-genai/internal/config"
 	"github.com/a-novel/service-genai/internal/dao"
 )
-
-// ErrSweepDeadlineTooShort is returned when the caller's deadline leaves no room for a whole check,
-// so the sweep could check nothing.
-var ErrSweepDeadlineTooShort = errors.New("deadline too short for a sweep")
 
 // GenerationSweepDao reads one page of the unsettled generations.
 type GenerationSweepDao interface {
@@ -42,26 +37,22 @@ type GenerationSweepServiceCheck interface {
 // GenerationSweepRequest holds the parameters for a [GenerationSweep.Exec] call.
 type GenerationSweepRequest struct{}
 
-// GenerationSweepResult reports what one call found.
-type GenerationSweepResult struct {
-	// Checked is how many generations the call read. Zero when another sweep led the run.
-	Checked int
-}
+// GenerationSweepResult is the outcome of a [GenerationSweep.Exec] run, which reports nothing beyond
+// its error.
+type GenerationSweepResult struct{}
 
 // A GenerationSweep checks every unsettled generation once.
 //
 // Callers polling a generation keep it fresh. The sweep catches the rest: a generation whose caller
-// went away still settles while the provider holds its result. A scheduler's request or the sweep
-// server's own ticker calls it. One sweep runs at a time across every replica, the leader: the others
-// skip their run. A check writes only to settle, so the sweep costs the rows nothing. Calls that
-// overlap in one process share its concurrency, which the connection pool sizes.
+// went away still settles while the provider holds its result. The sweep server's ticker runs it.
+// One sweep runs at a time across every replica, the leader: the others skip their run. A check
+// writes only to settle, so the sweep costs the rows nothing.
 type GenerationSweep struct {
 	dao          GenerationSweepDao
 	daoLock      GenerationSweepDaoLock
 	daoUnlock    GenerationSweepDaoUnlock
 	serviceCheck GenerationSweepServiceCheck
 	sweep        config.Sweep
-	slots        chan struct{}
 }
 
 // NewGenerationSweep returns a new GenerationSweep service.
@@ -78,29 +69,18 @@ func NewGenerationSweep(
 		daoUnlock:    daoUnlock,
 		serviceCheck: serviceCheck,
 		sweep:        sweep,
-		slots:        make(chan struct{}, sweep.Concurrency),
 	}
 }
 
 // Exec leads the run, or skips it when another sweep leads. Leading, it checks batch after batch,
-// each following the last generation of the one before, while each comes back full, so one call reads
-// every unsettled generation once. It starts no check that could outlast its caller's deadline, and
-// none once its context ends, as when the server stops. It answers once the checks it started finish.
+// each following the last generation of the one before, while each comes back full, so one run reads
+// every unsettled generation once. It starts no check once its context ends, as when the server stops.
+// It answers once the checks it started finish.
 func (service *GenerationSweep) Exec(
 	ctx context.Context, _ *GenerationSweepRequest,
 ) (*GenerationSweepResult, error) {
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationSweep")
 	defer span.End()
-
-	// A check started past lastStart could outlast the caller's deadline, and its answer with it.
-	var lastStart time.Time
-	if deadline, ok := ctx.Deadline(); ok {
-		lastStart = deadline.Add(-checkTimeout)
-	}
-
-	if !mayStart(lastStart) {
-		return nil, otel.ReportError(span, ErrSweepDeadlineTooShort)
-	}
 
 	lock, err := service.daoLock.Exec(ctx, &dao.GenerationSweepLockRequest{})
 	if errors.Is(err, dao.ErrGenerationSweepLocked) {
@@ -121,17 +101,13 @@ func (service *GenerationSweep) Exec(
 		_ = service.daoUnlock.Exec(unlockCtx, &dao.GenerationSweepUnlockRequest{Lock: lock})
 	}()
 
-	result := &GenerationSweepResult{}
-
 	var after uuid.UUID
 
-	for ctx.Err() == nil && mayStart(lastStart) {
-		generations, err := service.sweepBatch(ctx, lastStart, after)
+	for ctx.Err() == nil {
+		generations, err := service.sweepBatch(ctx, after)
 		if err != nil {
 			return nil, otel.ReportError(span, err)
 		}
-
-		result.Checked += len(generations)
 
 		if len(generations) < service.sweep.BatchSize {
 			break
@@ -140,22 +116,21 @@ func (service *GenerationSweep) Exec(
 		after = generations[len(generations)-1].ID
 	}
 
-	return result, nil
+	return &GenerationSweepResult{}, nil
 }
 
 // sweepBatch reads the batch after the given generation, checks it, and returns it. Checks of
-// different generations are independent, so several run at once. A slow provider then stretches a
-// batch by its latency alone. A generation read but left unchecked waits for a later call.
-func (service *GenerationSweep) sweepBatch(
-	ctx context.Context, lastStart time.Time, after uuid.UUID,
-) ([]*dao.Generation, error) {
+// different generations are independent, so several run at once, as many as the sweep's concurrency.
+// A slow provider then stretches a batch by its latency alone. A generation read but left unchecked
+// waits for a later run.
+func (service *GenerationSweep) sweepBatch(ctx context.Context, after uuid.UUID) ([]*dao.Generation, error) {
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationSweep(sweepBatch)")
 	defer span.End()
 
 	generations, err := service.dao.Exec(ctx, &dao.GenerationSweepRequest{
 		After: after, Limit: service.sweep.BatchSize,
 	})
-	// A sweep stopped during its query checks nothing; what the query read waits for a later call.
+	// A sweep stopped during its query checks nothing; what the query read waits for a later run.
 	if err != nil && ctx.Err() != nil {
 		return nil, nil
 	}
@@ -166,24 +141,21 @@ func (service *GenerationSweep) sweepBatch(
 
 	var checks sync.WaitGroup
 
-dispatch:
+	slots := make(chan struct{}, service.sweep.Concurrency)
+
 	for _, generation := range generations {
 		select {
-		case service.slots <- struct{}{}:
+		case slots <- struct{}{}:
 		case <-ctx.Done():
-			break dispatch
 		}
 
-		// The wait for a slot may outlast the deadline or the server: the slot goes back to the calls
-		// sharing it.
-		if ctx.Err() != nil || !mayStart(lastStart) {
-			<-service.slots
-
-			break dispatch
+		// The server may stop while the batch waits for a slot: it starts no further check.
+		if ctx.Err() != nil {
+			break
 		}
 
 		checks.Go(func() {
-			defer func() { <-service.slots }()
+			defer func() { <-slots }()
 
 			service.checkOne(ctx, generation)
 		})
@@ -203,10 +175,4 @@ func (service *GenerationSweep) checkOne(ctx context.Context, generation *dao.Ge
 
 	// A failed check leaves the batch running; its own span holds the failure.
 	_, _ = service.serviceCheck.Exec(ctx, &GenerationCheckRequest{Generation: generation})
-}
-
-// mayStart reports whether a check may start now and still end before its caller's deadline, which
-// lastStart precedes by the longest check. A zero lastStart sets no bound.
-func mayStart(lastStart time.Time) bool {
-	return lastStart.IsZero() || time.Now().Before(lastStart)
 }

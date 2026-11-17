@@ -26,15 +26,13 @@ var serverSessionTimeouts = map[string]any{
 // PostgresPresetServer is the servers' connection, with their session timeouts.
 var PostgresPresetServer = NewPostgresPreset(pgdriver.WithConnParams(serverSessionTimeouts))
 
-// NewPostgresPreset builds the connection config with its pool bounded as it opens. POSTGRES_HOST
-// selects the discrete POSTGRES_* fields; without it, POSTGRES_DSN is used. Extra options apply
-// last: connection parameters replace any a DSN carries.
+// NewPostgresPreset builds the connection config from the POSTGRES_* fields, with its pool bounded as
+// it opens. Extra options apply last.
 //
 // The pool limits are set here because the handle is cached: a limit set on it once a connection is
 // taken applies to nothing and reports nothing.
 func NewPostgresPreset(extra ...pgdriver.Option) *postgrespresets.Default {
 	connection := postgrespresets.Connection{
-		DSN:        env.PostgresDSN,
 		Host:       env.PostgresHost,
 		Port:       env.PostgresPort,
 		User:       env.PostgresUser,

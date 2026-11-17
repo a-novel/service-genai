@@ -74,7 +74,7 @@ func TestGenerationStream(t *testing.T) {
 			name: "Error/NoCallYet",
 
 			request: &core.GenerationStreamRequest{ID: testGenerationID, OwnerID: testOwner},
-			daoMock: &daoMock{resp: streamed(withProvider(pendingGeneration(), testStreamer))},
+			daoMock: &daoMock{resp: streamed(withProvider(startingGeneration(0), testStreamer))},
 
 			expectErr: core.ErrStreamUnavailable,
 		},
@@ -91,7 +91,7 @@ func TestGenerationStream(t *testing.T) {
 			name: "Error/NotFound",
 
 			request: &core.GenerationStreamRequest{ID: testGenerationID, OwnerID: testOwner},
-			daoMock: &daoMock{err: dao.ErrGenerationGetNotFound},
+			daoMock: &daoMock{err: dao.ErrGenerationNotFound},
 
 			expectErr: core.ErrGenerationNotFound,
 		},
@@ -145,9 +145,6 @@ func TestGenerationStream(t *testing.T) {
 
 			require.ErrorIs(t, err, testCase.expectErr)
 			require.Equal(t, testCase.expect, received)
-
-			getDao.AssertExpectations(t)
-			streaming.AssertExpectations(t)
 		})
 	}
 }

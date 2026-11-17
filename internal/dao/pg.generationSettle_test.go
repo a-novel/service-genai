@@ -68,13 +68,6 @@ func TestPgGenerationSettle(t *testing.T) {
 			failure: new(dao.GenerationFailureProviderFailed),
 		},
 		{
-			// An earlier release left the generation pending between two starts.
-			name: "Success/CancelledBeforeStart",
-
-			state:  "pending",
-			status: dao.GenerationStatusCancelled,
-		},
-		{
 			name: "Error/OtherStart",
 
 			state:      "running",
@@ -129,10 +122,11 @@ func TestPgGenerationSettle(t *testing.T) {
 			expectErr: dao.ErrRefused,
 		},
 		{
+			// The settled row carries the start and no call, as the settle does: only the status fence
+			// refuses it.
 			name: "Error/AlreadySettled",
 
 			state:  "settled",
-			callID: &callID,
 			status: dao.GenerationStatusSucceeded,
 
 			expectErr: dao.ErrGenerationChanged,
@@ -148,38 +142,20 @@ func TestPgGenerationSettle(t *testing.T) {
 			postgrestest.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
 				t.Helper()
 
-				// A submitted generation is starting: its start intent is recorded.
-				seed := seedGeneration
-				if testCase.state == "pending" {
-					seed = seedUnstarted
-				}
-
-				generation := seed(ctx, t)
-
 				// read is the generation as the settling check last saw it.
-				read := generation
-
-				switch testCase.state {
-				case "running":
-					read = runGeneration(ctx, t, generation.ID)
-				case "settled":
-					read = settleGeneration(ctx, t, runGeneration(ctx, t, generation.ID))
-				}
+				read := seedState(ctx, t, testCase.state)
 
 				if testCase.recordAfterRead {
-					_, err := dao.NewPgGenerationRecordProviderCall().Exec(ctx, &dao.GenerationRecordProviderCallRequest{
-						ID: generation.ID, ProviderCallID: testCallID,
-					})
-					require.NoError(t, err)
+					runGeneration(ctx, t, read.ID)
 				}
 
 				start := read.StartRequestedAt
 				if testCase.otherStart {
-					start = new(start.Add(-time.Minute))
+					start = start.Add(-time.Minute)
 				}
 
 				settleRequest := &dao.GenerationSettleRequest{
-					ID:               generation.ID,
+					ID:               read.ID,
 					StartRequestedAt: start,
 					ProviderCallID:   testCase.callID,
 					Status:           testCase.status,

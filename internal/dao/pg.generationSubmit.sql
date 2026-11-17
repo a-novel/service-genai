@@ -51,21 +51,4 @@ WHERE
 SET
   updated_at = generations.updated_at
 RETURNING
-  id,
-  owner_id,
-  purpose,
-  provider,
-  request_key,
-  error,
-  failure,
-  status,
-  start_requested_at,
-  provider_call_id,
-  cancel_requested_at,
-  traceparent,
-  outcome_unknown_at,
-  streamed,
-  created_at,
-  updated_at,
-  settled_at,
-  expires_at;
+  *;

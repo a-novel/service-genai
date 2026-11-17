@@ -8,5 +8,5 @@
 //     configured, [GrpcServiceToken] admits only the callers whose service token it accepts. Wired
 //     by cmd/grpc.
 //
-//   - REST handlers: the private sweep server a scheduler calls, wired by cmd/sweep.
+//   - REST handlers: the liveness and health probes of the sweep server, wired by cmd/sweep.
 package handlers

@@ -1,4 +1,4 @@
-# Runs the GenAI sweep server, which a scheduler calls to check the generations nobody polled.
+# Runs the GenAI sweep server, which checks the generations nobody polled every SWEEP_INTERVAL.
 # Requires a database with migrations already applied.
 FROM docker.io/library/golang:1.27.4-alpine AS builder
 
@@ -12,13 +12,10 @@ COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod \
     go mod download
 
-COPY ./cmd/sweep ./cmd/sweep
-COPY ./internal/handlers ./internal/handlers
-COPY ./internal/dao ./internal/dao
-COPY ./internal/lib ./internal/lib
-COPY ./internal/core ./internal/core
-COPY ./internal/models ./internal/models
-COPY ./internal/config ./internal/config
+# The whole source tree, so a new package needs no line here: .dockerignore drops the tests, and
+# the build cache recompiles only what changed.
+COPY ./cmd ./cmd
+COPY ./internal ./internal
 
 # -ldflags="-s -w" strips the symbol table and DWARF debug info, shrinking the binary.
 # -trimpath removes local filesystem paths for reproducible builds.

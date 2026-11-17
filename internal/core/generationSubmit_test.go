@@ -211,7 +211,7 @@ func TestGenerationSubmit(t *testing.T) {
 			expectScope:   purposeScope,
 			expectLimit:   "concurrency 2",
 			// The message reads as admission words it.
-			expectMessage: `usage cap reached: purpose "studio.generation" concurrency: 2 generations already in flight`,
+			expectMessage: `usage cap reached: purpose "studio.generation" concurrency 2`,
 
 			expectErr: core.ErrUsageCapReached,
 		},
@@ -239,7 +239,7 @@ func TestGenerationSubmit(t *testing.T) {
 			expectScope:      purposeScope,
 			expectLimit:      "input tokens over 5h",
 			expectRetryAfter: time.Hour,
-			expectMessage:    `usage cap reached: purpose "studio.generation" over 5h0m0s`,
+			expectMessage:    `usage cap reached: purpose "studio.generation" input tokens over 5h`,
 
 			expectErr: core.ErrUsageCapReached,
 		},
@@ -485,7 +485,7 @@ func TestGenerationSubmit(t *testing.T) {
 			t.Parallel()
 
 			submitDao := coremocks.NewMockGenerationSubmitDao(t)
-			attemptDao := coremocks.NewMockGenerationSubmitDaoAttemptList(t)
+			attemptDao := coremocks.NewMockGenerationAttemptListDao(t)
 			usageDao := coremocks.NewMockGenerationSubmitDaoUsageSum(t)
 			liveDao := coremocks.NewMockGenerationSubmitDaoCountLive(t)
 			check := coremocks.NewMockGenerationSubmitServiceCheck(t)
@@ -579,8 +579,6 @@ func TestGenerationSubmit(t *testing.T) {
 					require.EqualError(t, err, testCase.expectMessage)
 				}
 			}
-
-			mock.AssertExpectationsForObjects(t, submitDao, attemptDao, usageDao, liveDao, check)
 		})
 	}
 
@@ -695,7 +693,7 @@ func submittedKey(t *testing.T, request *core.GenerationSubmitRequest) []byte {
 
 	service := core.NewGenerationSubmit(
 		submitDao,
-		coremocks.NewMockGenerationSubmitDaoAttemptList(t),
+		coremocks.NewMockGenerationAttemptListDao(t),
 		coremocks.NewMockGenerationSubmitDaoUsageSum(t),
 		coremocks.NewMockGenerationSubmitDaoCountLive(t),
 		coremocks.NewMockGenerationSubmitServiceCheck(t),

@@ -39,16 +39,6 @@ func TestPgGenerationQueueDepth(t *testing.T) {
 			expectWaiting: true,
 		},
 		{
-			// An earlier release left these pending between two starts.
-			name: "Success/Unstarted",
-
-			pending: 2,
-			state:   "unstarted",
-
-			expectPending: 2,
-			expectWaiting: true,
-		},
-		{
 			// A call the provider accepted is in flight, not backlog.
 			name: "Success/RunningIsNotBacklog",
 
@@ -67,14 +57,7 @@ func TestPgGenerationQueueDepth(t *testing.T) {
 				t.Helper()
 
 				for range testCase.pending {
-					switch testCase.state {
-					case "unstarted":
-						seedUnstarted(ctx, t)
-					case "running":
-						runGeneration(ctx, t, seedGeneration(ctx, t).ID)
-					default:
-						seedGeneration(ctx, t)
-					}
+					seedState(ctx, t, testCase.state)
 				}
 
 				depth, err := daoQueueDepth.Exec(ctx, &dao.GenerationQueueDepthRequest{})

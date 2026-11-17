@@ -128,7 +128,7 @@ func TestGenerationGet(t *testing.T) {
 			name: "Error/NotFound",
 
 			request: &core.GenerationGetRequest{ID: testGenerationID, OwnerID: testOwner},
-			daoMock: &daoMock{err: dao.ErrGenerationGetNotFound},
+			daoMock: &daoMock{err: dao.ErrGenerationNotFound},
 
 			expectErr: core.ErrGenerationNotFound,
 		},
@@ -162,7 +162,7 @@ func TestGenerationGet(t *testing.T) {
 
 			getDao := coremocks.NewMockGenerationGetDao(t)
 			check := coremocks.NewMockGenerationGetServiceCheck(t)
-			attemptDao := coremocks.NewMockGenerationGetDaoAttemptList(t)
+			attemptDao := coremocks.NewMockGenerationAttemptListDao(t)
 
 			if testCase.daoMock != nil {
 				getDao.EXPECT().
@@ -197,8 +197,6 @@ func TestGenerationGet(t *testing.T) {
 			default:
 				require.Equal(t, testCase.expectStatus, result.Status)
 			}
-
-			mock.AssertExpectationsForObjects(t, getDao, check, attemptDao)
 		})
 	}
 
@@ -245,7 +243,7 @@ func TestGenerationGet(t *testing.T) {
 
 		submit := core.NewGenerationSubmit(
 			submitDao,
-			coremocks.NewMockGenerationSubmitDaoAttemptList(t),
+			coremocks.NewMockGenerationAttemptListDao(t),
 			coremocks.NewMockGenerationSubmitDaoUsageSum(t),
 			coremocks.NewMockGenerationSubmitDaoCountLive(t),
 			check,
@@ -263,7 +261,7 @@ func TestGenerationGet(t *testing.T) {
 		getDao.EXPECT().Exec(mock.Anything, mock.Anything).Return(runningGeneration(), nil).Times(pollsWhileRunning + 1)
 		getDao.EXPECT().Exec(mock.Anything, mock.Anything).Return(settledGeneration(dao.GenerationStatusSucceeded), nil)
 
-		attemptList := coremocks.NewMockGenerationGetDaoAttemptList(t)
+		attemptList := coremocks.NewMockGenerationAttemptListDao(t)
 		attemptList.EXPECT().Exec(mock.Anything, mock.Anything).Return(testAttemptRows(), nil)
 
 		get := core.NewGenerationGet(getDao, attemptList, check)
@@ -280,7 +278,5 @@ func TestGenerationGet(t *testing.T) {
 		require.Equal(t, core.GenerationStatusRunning, statuses[pollsWhileRunning-1])
 		require.Equal(t, core.GenerationStatusSucceeded, statuses[pollsWhileRunning])
 		require.Equal(t, core.GenerationStatusSucceeded, statuses[len(statuses)-1])
-
-		mock.AssertExpectationsForObjects(t, connector, record, settle, attemptInsert, usage, getDao, attemptList)
 	})
 }

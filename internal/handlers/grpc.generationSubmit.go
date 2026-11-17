@@ -5,7 +5,6 @@ import (
 	"errors"
 
 	"github.com/google/uuid"
-	"github.com/samber/lo"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -72,13 +71,8 @@ func (handler *GrpcGenerationSubmit) GenerationSubmit(
 
 	// The message names the cap, so the caller can tell its user which limit was reached. The details
 	// say it in fields a caller reads without parsing the message.
-	var refusal *core.UsageCapError
-	if errors.As(err, &refusal) {
+	if refusal, ok := errors.AsType[*core.UsageCapError](err); ok {
 		return nil, newGrpcUsageCapStatus(refusal)
-	}
-
-	if errors.Is(err, core.ErrUsageCapReached) {
-		return nil, status.Error(codes.ResourceExhausted, err.Error())
 	}
 
 	if errors.Is(err, core.ErrModeUnsupported) {
@@ -105,7 +99,7 @@ func newCoreGenerationCaps(caps *genaiv0.GenerationCaps) *core.GenerationCaps {
 	converted := &core.GenerationCaps{Windows: make([]core.GenerationCapWindow, len(caps.GetWindows()))}
 
 	if caps.Concurrency != nil {
-		converted.Concurrency = lo.ToPtr(int(caps.GetConcurrency()))
+		converted.Concurrency = new(int(caps.GetConcurrency()))
 	}
 
 	for index, window := range caps.GetWindows() {

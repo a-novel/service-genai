@@ -1,6 +1,5 @@
-// Command sweep checks every unsettled generation, each time a scheduler posts to /sweep, and every
-// interval when SWEEP_TICKER is set. It runs as its own private service, which only the scheduler may
-// call; cmd/grpc serves the generation API.
+// Command sweep checks every unsettled generation every SWEEP_INTERVAL. Its server only answers the
+// liveness and health probes; cmd/grpc serves the generation API.
 package main
 
 import (
@@ -92,7 +91,6 @@ func main() {
 
 	handlerPing := handlers.NewRestPing()
 	handlerHealth := handlers.NewRestHealth()
-	handlerSweep := handlers.NewRestGenerationSweep(serviceSweep, cfg.Logger)
 
 	// =================================================================================================================
 	// ROUTER
@@ -102,7 +100,6 @@ func main() {
 
 	router.Get("/ping", handlerPing.ServeHTTP)
 	router.Get("/healthcheck", handlerHealth.ServeHTTP)
-	router.With(httpf.EndOnShutdown(ctx)).Post("/sweep", handlerSweep.ServeHTTP)
 
 	// =================================================================================================================
 	// RUN
@@ -110,17 +107,13 @@ func main() {
 
 	var ticker sync.WaitGroup
 
-	if cfg.Sweep.Ticker {
-		ticker.Go(func() {
-			worker.Poll(ctx, cfg.Logger, "sweep", cfg.Sweep.Interval, 0, sweepRun(serviceSweep, cfg.App.DowntimeStart))
-		})
-	}
+	ticker.Go(func() {
+		worker.Poll(ctx, cfg.Logger, "sweep", cfg.Sweep.Interval, 0, sweepRun(serviceSweep, cfg.App.DowntimeStart))
+	})
 
 	log.Println("Starting sweep server on :" + strconv.Itoa(cfg.Rest.Port))
 
-	// The sweep is billed per request and no consumer waits on it, so each answer waits for its
-	// telemetry to leave while the request still holds a CPU.
-	err := httpf.ListenAndServe(ctx, cfg.Rest, httpf.SendTelemetry(config.SweepTelemetryTimeout)(router))
+	err := httpf.ListenAndServe(ctx, cfg.Rest, router)
 
 	stop()
 
