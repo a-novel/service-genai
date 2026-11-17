@@ -3,6 +3,7 @@ package dao_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -50,14 +51,14 @@ func TestPgGenerationGet(t *testing.T) {
 
 			request: &dao.GenerationGetRequest{ID: generationID, OwnerID: owner},
 
-			expectErr: dao.ErrGenerationGetNotFound,
+			expectErr: dao.ErrGenerationNotFound,
 		},
 		{
 			name: "Error/NotFound/NoSuchGeneration",
 
 			request: &dao.GenerationGetRequest{ID: generationID, OwnerID: owner},
 
-			expectErr: dao.ErrGenerationGetNotFound,
+			expectErr: dao.ErrGenerationNotFound,
 		},
 	}
 
@@ -99,14 +100,15 @@ func TestPgGenerationGet(t *testing.T) {
 	}
 }
 
-// pendingFixture is a pending generation of the owner, as inserted directly.
+// pendingFixture is a pending generation of the owner with its start intent, as inserted directly.
 func pendingFixture(id, ownerID uuid.UUID) *dao.Generation {
 	return &dao.Generation{
-		ID:         id,
-		OwnerID:    ownerID,
-		Purpose:    "studio.generation",
-		Provider:   "openai",
-		RequestKey: []byte("key-" + id.String()),
-		Status:     dao.GenerationStatusPending,
+		ID:               id,
+		OwnerID:          ownerID,
+		Purpose:          "studio.generation",
+		Provider:         "openai",
+		RequestKey:       []byte("key-" + id.String()),
+		Status:           dao.GenerationStatusPending,
+		StartRequestedAt: time.Now(),
 	}
 }

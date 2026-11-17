@@ -15,14 +15,10 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     GOBIN=/usr/local/bin go install github.com/fullstorydev/grpcurl/cmd/grpcurl@v1.9.3
 
-COPY ./cmd/grpc ./cmd/grpc
-COPY ./cmd/migrations ./cmd/migrations
-COPY ./internal/handlers ./internal/handlers
-COPY ./internal/dao ./internal/dao
-COPY ./internal/lib ./internal/lib
-COPY ./internal/core ./internal/core
-COPY ./internal/models ./internal/models
-COPY ./internal/config ./internal/config
+# The whole source tree, so a new package needs no line here: .dockerignore drops the tests, and
+# the build cache recompiles only what changed.
+COPY ./cmd ./cmd
+COPY ./internal ./internal
 
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \

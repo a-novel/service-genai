@@ -45,27 +45,19 @@ var (
 	})
 )
 
-// pendingGeneration has no start intent, as an earlier release left a generation between two starts.
-func pendingGeneration() *dao.Generation {
-	return &dao.Generation{
-		ID:        testGenerationID,
-		OwnerID:   testOwner,
-		Purpose:   testPurpose,
-		Provider:  testProvider,
-		Status:    dao.GenerationStatusPending,
-		ReadAt:    testNow,
-		CreatedAt: testNow,
-	}
-}
-
 // startingGeneration recorded start intent the given age ago, with no call id yet, as a submit
 // records it.
 func startingGeneration(age time.Duration) *dao.Generation {
-	generation := pendingGeneration()
-	requested := testNow.Add(-age)
-	generation.StartRequestedAt = &requested
-
-	return generation
+	return &dao.Generation{
+		ID:               testGenerationID,
+		OwnerID:          testOwner,
+		Purpose:          testPurpose,
+		Provider:         testProvider,
+		Status:           dao.GenerationStatusPending,
+		StartRequestedAt: testNow.Add(-age),
+		ReadAt:           testNow,
+		CreatedAt:        testNow,
+	}
 }
 
 // runningGeneration has a known provider call.
@@ -96,8 +88,7 @@ func cancelledAgo(generation *dao.Generation, age time.Duration) *dao.Generation
 
 // startedAgo backdates a generation's start by the given age before testNow.
 func startedAgo(generation *dao.Generation, age time.Duration) *dao.Generation {
-	started := testNow.Add(-age)
-	generation.StartRequestedAt = &started
+	generation.StartRequestedAt = testNow.Add(-age)
 
 	return generation
 }

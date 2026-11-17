@@ -333,7 +333,7 @@ func TestClient(t *testing.T) {
 				// The count includes the generation the submit would create.
 				caps: &servicegenai.GenerationCaps{Concurrency: new(int32(0))},
 
-				expectMessage: `usage cap reached: purpose "studio.generation" concurrency: 0 generations already in flight`,
+				expectMessage: `usage cap reached: purpose "studio.generation" concurrency 0`,
 				expectLimit:   "concurrency 0",
 			},
 			{
@@ -341,7 +341,7 @@ func TestClient(t *testing.T) {
 					{Duration: durationpb.New(5 * time.Hour), InputTokens: new(int64(0))},
 				}},
 
-				expectMessage: `usage cap reached: purpose "studio.generation" over 5h0m0s`,
+				expectMessage: `usage cap reached: purpose "studio.generation" input tokens over 5h`,
 				expectLimit:   "input tokens over 5h",
 			},
 		}

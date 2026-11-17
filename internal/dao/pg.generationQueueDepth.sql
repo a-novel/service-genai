@@ -1,6 +1,6 @@
 -- The backlog: how many generations wait for the provider to accept their call, and how long the one
 -- waiting longest has waited. A submit requests its generation's start in the insert, so the wait
--- runs from the creation, as it does for a generation an earlier release left without a start.
+-- runs from the creation.
 SELECT
   count(*) AS pending,
   greatest(

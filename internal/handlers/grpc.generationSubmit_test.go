@@ -46,7 +46,6 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 		Scope:      `purpose "studio.generation"`,
 		Limit:      "input tokens over 5h",
 		RetryAfter: time.Hour,
-		Reason:     `purpose "studio.generation" over 5h0m0s`,
 	}
 
 	testCases := []struct {
@@ -169,22 +168,9 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 			expectMessage: "unknown provider",
 		},
 		{
-			// The message names the cap, so the caller can tell its user which limit was reached.
+			// The message names the cap, so the caller can tell its user which limit was reached. The
+			// details name it in fields, and tell when the window frees usage.
 			name: "Error/UsageCapReached",
-
-			request: &genaiv0.GenerationSubmitRequest{
-				OwnerId: testOwnerID, Purpose: "studio.generation", Provider: "openai", Payload: payload,
-			},
-			serviceMock: &serviceMock{
-				err: fmt.Errorf(`%w: purpose "studio.generation" over 720h0m0s`, core.ErrUsageCapReached),
-			},
-
-			expectStatus:  codes.ResourceExhausted,
-			expectMessage: `purpose "studio.generation" over 720h0m0s`,
-		},
-		{
-			// The details name the limit in fields, and tell when the window frees usage.
-			name: "Error/UsageCapDetails",
 
 			request: &genaiv0.GenerationSubmitRequest{
 				OwnerId: testOwnerID, Purpose: "studio.generation", Provider: "openai", Payload: payload,
@@ -192,7 +178,7 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 			serviceMock: &serviceMock{err: refusal},
 
 			expectStatus:  codes.ResourceExhausted,
-			expectMessage: `usage cap reached: purpose "studio.generation" over 5h0m0s`,
+			expectMessage: `usage cap reached: purpose "studio.generation" input tokens over 5h`,
 			expectQuota: &errdetails.QuotaFailure_Violation{
 				Subject: `purpose "studio.generation"`, Description: "input tokens over 5h",
 			},
@@ -200,18 +186,15 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 		},
 		{
 			// A concurrency frees at no known time: the refusal carries no retry delay.
-			name: "Error/UsageCapDetailsNoRetry",
+			name: "Error/UsageCapReachedNoRetry",
 
 			request: &genaiv0.GenerationSubmitRequest{
 				OwnerId: testOwnerID, Purpose: "studio.generation", Provider: "openai", Payload: payload,
 			},
-			serviceMock: &serviceMock{err: &core.UsageCapError{
-				Scope: `purpose "studio.generation"`, Limit: "concurrency 2",
-				Reason: `purpose "studio.generation" concurrency: 2 generations already in flight`,
-			}},
+			serviceMock: &serviceMock{err: &core.UsageCapError{Scope: `purpose "studio.generation"`, Limit: "concurrency 2"}},
 
 			expectStatus:  codes.ResourceExhausted,
-			expectMessage: `usage cap reached: purpose "studio.generation" concurrency: 2 generations already in flight`,
+			expectMessage: `usage cap reached: purpose "studio.generation" concurrency 2`,
 			expectQuota: &errdetails.QuotaFailure_Violation{
 				Subject: `purpose "studio.generation"`, Description: "concurrency 2",
 			},

@@ -18,11 +18,6 @@ type GenerationGetDao interface {
 	Exec(ctx context.Context, request *dao.GenerationGetRequest) (*dao.Generation, error)
 }
 
-// GenerationGetDaoAttemptList reads the provider's answers to the generation's attempts.
-type GenerationGetDaoAttemptList interface {
-	Exec(ctx context.Context, request *dao.GenerationAttemptListRequest) ([]*dao.GenerationAttempt, error)
-}
-
 // GenerationGetServiceCheck checks the generation.
 type GenerationGetServiceCheck interface {
 	Exec(ctx context.Context, request *GenerationCheckRequest) (*dao.Generation, error)
@@ -44,13 +39,13 @@ type GenerationGetRequest struct {
 // caller bounds how often it polls, and the sweep checks the generations nobody polls.
 type GenerationGet struct {
 	dao            GenerationGetDao
-	daoAttemptList GenerationGetDaoAttemptList
+	daoAttemptList GenerationAttemptListDao
 	serviceCheck   GenerationGetServiceCheck
 }
 
 // NewGenerationGet returns a new GenerationGet service.
 func NewGenerationGet(
-	dao GenerationGetDao, daoAttemptList GenerationGetDaoAttemptList, serviceCheck GenerationGetServiceCheck,
+	dao GenerationGetDao, daoAttemptList GenerationAttemptListDao, serviceCheck GenerationGetServiceCheck,
 ) *GenerationGet {
 	return &GenerationGet{dao: dao, daoAttemptList: daoAttemptList, serviceCheck: serviceCheck}
 }
@@ -83,14 +78,10 @@ func (service *GenerationGet) Exec(ctx context.Context, request *GenerationGetRe
 		}
 	}
 
-	var attempts []*dao.GenerationAttempt
-
-	if mayHaveAttempts(generation) {
-		attempts, err = service.daoAttemptList.Exec(ctx, &dao.GenerationAttemptListRequest{GenerationID: generation.ID})
-		if err != nil {
-			return nil, otel.ReportError(span, fmt.Errorf("list attempts: %w", err))
-		}
+	loaded, err := loadGeneration(ctx, service.daoAttemptList, generation)
+	if err != nil {
+		return nil, otel.ReportError(span, err)
 	}
 
-	return newGeneration(generation, attempts), nil
+	return loaded, nil
 }

@@ -9,9 +9,10 @@ COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod \
     go mod download
 
-COPY ./cmd/migrations ./cmd/migrations
-COPY ./internal/config ./internal/config
-COPY ./internal/models/migrations ./internal/models/migrations
+# The whole source tree, so a new package needs no line here: .dockerignore drops the tests, and
+# the build cache recompiles only what changed.
+COPY ./cmd ./cmd
+COPY ./internal ./internal
 
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \

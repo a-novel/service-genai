@@ -108,9 +108,3 @@ func newGeneration(generation *dao.Generation, attempts []*dao.GenerationAttempt
 
 	return result
 }
-
-// mayHaveAttempts reports whether a generation can have an attempt answered, so a read with none to
-// find is skipped. An answer is recorded when the generation settles: an unsettled one has none yet.
-func mayHaveAttempts(generation *dao.Generation) bool {
-	return generation.SettledAt != nil
-}

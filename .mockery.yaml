@@ -17,9 +17,3 @@ packages:
       pkgname: handlersmocks
       dir: internal/handlers/mocks
       filename: mocks.go
-  github.com/a-novel/service-genai/pkg/go:
-    config:
-      all: true
-      pkgname: pkgmocks
-      dir: pkg/go/mocks
-      filename: mocks.go

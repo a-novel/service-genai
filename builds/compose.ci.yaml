@@ -15,7 +15,12 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      POSTGRES_DSN: postgres://postgres:postgres@postgres:5432/postgres?sslmode=disable
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DATABASE: postgres
+      POSTGRES_TLS_ENABLED: "false"
       # A closed port: starts are refused before reaching any provider, so generations fail at once.
       OPENAI_BASE_URL: http://127.0.0.1:1/v1
       OPENAI_API_KEY: test

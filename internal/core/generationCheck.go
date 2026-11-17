@@ -153,18 +153,10 @@ func (service *GenerationCheck) Exec(
 		return generation, nil
 	case generation.ProviderCallID != nil:
 		checked, err = service.observe(ctx, generation)
-	case generation.StartRequestedAt != nil && request.Start != nil:
+	case request.Start != nil:
 		checked, err = service.start(ctx, generation, request.Start)
-	case generation.StartRequestedAt != nil:
-		checked, err = service.resolveStart(ctx, generation)
-	case generation.CancelRequestedAt != nil:
-		checked, err = service.settle(ctx, generation, &connectors.Call{State: connectors.CallCancelled})
 	default:
-		// An earlier release left the generation pending between two starts, its payload out of reach.
-		// The caller resends its request to run it.
-		checked, err = service.settleFailure(
-			ctx, generation, failureStartFailed, dao.GenerationFailureNotStarted, "no start intent to send", nil,
-		)
+		checked, err = service.resolveStart(ctx, generation)
 	}
 
 	if errors.Is(err, dao.ErrGenerationChanged) {
@@ -375,7 +367,7 @@ func (service *GenerationCheck) resolveStart(
 	defer span.End()
 
 	// Both timestamps come from the database clock.
-	if generation.ReadAt.Sub(*generation.StartRequestedAt) < startOutcomeUnknownAfter {
+	if generation.ReadAt.Sub(generation.StartRequestedAt) < startOutcomeUnknownAfter {
 		return generation, nil
 	}
 
@@ -470,7 +462,7 @@ func (service *GenerationCheck) observe(ctx context.Context, generation *dao.Gen
 	// without the answer. Any other failure, such as a lock wait or a lost connection, is retried by the
 	// next check.
 	if errors.Is(err, dao.ErrRefused) &&
-		generation.ReadAt.Sub(*generation.StartRequestedAt) >= runCeiling+stopRetryWindow {
+		generation.ReadAt.Sub(generation.StartRequestedAt) >= runCeiling+stopRetryWindow {
 		recorded, err = service.settleFailure(
 			ctx, generation, failureNotRecorded, dao.GenerationFailureProviderFailed, err.Error(), nil,
 		)
@@ -495,8 +487,8 @@ func (service *GenerationCheck) ask(
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationCheck(ask)")
 	defer span.End()
 
-	// Every timestamp here comes from the database clock. A recorded call always has its start.
-	start := *generation.StartRequestedAt
+	// Every timestamp here comes from the database clock.
+	start := generation.StartRequestedAt
 	since := generation.CancelRequestedAt
 	age := generation.ReadAt.Sub(start)
 
@@ -655,7 +647,7 @@ func (service *GenerationCheck) recordUsage(
 		OutputTokens:      call.Usage.OutputTokens,
 		ReasoningTokens:   call.Usage.ReasoningTokens,
 		// A provider that reports no start is timed from when this service sent the call.
-		StartedAt:   lo.Ternary(call.StartedAt.IsZero(), lo.FromPtr(generation.StartRequestedAt), call.StartedAt),
+		StartedAt:   lo.Ternary(call.StartedAt.IsZero(), generation.StartRequestedAt, call.StartedAt),
 		CompletedAt: call.CompletedAt,
 	}
 

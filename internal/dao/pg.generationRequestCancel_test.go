@@ -17,8 +17,6 @@ import (
 func TestPgGenerationRequestCancel(t *testing.T) {
 	t.Parallel()
 
-	const reason = "generation cancelled"
-
 	testCases := []struct {
 		name string
 
@@ -31,16 +29,6 @@ func TestPgGenerationRequestCancel(t *testing.T) {
 		expectStatus dao.GenerationStatus
 		expectErr    error
 	}{
-		{
-			// Nothing was sent, as for a generation an earlier release left pending between two starts.
-			// There is no call to stop, so the generation settles at once.
-			name: "Success/NeverStarted",
-
-			state: "pending",
-			owner: testOwner,
-
-			expectStatus: dao.GenerationStatusCancelled,
-		},
 		{
 			// The start may be accepted at any moment, so the generation is only marked.
 			name: "Success/StartInFlight",
@@ -94,24 +82,9 @@ func TestPgGenerationRequestCancel(t *testing.T) {
 			postgrestest.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
 				t.Helper()
 
-				// A submitted generation is starting: its start intent is recorded.
-				seed := seedGeneration
-				if testCase.state == "pending" {
-					seed = seedUnstarted
-				}
+				generation := seedState(ctx, t, testCase.state)
 
-				generation := seed(ctx, t)
-
-				switch testCase.state {
-				case "running":
-					runGeneration(ctx, t, generation.ID)
-				case "settled":
-					settleGeneration(ctx, t, runGeneration(ctx, t, generation.ID))
-				}
-
-				request := &dao.GenerationRequestCancelRequest{
-					ID: generation.ID, OwnerID: testCase.owner, Error: reason, Retention: testRetention,
-				}
+				request := &dao.GenerationRequestCancelRequest{ID: generation.ID, OwnerID: testCase.owner}
 
 				var first *dao.Generation
 
@@ -133,14 +106,7 @@ func TestPgGenerationRequestCancel(t *testing.T) {
 				require.NotNil(t, cancelled.CancelRequestedAt)
 				// The check that stops the call measures its ages from the cancel.
 				require.Equal(t, cancelled.UpdatedAt, cancelled.ReadAt)
-
-				if testCase.expectStatus == dao.GenerationStatusCancelled {
-					require.Equal(t, reason, *cancelled.Error)
-					require.NotNil(t, cancelled.SettledAt)
-					require.Equal(t, testRetention, cancelled.ExpiresAt.Sub(*cancelled.SettledAt))
-				} else {
-					require.Nil(t, cancelled.SettledAt)
-				}
+				require.Nil(t, cancelled.SettledAt)
 
 				if first != nil {
 					require.Equal(t, first.CancelRequestedAt, cancelled.CancelRequestedAt)

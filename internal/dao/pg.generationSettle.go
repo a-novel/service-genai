@@ -22,7 +22,7 @@ type GenerationSettleRequest struct {
 	ID uuid.UUID
 	// StartRequestedAt is the start the caller observed. The settle applies only while the generation
 	// still carries it.
-	StartRequestedAt *time.Time
+	StartRequestedAt time.Time
 	// ProviderCallID is the call the caller observed, nil when it observed none. The settle applies only
 	// while the generation still carries it.
 	ProviderCallID *string
