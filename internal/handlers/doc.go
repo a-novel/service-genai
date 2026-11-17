@@ -2,11 +2,7 @@
 // Handlers translate incoming requests into core calls and map the results and sentinel errors back
 // to protocol responses and status codes; business logic lives in core.
 //
-// Two transport implementations serve distinct audiences:
-//
-//   - gRPC handlers: the private generation API, for other services on the internal network. Once
-//     configured, [GrpcServiceToken] admits only the callers whose service token it accepts. Wired
-//     by cmd/grpc.
-//
-//   - REST handlers: the liveness and health probes of the sweep server, wired by cmd/sweep.
+// Its gRPC handlers serve the private generation API to other services on the internal network.
+// cmd/grpc wires them behind golib's service-token gate, which admits only the callers whose service
+// token it accepts. The sweep server's liveness and health probes are golib's own handlers.
 package handlers

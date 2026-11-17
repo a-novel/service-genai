@@ -6,7 +6,8 @@ import (
 	"strings"
 
 	"github.com/uptrace/bun"
-	"github.com/uptrace/bun/driver/pgdriver"
+
+	"github.com/a-novel-kit/golib/postgres"
 )
 
 // ErrGenerationChanged is returned when a transition's preconditions no longer hold: another check
@@ -29,13 +30,10 @@ var refusedClasses = []string{"22", "23", "54"}
 
 // refused joins [ErrRefused] to an error the database raised for a statement's values.
 func refused(err error) error {
-	pgErr, ok := errors.AsType[pgdriver.Error](err)
-	if !ok {
-		return err
-	}
+	code, _ := postgres.SQLState(err)
 
 	for _, class := range refusedClasses {
-		if strings.HasPrefix(pgErr.Field('C'), class) {
+		if strings.HasPrefix(code, class) {
 			return errors.Join(err, ErrRefused)
 		}
 	}

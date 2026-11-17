@@ -14,9 +14,11 @@ import (
 )
 
 func main() {
-	ctx := lo.Must(postgres.NewContext(context.Background(), config.PostgresPresetMigrations))
-	lo.Must0(postgres.RunMigrationsContext(ctx, migrations.Migrations))
+	ctx := context.Background()
 
-	db := lo.Must(postgres.GetContext(ctx))
+	db := lo.Must(config.PostgresPresetMigrations.DB(ctx))
+	defer config.PostgresPresetMigrations.Close()
+
+	lo.Must0(postgres.RunMigrations(ctx, db, migrations.Migrations))
 	lo.Must(db.NewRaw(migrations.Jobs).Exec(ctx))
 }

@@ -72,11 +72,8 @@ type App struct {
 	// Rest holds the configuration of the sweep's REST server.
 	Rest httpf.ServerConfig
 	// ServiceToken names the service tokens the gRPC server accepts. Without an issuer, the server
-	// refuses to start unless ServiceIssuerOptional is set.
+	// refuses to start unless its IssuerOptional is set, which only a local or test stack does.
 	ServiceToken servicetoken.Config
-	// ServiceIssuerOptional lets the gRPC server start without a service-token issuer, and then
-	// take every call. Only a local or test stack sets it.
-	ServiceIssuerOptional bool
 	// Generations holds how generations are run and kept.
 	Generations Generations
 	// Sweep configures the sweep that checks generations nobody polled.
@@ -88,8 +85,8 @@ type App struct {
 	Purposes []string
 	// Otel configures the OpenTelemetry exporter for traces and metrics.
 	Otel otel.Config
-	// Logger is the base application logger: checks log provider failures to it, and the REST handler
-	// its errors.
+	// Logger is the base application logger: checks log provider failures to it, and the sweep its
+	// failed runs.
 	Logger logging.Log
 	// GrpcLogger configures the gRPC request logging middleware.
 	GrpcLogger logging.RPCConfig

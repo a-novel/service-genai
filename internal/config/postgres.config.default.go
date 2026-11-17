@@ -4,15 +4,16 @@ import (
 	"github.com/samber/lo"
 	"github.com/uptrace/bun/driver/pgdriver"
 
-	postgrespresets "github.com/a-novel-kit/golib/postgres/presets"
-
 	"github.com/a-novel/service-genai/internal/config/env"
 )
+
+// migrationsSessionParams make a migration waiting for a lock give up after three seconds.
+var migrationsSessionParams = map[string]any{"lock_timeout": "3s"}
 
 // PostgresPresetMigrations is the migrations job's connection. A migration waiting for a lock gives
 // up after three seconds, so the queries queued behind it on its table proceed, and the runner tries
 // it again later. Its statements are not bounded, since building an index can run long.
-var PostgresPresetMigrations = NewPostgresPreset(pgdriver.WithConnParams(map[string]any{"lock_timeout": "3s"}))
+var PostgresPresetMigrations = lo.Must(env.Postgres.Preset(pgdriver.WithConnParams(migrationsSessionParams)))
 
 // serverSessionTimeouts bound the server's sessions on the database side too: a statement, a lock
 // wait or an abandoned transaction gives up there, rather than holding a connection the client has
@@ -24,26 +25,4 @@ var serverSessionTimeouts = map[string]any{
 }
 
 // PostgresPresetServer is the servers' connection, with their session timeouts.
-var PostgresPresetServer = NewPostgresPreset(pgdriver.WithConnParams(serverSessionTimeouts))
-
-// NewPostgresPreset builds the connection config from the POSTGRES_* fields, with its pool bounded as
-// it opens. Extra options apply last.
-//
-// The pool limits are set here because the handle is cached: a limit set on it once a connection is
-// taken applies to nothing and reports nothing.
-func NewPostgresPreset(extra ...pgdriver.Option) *postgrespresets.Default {
-	connection := postgrespresets.Connection{
-		Host:       env.PostgresHost,
-		Port:       env.PostgresPort,
-		User:       env.PostgresUser,
-		Password:   env.PostgresPassword,
-		Database:   env.PostgresDatabase,
-		TLSEnabled: env.PostgresTLSEnabled,
-	}
-
-	preset := postgrespresets.NewDefault(append(lo.Must(connection.Options()), extra...)...)
-	preset.MaxOpenConns = env.PostgresMaxOpenConns
-	preset.MaxIdleConns = env.PostgresMaxIdleConns
-
-	return preset
-}
+var PostgresPresetServer = lo.Must(env.Postgres.Preset(pgdriver.WithConnParams(serverSessionTimeouts)))

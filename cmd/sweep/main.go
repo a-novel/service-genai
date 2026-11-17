@@ -4,7 +4,6 @@ package main
 
 import (
 	"context"
-	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -22,10 +21,8 @@ import (
 	"github.com/a-novel-kit/golib/worker"
 
 	"github.com/a-novel/service-genai/internal/config"
-	"github.com/a-novel/service-genai/internal/config/env"
 	"github.com/a-novel/service-genai/internal/core"
 	"github.com/a-novel/service-genai/internal/dao"
-	"github.com/a-novel/service-genai/internal/handlers"
 	"github.com/a-novel/service-genai/internal/lib/connectors"
 )
 
@@ -41,16 +38,11 @@ func main() {
 	lo.Must0(otel.Init(cfg.Otel))
 	defer cfg.Otel.Flush()
 
-	if env.OTLPEndpoint == "" {
-		log.SetFlags(log.Flags() &^ (log.Ldate | log.Ltime))
-	}
-
 	// A server started during a planned downtime refuses work, so it leaves the database alone.
 	if !downtime.Started(cfg.App.DowntimeStart, time.Now()) {
 		ctx = lo.Must(postgres.NewContext(ctx, cfg.Postgres))
 
-		database := lo.Must(cfg.Postgres.DB(ctx))
-		defer closeDatabase(database)
+		defer cfg.Postgres.Close()
 	}
 
 	// =================================================================================================================
@@ -89,17 +81,18 @@ func main() {
 	// HANDLERS
 	// =================================================================================================================
 
-	handlerPing := handlers.NewRestPing()
-	handlerHealth := handlers.NewRestHealth()
+	handlerHealth := httpf.Health(map[string]func(context.Context) error{
+		"client:postgres": postgres.Health,
+	})
 
 	// =================================================================================================================
 	// ROUTER
 	// =================================================================================================================
 
-	router := httpf.NewRouter(cfg.Rest, cfg.Otel, cfg.RestLogger, cfg.App.DowntimeStart)
+	router := httpf.NewMux(cfg.Rest, cfg.RestLogger, cfg.App.DowntimeStart)
 
-	router.Get("/ping", handlerPing.ServeHTTP)
-	router.Get("/healthcheck", handlerHealth.ServeHTTP)
+	router.Get("/ping", httpf.Ping)
+	router.Get("/healthcheck", handlerHealth)
 
 	// =================================================================================================================
 	// RUN
@@ -139,12 +132,5 @@ func sweepRun(service *core.GenerationSweep, downtimeStart *time.Time) func(cont
 		_, err := service.Exec(ctx, &core.GenerationSweepRequest{})
 
 		return false, err
-	}
-}
-
-func closeDatabase(database io.Closer) {
-	err := database.Close()
-	if err != nil {
-		log.Println("Close Postgres: " + err.Error())
 	}
 }
