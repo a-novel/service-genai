@@ -85,7 +85,8 @@ type App struct {
 	Purposes []string
 	// Otel configures the OpenTelemetry exporter for traces and metrics.
 	Otel otel.Config
-	// Logger is the base application logger: checks log provider failures to it.
+	// Logger is the base application logger: checks log provider failures to it, and the sweep its
+	// failed runs.
 	Logger logging.Log
 	// GrpcLogger configures the gRPC request logging middleware.
 	GrpcLogger logging.RPCConfig
