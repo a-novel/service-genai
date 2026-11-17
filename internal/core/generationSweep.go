@@ -44,7 +44,7 @@ type GenerationSweepResult struct{}
 // A GenerationSweep checks every unsettled generation once.
 //
 // Callers polling a generation keep it fresh. The sweep catches the rest: a generation whose caller
-// went away still settles while the provider holds its result. The sweep server's ticker calls it.
+// went away still settles while the provider holds its result. The sweep server's ticker runs it.
 // One sweep runs at a time across every replica, the leader: the others skip their run. A check
 // writes only to settle, so the sweep costs the rows nothing.
 type GenerationSweep struct {

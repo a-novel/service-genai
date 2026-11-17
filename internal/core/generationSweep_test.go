@@ -34,7 +34,7 @@ func TestGenerationSweep(t *testing.T) {
 		after uuid.UUID
 		swept []*dao.Generation
 		err   error
-		// shutdown ends the call's context while the batch is taken, as a stopping server does.
+		// shutdown ends the run's context while the batch is taken, as a stopping server does.
 		shutdown bool
 	}
 
@@ -121,7 +121,7 @@ func TestGenerationSweep(t *testing.T) {
 			expect: &core.GenerationSweepResult{},
 		},
 		{
-			// A query cut by the shutdown is no failure: the call ends with what it checked.
+			// A query cut by the shutdown is no failure: the run ends without an error.
 			name: "Success/ShutdownDuringQuery",
 
 			batches: []batchMock{{err: context.Canceled, shutdown: true}},
