@@ -22,9 +22,8 @@ import (
 	"github.com/openai/openai-go/v3/packages/ssestream"
 	"github.com/openai/openai-go/v3/responses"
 	"github.com/openai/openai-go/v3/shared"
-	"go.opentelemetry.io/otel/attribute"
-
-	"github.com/a-novel-kit/golib/otel"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel/propagation"
 )
 
 // responsesPath is the endpoint requests are posted to.
@@ -75,7 +74,7 @@ func NewOpenAI(config OpenAIConfig, opts ...option.RequestOption) (*OpenAI, erro
 	}
 
 	opts = append([]option.RequestOption{
-		option.WithBaseURL(config.BaseURL), option.WithAPIKey(config.APIKey), option.WithHTTPClient(healthCheckedClient()),
+		option.WithBaseURL(config.BaseURL), option.WithAPIKey(config.APIKey), option.WithHTTPClient(providerClient()),
 	}, opts...)
 
 	return &OpenAI{client: openai.NewClient(opts...)}, nil
@@ -91,19 +90,24 @@ func capResponse(request *http.Request, next option.MiddlewareNext) (*http.Respo
 	return response, err
 }
 
-// healthCheckedClient pings a connection the provider has gone quiet on, and drops it when the ping
-// goes unanswered. Go otherwise keeps sending calls into a dead connection, and each start sent there
-// times out as ambiguous.
-func healthCheckedClient() *http.Client {
-	transport, ok := http.DefaultTransport.(*http.Transport)
-	if !ok {
-		return http.DefaultClient
+// providerClient carries the calls to the provider. It pings a connection the provider has gone quiet
+// on, and drops it when the ping goes unanswered: Go otherwise keeps sending calls into a dead
+// connection, and each start sent there times out as ambiguous.
+//
+// otelhttp records each request on a client span, the record of the provider's latency. The provider
+// is outside the platform, so it receives no trace context.
+func providerClient() *http.Client {
+	transport := http.DefaultTransport
+
+	if standard, ok := http.DefaultTransport.(*http.Transport); ok {
+		standard = standard.Clone()
+		standard.HTTP2 = &http.HTTP2Config{SendPingTimeout: healthCheckTimeout, PingTimeout: healthCheckTimeout}
+		transport = standard
 	}
 
-	transport = transport.Clone()
-	transport.HTTP2 = &http.HTTP2Config{SendPingTimeout: healthCheckTimeout, PingTimeout: healthCheckTimeout}
-
-	return &http.Client{Transport: transport}
+	return &http.Client{
+		Transport: otelhttp.NewTransport(transport, otelhttp.WithPropagators(propagation.NewCompositeTextMapPropagator())),
+	}
 }
 
 // Start posts the caller's payload in the Async mode.
@@ -112,12 +116,9 @@ func healthCheckedClient() *http.Client {
 // restarted check resumes an operation already paid for. A streamed start holds the creation stream
 // until the provider begins the operation.
 func (provider *OpenAI) Start(ctx context.Context, request *AsyncStartRequest) (*Call, error) {
-	ctx, span := otel.Tracer().Start(ctx, "connectors.OpenAI.Start")
-	defer span.End()
-
 	body, err := asyncEnvelope(request.Payload, request.Stream)
 	if err != nil {
-		return nil, otel.ReportError(span, fmt.Errorf("write async envelope: %w", err))
+		return nil, fmt.Errorf("write async envelope: %w", err)
 	}
 
 	// Whether the request fully left decides whether a failed start may have been accepted. The SDK
@@ -130,12 +131,7 @@ func (provider *OpenAI) Start(ctx context.Context, request *AsyncStartRequest) (
 	})
 
 	if request.Stream {
-		call, err := provider.holdStream(ctx, body, request.Accepted, sent.Load)
-		if err != nil {
-			return nil, otel.ReportError(span, err)
-		}
-
-		return call, nil
+		return provider.holdStream(ctx, body, request.Accepted, sent.Load)
 	}
 
 	var raw []byte
@@ -146,17 +142,17 @@ func (provider *OpenAI) Start(ctx context.Context, request *AsyncStartRequest) (
 		ctx, responsesPath, body, &raw, option.WithMaxRetries(0), option.WithMiddleware(capResponse),
 	)
 	if err != nil {
-		return nil, otel.ReportError(span, classifyOpenAIStartError(err, sent.Load()))
+		return nil, classifyOpenAIStartError(err, sent.Load())
 	}
 
 	// Accepted, but unreadable or unnamed: the provider may run the call, and nothing names it.
 	call, err := providerCallOf(raw)
 	if err != nil {
-		return nil, otel.ReportError(span, fmt.Errorf("%w: %w", ErrStartAmbiguous, err))
+		return nil, fmt.Errorf("%w: %w", ErrStartAmbiguous, err)
 	}
 
 	if call.ID == "" {
-		return nil, otel.ReportError(span, fmt.Errorf("%w: the response names no operation", ErrStartAmbiguous))
+		return nil, fmt.Errorf("%w: the response names no operation", ErrStartAmbiguous)
 	}
 
 	return call, nil
@@ -167,21 +163,18 @@ func (provider *OpenAI) Start(ctx context.Context, request *AsyncStartRequest) (
 // https://github.com/openai/openai-go/issues/660
 func (provider *OpenAI) Stream(ctx context.Context, request *StreamRequest) iter.Seq2[*StreamEvent, error] {
 	return func(yield func(*StreamEvent, error) bool) {
-		ctx, span := otel.Tracer().Start(ctx, "connectors.OpenAI.Stream")
-		defer span.End()
-
 		var raw *http.Response
 
 		err := provider.client.Get(ctx, callPath(request.ID), nil, &raw, streamOptions(request)...)
 		if err != nil {
-			yield(nil, otel.ReportError(span, classifyOpenAIStreamError(err)))
+			yield(nil, classifyOpenAIStreamError(err))
 
 			return
 		}
 
 		err = yieldEvents(raw, yield)
 		if err != nil {
-			yield(nil, otel.ReportError(span, err))
+			yield(nil, err)
 		}
 	}
 }
@@ -272,21 +265,16 @@ func classifyOpenAIStreamError(err error) error {
 
 // Get reads an operation, and is also the re-attach path.
 func (provider *OpenAI) Get(ctx context.Context, id string) (*Call, error) {
-	ctx, span := otel.Tracer().Start(ctx, "connectors.OpenAI.Get")
-	defer span.End()
-
-	span.SetAttributes(attribute.String("provider.call_id", id))
-
 	var raw []byte
 
 	err := provider.client.Get(ctx, callPath(id), nil, &raw, readOptions...)
 	if err != nil {
-		return nil, otel.ReportError(span, classifyOpenAIError(err))
+		return nil, classifyOpenAIError(err)
 	}
 
 	call, err := providerCallOf(raw)
 	if err != nil {
-		return nil, otel.ReportError(span, fmt.Errorf("%w: %w", ErrRetryable, err))
+		return nil, fmt.Errorf("%w: %w", ErrRetryable, err)
 	}
 
 	return call, nil
@@ -294,11 +282,6 @@ func (provider *OpenAI) Get(ctx context.Context, id string) (*Call, error) {
 
 // Cancel stops an operation so an abandoned generation stops costing.
 func (provider *OpenAI) Cancel(ctx context.Context, id string) (*Call, error) {
-	ctx, span := otel.Tracer().Start(ctx, "connectors.OpenAI.Cancel")
-	defer span.End()
-
-	span.SetAttributes(attribute.String("provider.call_id", id))
-
 	var raw []byte
 
 	err := provider.client.Post(ctx, callPath(id)+"/cancel", nil, &raw, readOptions...)
@@ -306,21 +289,16 @@ func (provider *OpenAI) Cancel(ctx context.Context, id string) (*Call, error) {
 	// OpenAI refuses to cancel a response that already finished. Its result is still there, and paid.
 	apiErr, ok := errors.AsType[*openai.Error](err)
 	if ok && apiErr.StatusCode == http.StatusBadRequest {
-		call, getErr := provider.Get(ctx, id)
-		if getErr != nil {
-			return nil, otel.ReportError(span, getErr)
-		}
-
-		return call, nil
+		return provider.Get(ctx, id)
 	}
 
 	if err != nil {
-		return nil, otel.ReportError(span, classifyOpenAIError(err))
+		return nil, classifyOpenAIError(err)
 	}
 
 	call, err := providerCallOf(raw)
 	if err != nil {
-		return nil, otel.ReportError(span, fmt.Errorf("%w: %w", ErrRetryable, err))
+		return nil, fmt.Errorf("%w: %w", ErrRetryable, err)
 	}
 
 	return call, nil
@@ -335,14 +313,11 @@ func (provider *OpenAI) Cancel(ctx context.Context, id string) (*Call, error) {
 func (provider *OpenAI) holdStream(
 	ctx context.Context, body json.RawMessage, accepted func(*Call) error, sent func() bool,
 ) (*Call, error) {
-	ctx, span := otel.Tracer().Start(ctx, "connectors.OpenAI(holdStream)")
-	defer span.End()
-
 	var raw *http.Response
 
 	err := provider.client.Post(ctx, responsesPath, body, &raw, option.WithMaxRetries(0))
 	if err != nil {
-		return nil, otel.ReportError(span, classifyOpenAIStartError(err, sent()))
+		return nil, classifyOpenAIStartError(err, sent())
 	}
 
 	decoder := ssestream.NewDecoder(raw)
@@ -371,7 +346,7 @@ func (provider *OpenAI) holdStream(
 		if named && accepted != nil {
 			err = accepted(call)
 			if err != nil {
-				return nil, otel.ReportError(span, err)
+				return nil, err
 			}
 		}
 
@@ -382,7 +357,7 @@ func (provider *OpenAI) holdStream(
 
 	if call == nil {
 		// The request left, so the provider may hold the operation; nothing names it.
-		return nil, otel.ReportError(span, fmt.Errorf("%w: the stream ended before the operation's id", ErrStartAmbiguous))
+		return nil, fmt.Errorf("%w: the stream ended before the operation's id", ErrStartAmbiguous)
 	}
 
 	return call, nil
