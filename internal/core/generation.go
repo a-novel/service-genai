@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/samber/lo"
 
 	"github.com/a-novel/service-genai/internal/dao"
 )
@@ -23,7 +24,7 @@ const (
 	// GenerationStatusRunning means the provider accepted the call and it has not settled yet.
 	GenerationStatusRunning GenerationStatus = "running"
 	// GenerationStatusSucceeded means the provider finished the call. Whether its output is usable is
-	// the caller's reading of the last attempt's response.
+	// the caller's reading of the response.
 	GenerationStatusSucceeded GenerationStatus = "succeeded"
 	// GenerationStatusFailed means the generation holds no finished response.
 	GenerationStatusFailed GenerationStatus = "failed"
@@ -65,8 +66,9 @@ type Generation struct {
 	Failure *GenerationFailure
 	// Status identifies the generation's current lifecycle state.
 	Status GenerationStatus
-	// Attempts are the provider's answers, in attempt order.
-	Attempts []*GenerationAttempt
+	// Response is the provider's answer to the generation's call, as it sent it. Nil until the
+	// generation settles, and when the call produced no answer.
+	Response json.RawMessage
 	// CreatedAt is when the generation was submitted.
 	CreatedAt time.Time
 	// UpdatedAt is when the generation last changed.
@@ -77,17 +79,9 @@ type Generation struct {
 	ExpiresAt *time.Time
 }
 
-// GenerationAttempt is the provider's answer to one attempt.
-type GenerationAttempt struct {
-	// Number is the attempt's place in the generation, from one.
-	Number int16
-	// Response is the provider's final answer, as it sent it.
-	Response json.RawMessage
-}
-
-// newGeneration converts a stored generation and the answers to its attempts to the core form.
-func newGeneration(generation *dao.Generation, attempts []*dao.GenerationAttempt) *Generation {
-	result := &Generation{
+// newGeneration converts a stored generation and its answer, if any, to the core form.
+func newGeneration(generation *dao.Generation, answers []*dao.GenerationAttempt) *Generation {
+	return &Generation{
 		ID:        generation.ID,
 		OwnerID:   generation.OwnerID,
 		Purpose:   generation.Purpose,
@@ -95,16 +89,10 @@ func newGeneration(generation *dao.Generation, attempts []*dao.GenerationAttempt
 		Error:     generation.Error,
 		Failure:   (*GenerationFailure)(generation.Failure),
 		Status:    GenerationStatus(generation.Status),
-		Attempts:  make([]*GenerationAttempt, len(attempts)),
+		Response:  lo.LastOr(answers, &dao.GenerationAttempt{}).Response,
 		CreatedAt: generation.CreatedAt,
 		UpdatedAt: generation.UpdatedAt,
 		SettledAt: generation.SettledAt,
 		ExpiresAt: generation.ExpiresAt,
 	}
-
-	for index, attempt := range attempts {
-		result.Attempts[index] = &GenerationAttempt{Number: attempt.Attempt, Response: attempt.Response}
-	}
-
-	return result
 }

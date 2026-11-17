@@ -7,7 +7,7 @@ import (
 	"github.com/uptrace/bun"
 )
 
-// GenerationUsage is what one answered attempt consumed: a Usage Record.
+// GenerationUsage is what a generation's answered call consumed: a Usage Record.
 //
 // It is never purged, and holds no user content: it outlives the generation it describes, so caps
 // and the long-term usage record can sum it.
@@ -15,7 +15,6 @@ type GenerationUsage struct {
 	bun.BaseModel `bun:"table:generation_usage,alias:generation_usage"`
 
 	GenerationID uuid.UUID `bun:"generation_id,pk,type:uuid"`
-	Attempt      int16     `bun:"attempt,pk"`
 
 	OwnerID  uuid.UUID `bun:"owner_id,type:uuid"`
 	Purpose  string    `bun:"purpose"`

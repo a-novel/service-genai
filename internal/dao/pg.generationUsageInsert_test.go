@@ -25,7 +25,7 @@ func TestPgGenerationUsageInsert(t *testing.T) {
 	testCases := []struct {
 		name string
 
-		// insertTwice records the attempt's usage first, as the stop of an orphaned call does outside
+		// insertTwice records the generation's usage first, as the stop of an orphaned call does outside
 		// the settle.
 		insertTwice bool
 
@@ -57,7 +57,7 @@ func TestPgGenerationUsageInsert(t *testing.T) {
 			usage: &dao.GenerationUsageInsertRequest{Model: "a-model-snapshot", Class: "low", StartedAt: startedAt},
 		},
 		{
-			name: "Error/AlreadyRecordedForThisAttempt",
+			name: "Error/AlreadyRecorded",
 
 			insertTwice: true,
 			usage: &dao.GenerationUsageInsertRequest{

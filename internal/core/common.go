@@ -26,13 +26,13 @@ var ErrModeUnsupported = connectors.ErrModeUnsupported
 // succeed again: a stream it dropped resumes after the last event received.
 var ErrProviderRetryable = connectors.ErrRetryable
 
-// GenerationAttemptListDao reads the provider's answers to a generation's attempts.
+// GenerationAttemptListDao reads the provider's answer to a generation's call.
 type GenerationAttemptListDao interface {
 	Exec(ctx context.Context, request *dao.GenerationAttemptListRequest) ([]*dao.GenerationAttempt, error)
 }
 
-// loadGeneration returns the generation in its core form, with the provider's answers. An answer is
-// recorded when the generation settles, so an unsettled one is returned without reading any.
+// loadGeneration returns the generation in its core form, with the provider's answer. The answer is
+// recorded when the generation settles, so an unsettled one is returned without reading it.
 func loadGeneration(
 	ctx context.Context, daoAttemptList GenerationAttemptListDao, generation *dao.Generation,
 ) (*Generation, error) {
@@ -43,10 +43,10 @@ func loadGeneration(
 		return newGeneration(generation, nil), nil
 	}
 
-	attempts, err := daoAttemptList.Exec(ctx, &dao.GenerationAttemptListRequest{GenerationID: generation.ID})
+	answers, err := daoAttemptList.Exec(ctx, &dao.GenerationAttemptListRequest{GenerationID: generation.ID})
 	if err != nil {
-		return nil, otel.ReportError(span, fmt.Errorf("list attempts: %w", err))
+		return nil, otel.ReportError(span, fmt.Errorf("read answer: %w", err))
 	}
 
-	return newGeneration(generation, attempts), nil
+	return newGeneration(generation, answers), nil
 }

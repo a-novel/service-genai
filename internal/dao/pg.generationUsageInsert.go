@@ -18,10 +18,10 @@ import (
 //go:embed pg.generationUsageInsert.sql
 var generationUsageInsertQuery string
 
-// ErrGenerationUsageExists is returned when this attempt's usage is already recorded. The stop of an
+// ErrGenerationUsageExists is returned when the generation's usage is already recorded. The stop of an
 // orphaned call records it outside any settle, and a call id write that landed late lets a check
 // settle the same call afterwards.
-var ErrGenerationUsageExists = errors.New("usage already recorded for this attempt")
+var ErrGenerationUsageExists = errors.New("usage already recorded for this generation")
 
 // GenerationUsageInsertRequest is the input to [PgGenerationUsageInsert.Exec].
 type GenerationUsageInsertRequest struct {
@@ -46,7 +46,7 @@ type GenerationUsageInsertRequest struct {
 	CompletedAt *time.Time
 }
 
-// PgGenerationUsageInsert records what one answered attempt consumed.
+// PgGenerationUsageInsert records what the generation's answered call consumed.
 //
 // Call it in the same transaction as the settle it belongs to: a settle without its usage is a
 // billed call nothing counts. The stop of an orphaned call, which no settle tracks, calls it alone.

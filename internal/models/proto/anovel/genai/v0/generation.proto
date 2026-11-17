@@ -29,13 +29,17 @@ message Generation {
   google.protobuf.Timestamp updated_at = 19;
   // SettledAt is when the generation reached a terminal status. Unset until then.
   google.protobuf.Timestamp settled_at = 20;
-  // ExpiresAt is when the settled generation and its attempts may be purged. Set with settled_at.
+  // ExpiresAt is when the settled generation and its response may be purged. Set with settled_at.
   google.protobuf.Timestamp expires_at = 21;
   // Provider names the service the generation runs on, as submitted.
   string provider = 16;
-  // Attempts lists the provider's answers, in order. This service sends one call per generation and
-  // never retries it, so the list holds one answer at most: the finished, failed or cancelled call,
-  // or the error body of a request the provider rejected. The output and the usage are in it.
+  // Response is the provider's answer to the generation's one call, as the provider sent it: the
+  // finished, failed or cancelled call, or the error body of a request the provider rejected. The
+  // output and the usage are in it. Empty until the generation settles, and when the call produced no
+  // answer.
+  bytes response = 23;
+  // Attempts repeats response as a list of at most one, numbered 1. A later release removes it: read
+  // response instead.
   repeated GenerationAttempt attempts = 17;
 
   // The caller reads the output, the failure kind and the usage off the provider's responses.
@@ -52,9 +56,9 @@ message Generation {
   reserved 9 to 12;
 }
 
-// GenerationAttempt is one provider call that reached an answer.
+// GenerationAttempt repeats a generation's response, for the callers that still read attempts.
 message GenerationAttempt {
-  // Number orders the attempt within its generation, from one.
+  // Number is always 1: a generation sends one call.
   int32 number = 1;
   // Response is the provider's final answer to the call, as the provider sent it: the finished
   // response, or the error body of a request the provider rejected.
@@ -70,7 +74,7 @@ enum GenerationStatus {
   // GENERATION_STATUS_RUNNING means the provider accepted the call and it has not settled yet.
   GENERATION_STATUS_RUNNING = 2;
   // GENERATION_STATUS_SUCCEEDED means the provider finished the call. Whether its output is usable
-  // is the caller's reading of the last attempt's response.
+  // is the caller's reading of the response.
   GENERATION_STATUS_SUCCEEDED = 3;
   // GENERATION_STATUS_FAILED means the generation holds no finished response, for the reason its
   // failure_class gives. A resend of the same request runs again from scratch.
@@ -90,7 +94,7 @@ enum GenerationFailure {
   // classified its failures.
   GENERATION_FAILURE_UNSPECIFIED = 0;
   // GENERATION_FAILURE_REJECTED means the provider refused the request, such as an unknown model or
-  // an exhausted quota. The attempt holds the provider's error body. The same request fails again.
+  // an exhausted quota. The response holds the provider's error body. The same request fails again.
   GENERATION_FAILURE_REJECTED = 1;
   // GENERATION_FAILURE_PROVIDER_FAILED means the provider accepted the call, then failed it, did not
   // finish it in time, or no longer held its answer. A resend may succeed.

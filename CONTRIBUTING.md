@@ -27,7 +27,7 @@ REST_PORT=8090 go run ./cmd/sweep
 
 ### Generations
 
-The payload and each attempt's response are `bytes` fields, so `grpcurl` takes and prints them base64-encoded. The local stack reads `OPENAI_API_KEY` from the environment it starts in, and falls back to a placeholder (see [`builds/podman-compose.yaml`](./builds/podman-compose.yaml)). OpenAI refuses every start made with the placeholder, so the generation fails at once, with the failure class `NOT_STARTED` and no attempt.
+The payload and the response are `bytes` fields, so `grpcurl` takes and prints them base64-encoded. The local stack reads `OPENAI_API_KEY` from the environment it starts in, and falls back to a placeholder (see [`builds/podman-compose.yaml`](./builds/podman-compose.yaml)). OpenAI refuses every start made with the placeholder, so the generation fails at once, with the failure class `NOT_STARTED` and no response.
 
 ```bash
 # Any UUID: the calling service supplies the owner, and this service trusts it.
@@ -52,11 +52,11 @@ grpcurl -plaintext -d "{\"id\":\"$GENERATION_ID\",\"owner_id\":\"$OWNER_ID\"}" \
   "localhost:${SERVICE_GENAI_GRPC_PORT}" \
   anovel.genai.v0.GenerationGetService/GenerationGet
 
-# Decode the last attempt's response once it has settled.
+# Decode the response once the generation has settled.
 grpcurl -plaintext -d "{\"id\":\"$GENERATION_ID\",\"owner_id\":\"$OWNER_ID\"}" \
   "localhost:${SERVICE_GENAI_GRPC_PORT}" \
   anovel.genai.v0.GenerationGetService/GenerationGet |
-  jq -r '.generation.attempts[-1].response' | base64 -d | jq
+  jq -r '.generation.response' | base64 -d | jq
 
 # Stop it.
 grpcurl -plaintext -d "{\"id\":\"$GENERATION_ID\",\"owner_id\":\"$OWNER_ID\"}" \
@@ -74,7 +74,7 @@ grpcurl -plaintext -d "{\"id\":\"$GENERATION_ID\",\"owner_id\":\"$OWNER_ID\"}" \
 
 ### Retention purge
 
-The [retention](./README.md#configuration) purge is the `purge_settled_generations()` function. A migration defines it. The migrations job schedules it as a `pg_cron` job wherever the extension is installed, as the `database` image does. Every 10 seconds, the job deletes up to 1,000 settled generations whose `expires_at` has passed, with their attempts. It stops once their attempts store 64 MiB. The job keeps up with 100 generations settling a second, and drains a backlog of large ones in transactions shorter than a migration's lock wait. `pg_cron` records every run and deletes none, so a second job deletes the service's runs older than a week, once a day. The Usage Records stay: they hold no content and no key to the purged rows. A change to the purge is a migration that replaces the function, and its tests run it.
+The [retention](./README.md#configuration) purge is the `purge_settled_generations()` function. A migration defines it. The migrations job schedules it as a `pg_cron` job wherever the extension is installed, as the `database` image does. Every 10 seconds, the job deletes up to 1,000 settled generations whose `expires_at` has passed, with their responses. It stops once their responses store 64 MiB. The job keeps up with 100 generations settling a second, and drains a backlog of large ones in transactions shorter than a migration's lock wait. `pg_cron` records every run and deletes none, so a second job deletes the service's runs older than a week, once a day. The Usage Records stay: they hold no content and no key to the purged rows. A change to the purge is a migration that replaces the function, and its tests run it.
 
 Both jobs live in [`jobs.sql`](./internal/models/migrations/cron/jobs.sql), which the migrations job runs after the migrations, every time. A database import keeps the migration history but leaves the jobs out, and the next run schedules them again. A change to a job's schedule or command goes in that file. A job another role owns keeps its owner, such as the role a database host hands the jobs to.
 
@@ -96,7 +96,7 @@ Re-attaching does not depend on `store`. A finished background response stays re
 
 ### Transactions
 
-A check settles a generation, and records the attempt's answer and its Usage Record, in one transaction. Its provider calls run outside any transaction, as the [`transaction.Transactor` contract](https://pkg.go.dev/github.com/a-novel-kit/golib/transaction#Transactor) requires.
+A check settles a generation, and records the provider's answer and its Usage Record, in one transaction. Its provider calls run outside any transaction, as the [`transaction.Transactor` contract](https://pkg.go.dev/github.com/a-novel-kit/golib/transaction#Transactor) requires.
 
 ---
 

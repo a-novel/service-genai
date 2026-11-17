@@ -33,7 +33,7 @@ Six rules shape the contract.
 
 **A failed call settles on its first outcome.** The service sends one call per generation and never sends it again. A failed generation carries a `failure_class`: `REJECTED` (the same request fails again), `PROVIDER_FAILED`, `NOT_STARTED` (nothing ran) or `OUTCOME_UNKNOWN` (the provider may still run it). The caller reads the class and decides whether to resend.
 
-**The provider's answers come back as sent.** Each generation lists the answer its call reached, a cancelled call's included, with the provider's raw response. That response holds the output and the usage. A request the provider rejected comes back with the provider's error body. A generation that holds no finished response says why in the service's own words. The purge deletes a generation and its responses after `RETENTION`. A permanent Usage Record of every answered attempt stays: who it ran for, what ran, what it consumed and when, with no content.
+**The provider's answer comes back as sent.** Each generation returns the answer its call reached, a cancelled call's included, as the provider's raw response. That response holds the output and the usage. A request the provider rejected comes back with the provider's error body. A generation that holds no finished response says why in the service's own words. The purge deletes a generation and its responses after `RETENTION`. A permanent Usage Record of every answered call stays: who it ran for, what ran, what it consumed and when, with no content.
 
 **The caller caps each user's usage.** A submit carries `caps` for its user on its purpose: how many generations may run at once, and token limits over rolling windows. The caller owns every limit: the service counts usage per user and purpose, refuses a submit past the caps, and adds no limit of its own: a submit without caps, or with empty caps, is not limited. A refusal answers `RESOURCE_EXHAUSTED`, naming the limit, with a `google.rpc.QuotaFailure` and, when the window frees usage at a known time, a `google.rpc.RetryInfo`. `UsageSummary` reports a user's generations in flight and the tokens used in the windows a caller names, so it can show the room left. An admitted call always finishes, even past its cap, and a resend of a running generation always attaches to it.
 
@@ -173,7 +173,7 @@ Checks (all servers) and sweep (`sweep`). [Generation checks](./docs/operations/
 | ------------------ | ---------------------------------------------------------------------------------------------------------------------- | ------- |
 | `SWEEP_INTERVAL`   | How often the sweep runs. Each run checks every unsettled generation. At most `5m`.                                    | `1m`    |
 | `SWEEP_BATCH_SIZE` | Generations one batch of a sweep reads, from 1 to 100. A sweep reads another batch while each comes back full.         | `50`    |
-| `RETENTION`        | How long a settled generation, its attempts and its request key survive before the purge deletes them. At least `15m`. | `6h`    |
+| `RETENTION`        | How long a settled generation, its response and its request key survive before the purge deletes them. At least `15m`. | `6h`    |
 
 gRPC server:
 

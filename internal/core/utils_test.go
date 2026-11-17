@@ -155,7 +155,7 @@ func failedCall() *connectors.Call {
 
 // testAttemptRows are the provider's answers to a generation's attempts, as stored.
 func testAttemptRows() []*dao.GenerationAttempt {
-	return []*dao.GenerationAttempt{{GenerationID: testGenerationID, Attempt: 1, Response: testResponse}}
+	return []*dao.GenerationAttempt{{GenerationID: testGenerationID, Response: testResponse}}
 }
 
 // streamOf yields the given events, then the error when there is one, as a connector streams them.

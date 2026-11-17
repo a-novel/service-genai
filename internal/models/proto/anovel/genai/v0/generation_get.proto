@@ -24,6 +24,6 @@ message GenerationGetRequest {
 
 // GenerationGetResponse carries the requested generation.
 message GenerationGetResponse {
-  // The requested generation, with every attempt that reached an answer.
+  // The requested generation, with the provider's response once it settled.
   Generation generation = 1;
 }
