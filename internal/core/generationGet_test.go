@@ -38,7 +38,7 @@ func TestGenerationGet(t *testing.T) {
 
 		daoMock   *daoMock
 		checkMock *daoMock
-		// expectAttempts lists the provider's answers: only a generation that can have one is read.
+		// expectAttempts reads the provider's answer: only a generation that can have one is read.
 		expectAttempts bool
 		attemptErr     error
 
@@ -66,7 +66,7 @@ func TestGenerationGet(t *testing.T) {
 				Error:     &generationError,
 				Failure:   new(core.GenerationFailureProviderFailed),
 				Status:    core.GenerationStatusFailed,
-				Attempts:  []*core.GenerationAttempt{{Number: 1, Response: testResponse}},
+				Response:  testResponse,
 				CreatedAt: createdAt, UpdatedAt: updatedAt, SettledAt: &settledAt,
 				ExpiresAt: &expiresAt,
 			},
@@ -83,7 +83,7 @@ func TestGenerationGet(t *testing.T) {
 			expectStatus: core.GenerationStatusSucceeded,
 		},
 		{
-			// Its only attempt is in flight, so it has no answer to read.
+			// Its call is in flight, so it has no answer to read.
 			name: "Success/CheckedStillRunning",
 
 			request:   &core.GenerationGetRequest{ID: testGenerationID, OwnerID: testOwner},

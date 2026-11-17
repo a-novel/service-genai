@@ -156,7 +156,7 @@ func TestGenerationCancel(t *testing.T) {
 				require.Equal(t, testCase.expectStatus, result.Status)
 
 				if !testCase.unanswered {
-					require.Equal(t, []*core.GenerationAttempt{{Number: 1, Response: testResponse}}, result.Attempts)
+					require.Equal(t, testResponse, result.Response)
 				}
 			}
 		})

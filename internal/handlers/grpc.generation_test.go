@@ -51,18 +51,15 @@ func TestNewGrpcGeneration(t *testing.T) {
 			},
 		},
 		{
-			// A failure still returns every answer the provider gave, and with them what each consumed.
-			// Its class tells the caller whether a resend may succeed.
-			name: "Success/FailedWithAttempts",
+			// A failure still returns the provider's answer, and with it what the call consumed. Its class
+			// tells the caller whether a resend may succeed. The answer is repeated in attempts.
+			name: "Success/FailedWithResponse",
 
 			generation: &core.Generation{
 				ID: uuid.MustParse(testGenerationID), OwnerID: uuid.MustParse(testOwnerID),
 				Purpose: "studio.generation", Provider: "openai",
 				Status: core.GenerationStatusFailed, Error: &message, Failure: new(core.GenerationFailureProviderFailed),
-				Attempts: []*core.GenerationAttempt{
-					{Number: 1, Response: json.RawMessage(failedResponse)},
-					{Number: 2, Response: json.RawMessage(failedResponse)},
-				},
+				Response:  json.RawMessage(failedResponse),
 				CreatedAt: createdAt, UpdatedAt: settledAt, SettledAt: &settledAt, ExpiresAt: &expiresAt,
 			},
 
@@ -70,14 +67,12 @@ func TestNewGrpcGeneration(t *testing.T) {
 				Id: testGenerationID, OwnerId: testOwnerID, Purpose: "studio.generation", Provider: "openai",
 				Status: genaiv0.GenerationStatus_GENERATION_STATUS_FAILED, Error: message,
 				FailureClass: genaiv0.GenerationFailure_GENERATION_FAILURE_PROVIDER_FAILED,
-				Attempts: []*genaiv0.GenerationAttempt{
-					{Number: 1, Response: []byte(failedResponse)},
-					{Number: 2, Response: []byte(failedResponse)},
-				},
-				CreatedAt: &timestamppb.Timestamp{Seconds: createdAtUnix, Nanos: 123456000},
-				UpdatedAt: &timestamppb.Timestamp{Seconds: createdAtUnix + 60, Nanos: 123456000},
-				SettledAt: &timestamppb.Timestamp{Seconds: createdAtUnix + 60, Nanos: 123456000},
-				ExpiresAt: &timestamppb.Timestamp{Seconds: createdAtUnix + 3660, Nanos: 123456000},
+				Response:     []byte(failedResponse),
+				Attempts:     []*genaiv0.GenerationAttempt{{Number: 1, Response: []byte(failedResponse)}},
+				CreatedAt:    &timestamppb.Timestamp{Seconds: createdAtUnix, Nanos: 123456000},
+				UpdatedAt:    &timestamppb.Timestamp{Seconds: createdAtUnix + 60, Nanos: 123456000},
+				SettledAt:    &timestamppb.Timestamp{Seconds: createdAtUnix + 60, Nanos: 123456000},
+				ExpiresAt:    &timestamppb.Timestamp{Seconds: createdAtUnix + 3660, Nanos: 123456000},
 			},
 		},
 	}

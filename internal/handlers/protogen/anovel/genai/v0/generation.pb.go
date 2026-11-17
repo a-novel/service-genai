@@ -33,7 +33,7 @@ const (
 	// GENERATION_STATUS_RUNNING means the provider accepted the call and it has not settled yet.
 	GenerationStatus_GENERATION_STATUS_RUNNING GenerationStatus = 2
 	// GENERATION_STATUS_SUCCEEDED means the provider finished the call. Whether its output is usable
-	// is the caller's reading of the last attempt's response.
+	// is the caller's reading of the response.
 	GenerationStatus_GENERATION_STATUS_SUCCEEDED GenerationStatus = 3
 	// GENERATION_STATUS_FAILED means the generation holds no finished response, for the reason its
 	// failure_class gives. A resend of the same request runs again from scratch.
@@ -99,7 +99,7 @@ const (
 	// classified its failures.
 	GenerationFailure_GENERATION_FAILURE_UNSPECIFIED GenerationFailure = 0
 	// GENERATION_FAILURE_REJECTED means the provider refused the request, such as an unknown model or
-	// an exhausted quota. The attempt holds the provider's error body. The same request fails again.
+	// an exhausted quota. The response holds the provider's error body. The same request fails again.
 	GenerationFailure_GENERATION_FAILURE_REJECTED GenerationFailure = 1
 	// GENERATION_FAILURE_PROVIDER_FAILED means the provider accepted the call, then failed it, did not
 	// finish it in time, or no longer held its answer. A resend may succeed.
@@ -185,13 +185,17 @@ type Generation struct {
 	UpdatedAt *timestamppb.Timestamp `protobuf:"bytes,19,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	// SettledAt is when the generation reached a terminal status. Unset until then.
 	SettledAt *timestamppb.Timestamp `protobuf:"bytes,20,opt,name=settled_at,json=settledAt,proto3" json:"settled_at,omitempty"`
-	// ExpiresAt is when the settled generation and its attempts may be purged. Set with settled_at.
+	// ExpiresAt is when the settled generation and its response may be purged. Set with settled_at.
 	ExpiresAt *timestamppb.Timestamp `protobuf:"bytes,21,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
 	// Provider names the service the generation runs on, as submitted.
 	Provider string `protobuf:"bytes,16,opt,name=provider,proto3" json:"provider,omitempty"`
-	// Attempts lists the provider's answers, in order. This service sends one call per generation and
-	// never retries it, so the list holds one answer at most: the finished, failed or cancelled call,
-	// or the error body of a request the provider rejected. The output and the usage are in it.
+	// Response is the provider's answer to the generation's one call, as the provider sent it: the
+	// finished, failed or cancelled call, or the error body of a request the provider rejected. The
+	// output and the usage are in it. Empty until the generation settles, and when the call produced no
+	// answer.
+	Response []byte `protobuf:"bytes,23,opt,name=response,proto3" json:"response,omitempty"`
+	// Attempts repeats response as a list of at most one, numbered 1. A later release removes it: read
+	// response instead.
 	Attempts      []*GenerationAttempt `protobuf:"bytes,17,rep,name=attempts,proto3" json:"attempts,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -304,6 +308,13 @@ func (x *Generation) GetProvider() string {
 	return ""
 }
 
+func (x *Generation) GetResponse() []byte {
+	if x != nil {
+		return x.Response
+	}
+	return nil
+}
+
 func (x *Generation) GetAttempts() []*GenerationAttempt {
 	if x != nil {
 		return x.Attempts
@@ -311,10 +322,10 @@ func (x *Generation) GetAttempts() []*GenerationAttempt {
 	return nil
 }
 
-// GenerationAttempt is one provider call that reached an answer.
+// GenerationAttempt repeats a generation's response, for the callers that still read attempts.
 type GenerationAttempt struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Number orders the attempt within its generation, from one.
+	// Number is always 1: a generation sends one call.
 	Number int32 `protobuf:"varint,1,opt,name=number,proto3" json:"number,omitempty"`
 	// Response is the provider's final answer to the call, as the provider sent it: the finished
 	// response, or the error body of a request the provider rejected.
@@ -371,7 +382,7 @@ var File_anovel_genai_v0_generation_proto protoreflect.FileDescriptor
 
 const file_anovel_genai_v0_generation_proto_rawDesc = "" +
 	"\n" +
-	" anovel/genai/v0/generation.proto\x12\x0fanovel.genai.v0\x1a\x1fgoogle/protobuf/timestamp.proto\"\x9e\x05\n" +
+	" anovel/genai/v0/generation.proto\x12\x0fanovel.genai.v0\x1a\x1fgoogle/protobuf/timestamp.proto\"\xba\x05\n" +
 	"\n" +
 	"Generation\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x19\n" +
@@ -388,7 +399,8 @@ const file_anovel_genai_v0_generation_proto_rawDesc = "" +
 	"settled_at\x18\x14 \x01(\v2\x1a.google.protobuf.TimestampR\tsettledAt\x129\n" +
 	"\n" +
 	"expires_at\x18\x15 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12\x1a\n" +
-	"\bprovider\x18\x10 \x01(\tR\bprovider\x12>\n" +
+	"\bprovider\x18\x10 \x01(\tR\bprovider\x12\x1a\n" +
+	"\bresponse\x18\x17 \x01(\fR\bresponse\x12>\n" +
 	"\battempts\x18\x11 \x03(\v2\".anovel.genai.v0.GenerationAttemptR\battemptsJ\x04\b\a\x10\bJ\x04\b\x0e\x10\x0fJ\x04\b\x0f\x10\x10J\x04\b\x05\x10\x06J\x04\b\x06\x10\aJ\x04\b\r\x10\x0eJ\x04\b\t\x10\rR\x06outputR\afailureR\x05usageR\aattemptR\fmax_attemptsR\x10provider_call_id\"G\n" +
 	"\x11GenerationAttempt\x12\x16\n" +
 	"\x06number\x18\x01 \x01(\x05R\x06number\x12\x1a\n" +

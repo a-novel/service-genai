@@ -1,4 +1,4 @@
--- A generation has one row per answered provider call, bounded by its attempt budget.
+-- A generation holds one answer: the limit only bounds the read.
 SELECT
   *
 FROM
@@ -6,6 +6,6 @@ FROM
 WHERE
   generation_id = ?0
 ORDER BY
-  attempt
+  created_at
 LIMIT
   100;

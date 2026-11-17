@@ -22,10 +22,10 @@ type GenerationAttemptInsertRequest struct {
 	Response json.RawMessage
 }
 
-// PgGenerationAttemptInsert records the provider's answer to one attempt.
+// PgGenerationAttemptInsert records the provider's answer to a generation's call.
 //
 // Call it in the same transaction as the settle it belongs to: a settle without its answer loses
-// what the attempt consumed.
+// what the call consumed.
 type PgGenerationAttemptInsert struct{}
 
 // NewPgGenerationAttemptInsert returns a new PgGenerationAttemptInsert dao.

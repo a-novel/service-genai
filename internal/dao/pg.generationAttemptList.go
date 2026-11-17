@@ -14,12 +14,12 @@ import (
 //go:embed pg.generationAttemptList.sql
 var generationAttemptListQuery string
 
-// GenerationAttemptListRequest identifies the generation whose attempts to read.
+// GenerationAttemptListRequest identifies the generation whose answer to read.
 type GenerationAttemptListRequest struct {
 	GenerationID uuid.UUID
 }
 
-// PgGenerationAttemptList reads the provider's answer to each attempt of a generation, in order.
+// PgGenerationAttemptList reads the provider's answer to a generation's call, as a list of at most one.
 type PgGenerationAttemptList struct{}
 
 // NewPgGenerationAttemptList returns a new PgGenerationAttemptList dao.

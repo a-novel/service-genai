@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/a-novel-kit/golib/postgres/postgrestest"
@@ -20,25 +19,24 @@ func TestPgGenerationAttemptList(t *testing.T) {
 	testCases := []struct {
 		name string
 
-		// attempts lists the attempts that recorded an answer, in insertion order.
-		attempts []int16
+		// answered records the generation's answer before the read.
+		answered bool
 
-		expectAttempts []int16
+		expectLen int
 	}{
 		{
 			name: "Success",
 
-			attempts:       []int16{2, 1},
-			expectAttempts: []int16{1, 2},
+			answered:  true,
+			expectLen: 1,
 		},
 		{
 			name: "Success/Empty",
-
-			expectAttempts: []int16{},
 		},
 	}
 
 	daoAttemptList := dao.NewPgGenerationAttemptList()
+	daoAttemptInsert := dao.NewPgGenerationAttemptInsert()
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -50,27 +48,26 @@ func TestPgGenerationAttemptList(t *testing.T) {
 				generation := seedGeneration(ctx, t)
 				other := seedGeneration(ctx, t)
 
-				generationIDs := []uuid.UUID{generation.ID, other.ID}
+				// Another generation's answer stays out of the read.
+				answered := []*dao.Generation{other}
+				if testCase.answered {
+					answered = append(answered, generation)
+				}
 
-				// An earlier release recorded one answer per retried attempt.
-				for _, generationID := range generationIDs {
-					for _, attempt := range testCase.attempts {
-						execute(ctx, t, `INSERT INTO generation_attempts (generation_id, attempt, response)
-							VALUES (?0, ?1, '{}')`, generationID, attempt)
-					}
+				for _, seeded := range answered {
+					_, err := daoAttemptInsert.Exec(ctx, &dao.GenerationAttemptInsertRequest{
+						GenerationID: seeded.ID, Response: []byte(`{}`),
+					})
+					require.NoError(t, err)
 				}
 
 				listed, err := daoAttemptList.Exec(ctx, &dao.GenerationAttemptListRequest{GenerationID: generation.ID})
 				require.NoError(t, err)
+				require.Len(t, listed, testCase.expectLen)
 
-				attempts := make([]int16, 0, len(listed))
 				for _, attempt := range listed {
 					require.Equal(t, generation.ID, attempt.GenerationID)
-
-					attempts = append(attempts, attempt.Attempt)
 				}
-
-				require.Equal(t, testCase.expectAttempts, attempts)
 			})
 		})
 	}

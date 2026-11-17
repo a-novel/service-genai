@@ -1,6 +1,6 @@
 # Upgrading to NEXT
 
-The sweep runs only on its own schedule: `POST /sweep` and `SWEEP_TICKER` are gone. A generation now always carries its start intent, the servers read only the discrete `POSTGRES_*` fields, and the unused `pkg/go/mocks` package is gone.
+The sweep runs only on its own schedule: `POST /sweep` and `SWEEP_TICKER` are gone. A generation now always carries its start intent and returns the provider's answer in `response`, the servers read only the discrete `POSTGRES_*` fields, and the unused `pkg/go/mocks` package is gone.
 
 ## Do I need to act?
 
@@ -12,7 +12,7 @@ The sweep runs only on its own schedule: `POST /sweep` and `SWEEP_TICKER` are go
 
 **Required** for Go callers that import `github.com/a-novel/service-genai/pkg/go/mocks`: mock your own interface instead.
 
-**No** for other callers: the gRPC API is unchanged.
+**Recommended** for callers: read `Generation.response` instead of the last entry of `Generation.attempts`, which a later release removes.
 
 ## Delete the sweep scheduler
 
@@ -62,6 +62,28 @@ type genaiClient interface {
 	GenerationGet(ctx context.Context, req *servicegenai.GenerationGetRequest, opts ...grpc.CallOption) (*servicegenai.GenerationGetResponse, error)
 }
 ```
+
+## Read the response instead of the attempts
+
+A generation sends one call and never retries it, so its answer moves out of the `attempts` list into a field of its own. This release fills both: `attempts` holds the same answer as `response`, numbered 1. A later release removes `attempts` and the `GenerationAttempt` message.
+
+```go
+// before
+attempts := generation.GetAttempts()
+if len(attempts) == 0 {
+	return errNoResponse
+}
+
+response := attempts[len(attempts)-1].GetResponse()
+
+// after
+response := generation.GetResponse()
+if len(response) == 0 {
+	return errNoResponse
+}
+```
+
+A settled generation's message carries the answer twice while both fields exist, so a client's receive limit must hold twice the largest response, 48 MiB. The Go client's limit is 64 MiB.
 
 ## Notes
 
