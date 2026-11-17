@@ -220,8 +220,6 @@ func TestGrpcGenerationStream(t *testing.T) {
 			}
 
 			require.Equal(t, testCase.expect, stream.sent)
-
-			service.AssertExpectations(t)
 		})
 	}
 }

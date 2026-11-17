@@ -65,13 +65,13 @@ func TestPurgeSettledGenerations(t *testing.T) {
 			// Its attempts go with it; its Usage Record stays.
 			name: "Success/Expired",
 
-			expiresInSecs: lo.ToPtr(-60.0),
+			expiresInSecs: new(-60.0),
 			expectPurged:  true,
 		},
 		{
 			name: "Success/WithinRetention",
 
-			expiresInSecs: lo.ToPtr(60.0),
+			expiresInSecs: new(60.0),
 		},
 		{
 			name: "Success/Running",

@@ -115,8 +115,6 @@ func TestGrpcGenerationGet(t *testing.T) {
 			}
 
 			require.Equal(t, testCase.expect, res)
-
-			service.AssertExpectations(t)
 		})
 	}
 }

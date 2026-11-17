@@ -2,7 +2,6 @@ package core_test
 
 import (
 	"context"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -51,8 +50,6 @@ func TestGenerationSweep(t *testing.T) {
 		// lockErr refuses the leader role, as when another sweep holds it.
 		lockErr error
 		batches []batchMock
-		// deadline bounds the call; zero leaves it unbounded.
-		deadline time.Duration
 
 		checkMocks []checkMock
 
@@ -147,14 +144,6 @@ func TestGenerationSweep(t *testing.T) {
 			expectErr: errFoo,
 		},
 		{
-			// A caller that cannot wait out a check gets none, and learns its deadline is the cause.
-			name: "Error/DeadlineTooShort",
-
-			deadline: time.Second,
-
-			expectErr: core.ErrSweepDeadlineTooShort,
-		},
-		{
 			name: "Error/Sweep",
 
 			batches: []batchMock{{err: errFoo}},
@@ -175,20 +164,17 @@ func TestGenerationSweep(t *testing.T) {
 			unlockDao := coremocks.NewMockGenerationSweepDaoUnlock(t)
 			check := coremocks.NewMockGenerationSweepServiceCheck(t)
 
-			// Every run that may start a check takes the leader role first, and releases it at the end,
-			// however the run ended.
-			if testCase.deadline == 0 {
-				lock := &dao.GenerationSweepLock{}
+			// Every run takes the leader role first, and releases it at the end, however the run ended.
+			lock := &dao.GenerationSweepLock{}
 
-				lockDao.EXPECT().Exec(mock.Anything, &dao.GenerationSweepLockRequest{}).
-					Return(lo.Ternary(testCase.lockErr == nil, lock, nil), testCase.lockErr).Once()
+			lockDao.EXPECT().Exec(mock.Anything, &dao.GenerationSweepLockRequest{}).
+				Return(lo.Ternary(testCase.lockErr == nil, lock, nil), testCase.lockErr).Once()
 
-				if testCase.lockErr == nil {
-					unlockDao.EXPECT().
-						Exec(mock.MatchedBy(func(ctx context.Context) bool { return ctx.Err() == nil }),
-							&dao.GenerationSweepUnlockRequest{Lock: lock}).
-						Return(nil).Once()
-				}
+			if testCase.lockErr == nil {
+				unlockDao.EXPECT().
+					Exec(mock.MatchedBy(func(ctx context.Context) bool { return ctx.Err() == nil }),
+						&dao.GenerationSweepUnlockRequest{Lock: lock}).
+					Return(nil).Once()
 			}
 
 			for _, batch := range testCase.batches {
@@ -216,41 +202,29 @@ func TestGenerationSweep(t *testing.T) {
 				}
 			}
 
-			if testCase.deadline > 0 {
-				var cancelDeadline context.CancelFunc
-
-				ctx, cancelDeadline = context.WithTimeout(ctx, testCase.deadline)
-				defer cancelDeadline()
-			}
-
 			service := core.NewGenerationSweep(sweepDao, lockDao, unlockDao, check, sweep)
 
 			result, err := service.Exec(ctx, &core.GenerationSweepRequest{})
 			require.ErrorIs(t, err, testCase.expectErr)
 			require.Equal(t, testCase.expect, result)
-
-			mock.AssertExpectationsForObjects(t, sweepDao, lockDao, unlockDao, check)
 		})
 	}
 
-	// A scheduler call that runs long overlaps the next one. Both share the process's concurrency,
-	// which the connection pool sizes, rather than each running as many checks.
-	t.Run("Success/OverlappingCallsShareConcurrency", func(t *testing.T) {
+	// A batch runs no more checks at once than the sweep's concurrency, which the connection pool sizes.
+	t.Run("Success/ConcurrencyBound", func(t *testing.T) {
 		t.Parallel()
 
-		const calls = 3
-
-		shared := config.Sweep{Interval: time.Minute, BatchSize: 2, Concurrency: 1}
+		bound := config.Sweep{Interval: time.Minute, BatchSize: 2, Concurrency: 1}
 
 		sweepDao := coremocks.NewMockGenerationSweepDao(t)
-		sweepDao.EXPECT().Exec(mock.Anything, mock.Anything).Return([]*dao.Generation{first}, nil).Times(calls)
+		sweepDao.EXPECT().Exec(mock.Anything, mock.Anything).Return([]*dao.Generation{first, second}, nil).Once()
+		sweepDao.EXPECT().Exec(mock.Anything, mock.Anything).Return(nil, nil).Once()
 
-		// The leader role is the database's: one process's overlapping calls each take it in turn here.
 		lockDao := coremocks.NewMockGenerationSweepDaoLock(t)
-		lockDao.EXPECT().Exec(mock.Anything, mock.Anything).Return(&dao.GenerationSweepLock{}, nil).Times(calls)
+		lockDao.EXPECT().Exec(mock.Anything, mock.Anything).Return(&dao.GenerationSweepLock{}, nil).Once()
 
 		unlockDao := coremocks.NewMockGenerationSweepDaoUnlock(t)
-		unlockDao.EXPECT().Exec(mock.Anything, mock.Anything).Return(nil).Times(calls)
+		unlockDao.EXPECT().Exec(mock.Anything, mock.Anything).Return(nil).Once()
 
 		var (
 			running    atomic.Int32
@@ -269,20 +243,13 @@ func TestGenerationSweep(t *testing.T) {
 
 				return first, nil
 			}).
-			Times(calls)
+			Twice()
 
-		service := core.NewGenerationSweep(sweepDao, lockDao, unlockDao, check, shared)
+		service := core.NewGenerationSweep(sweepDao, lockDao, unlockDao, check, bound)
 
-		var overlapping sync.WaitGroup
-
-		for range calls {
-			overlapping.Go(func() {
-				_, err := service.Exec(t.Context(), &core.GenerationSweepRequest{})
-				require.NoError(t, err)
-			})
-		}
-
-		overlapping.Wait()
+		result, err := service.Exec(t.Context(), &core.GenerationSweepRequest{})
+		require.NoError(t, err)
+		require.Equal(t, &core.GenerationSweepResult{Checked: 2}, result)
 		require.False(t, overlapped.Load())
 	})
 }

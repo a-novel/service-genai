@@ -178,11 +178,6 @@ func TestGenerationCancel(t *testing.T) {
 					require.Equal(t, []*core.GenerationAttempt{{Number: 1, Response: testResponse}}, result.Attempts)
 				}
 			}
-
-			cancelDao.AssertExpectations(t)
-			getDao.AssertExpectations(t)
-			check.AssertExpectations(t)
-			attemptDao.AssertExpectations(t)
 		})
 	}
 }

@@ -50,7 +50,7 @@ The service runs as published OCI images plus a PostgreSQL database. All state l
 | Image                           | Role                                                                        |
 | ------------------------------- | --------------------------------------------------------------------------- |
 | `service-genai/grpc`            | The generation API. Internal network only.                                  |
-| `service-genai/sweep`           | Checks the generations nobody polled, on a schedule. Private.               |
+| `service-genai/sweep`           | Checks the generations nobody polled, on its own schedule. Private.         |
 | `service-genai/jobs/migrations` | One-shot schema migration job; runs to completion before the server starts. |
 | `service-genai/database`        | PostgreSQL with `pg_cron` and pgBackRest, or bring your own Postgres.       |
 | `service-genai/standalone-grpc` | Server plus migrations in one image. Local development only.                |
@@ -59,7 +59,7 @@ Pin every image to the same release tag, from the [latest release](https://githu
 
 A caller controls the whole payload, including the model and the provider's built-in tools. Grant invocation to calling services only, and restrict the OpenAI key to the Responses endpoints.
 
-Every server does its work inside a request, so none needs CPU outside of one. A `sweep` server with `SWEEP_TICKER` set is the exception. Each needs outbound access to the provider's API. A check its caller abandons resumes only with the server's next request, and a streamed start waits for the provider to begin the call. Give a streamed generation's submit a deadline of at least 35 seconds. A submit also waits for its call's id to be recorded, up to two minutes while a migration holds a lock on the table.
+The `grpc` server does its work inside a request, so it needs no CPU outside of one. The `sweep` server sweeps on its own schedule, so it needs its CPU between requests. Each needs outbound access to the provider's API. A check its caller abandons resumes only with the server's next request, and a streamed start waits for the provider to begin the call. Give a streamed generation's submit a deadline of at least 35 seconds. A submit also waits for its call's id to be recorded, up to two minutes while a migration holds a lock on the table.
 
 ```yaml
 services:
@@ -125,13 +125,6 @@ services:
       OPENAI_API_KEY: "${OPENAI_API_KEY}"
     networks: [api]
 
-  # Any scheduler fits; this one calls the sweep every minute.
-  sweep-schedule-genai:
-    image: docker.io/library/alpine:3.24.2
-    depends_on: [sweep-genai]
-    command: ["sh", "-c", "while sleep 60; do wget -qO- --post-data= http://sweep-genai:8080/sweep; done"]
-    networks: [api]
-
 networks:
   api:
 
@@ -143,9 +136,7 @@ volumes:
 
 Every poll of an unsettled generation checks it with the provider, so a poll made after the provider finished returns the settled generation. The caller bounds how often it polls. The `sweep` server checks the generations nobody polled. It captures a result before the provider discards it, stops a stuck call, and frees a user's concurrency slot. A check writes nothing until a call ends.
 
-Run it privately, and have a scheduler `POST /sweep` every `SWEEP_INTERVAL`. On Google Cloud, use Cloud Scheduler with an OIDC token for the only identity allowed to invoke it. One run leads at a time across every replica, holding a PostgreSQL advisory lock on a connection of its own; a run that finds the lock taken answers at once and checks nothing. A run reads every unsettled generation once, batch after batch, and answers within two minutes. The server checks as many generations at once as its connection pool has connections, less the one the lock holds, eight at most, however many calls overlap.
-
-On a platform that keeps the server's CPU between requests, such as Kubernetes, set `SWEEP_TICKER` instead. The server then sweeps every `SWEEP_INTERVAL` on its own and needs no scheduler. On SIGTERM, a run starts no new check and waits for those it started, a minute at most. Give the process at least 75 seconds between SIGTERM and SIGKILL. From `DOWNTIME_START` on, the server starts no run.
+Run it privately: its server answers only the `/ping` and `/healthcheck` probes. It sweeps every `SWEEP_INTERVAL` on its own, so run it where it keeps its CPU between requests, as on Kubernetes. One run leads at a time across every replica, holding a PostgreSQL advisory lock on a connection of its own; a replica that finds the lock taken skips its run. A run reads every unsettled generation once, batch after batch. The server checks as many generations at once as its connection pool has connections, less the one the lock holds, eight at most. On SIGTERM, a run starts no new check and waits for those it started, a minute at most. Give the process at least 75 seconds between SIGTERM and SIGKILL. From `DOWNTIME_START` on, the server starts no run.
 
 ### Database image
 
@@ -179,12 +170,11 @@ OpenAI connector (all servers). The endpoint must meet the [provider requirement
 
 Checks (all servers) and sweep (`sweep`). [Generation checks](./docs/operations/generation-checks.md) explains how they move a generation forward.
 
-| Name               | Description                                                                                                                     | Default |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| `SWEEP_INTERVAL`   | How often the sweep runs. Each run checks every unsettled generation. At most `5m`.                                             | `1m`    |
-| `SWEEP_BATCH_SIZE` | Generations one batch of a sweep reads, from 1 to 100. A sweep reads another batch while each comes back full.                  | `50`    |
-| `SWEEP_TICKER`     | Run the sweep every `SWEEP_INTERVAL` from the server itself, besides `POST /sweep`. The server then needs CPU between requests. | `false` |
-| `RETENTION`        | How long a settled generation, its attempts and its request key survive before the purge deletes them. At least `15m`.          | `6h`    |
+| Name               | Description                                                                                                            | Default |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------- | ------- |
+| `SWEEP_INTERVAL`   | How often the sweep runs. Each run checks every unsettled generation. At most `5m`.                                    | `1m`    |
+| `SWEEP_BATCH_SIZE` | Generations one batch of a sweep reads, from 1 to 100. A sweep reads another batch while each comes back full.         | `50`    |
+| `RETENTION`        | How long a settled generation, its attempts and its request key survive before the purge deletes them. At least `15m`. | `6h`    |
 
 gRPC server:
 
@@ -209,21 +199,21 @@ Service tokens (image `grpc`). The server refuses a call unless its `X-Service-A
 
 REST server (image `sweep`):
 
-| Name                        | Description                                                                                                                                   | Default         |
-| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | --------------- |
-| `REST_PORT`                 | Port the server listens on.                                                                                                                   | `8080`          |
-| `REST_MAX_REQUEST_SIZE`     | Maximum request body size, in bytes.                                                                                                          | `16384` (16KiB) |
-| `REST_CLIENT_IP_HEADER`     | Header a trusted proxy sets to the visitor IP. Set it only when every request comes through that proxy.                                       | TCP peer        |
-| `REST_LIVENESS_PATH`        | Path that still answers during a planned downtime and skips the rate limit. The server answers its ping at `/ping`, so keep it there.         | `/ping`         |
-| `REST_RATE_LIMITS_ENABLED`  | Rate-limit each visitor on every route but `/ping`. Turn off only in test stacks.                                                             | `true`          |
-| `REST_RATE_LIMIT`           | Requests each visitor sends to each route, as `<requests>/<window>`.                                                                          | `5/1s`          |
-| `REST_CORS_ALLOWED_METHODS` | CORS allowed methods, comma-separated.                                                                                                        | `HEAD,GET,POST` |
-| `REST_TIMEOUT_READ`         | Read timeout.                                                                                                                                 | `15s`           |
-| `REST_TIMEOUT_READ_HEADER`  | Header read timeout.                                                                                                                          | `3s`            |
-| `REST_TIMEOUT_WRITE`        | Write timeout. Keep it above the request timeout, or a sweep's answer is lost.                                                                | `2m15s`         |
-| `REST_TIMEOUT_IDLE`         | Idle keep-alive timeout.                                                                                                                      | `60s`           |
-| `REST_TIMEOUT_REQUEST`      | Per-request timeout. A sweep starts no check this deadline could not wait out, and a check takes a minute at most, so keep it above a minute. | `2m`            |
-| `REST_TIMEOUT_SHUTDOWN`     | Graceful shutdown budget. With the 2-second telemetry flush after it, it fits Kubernetes' 30 seconds before `SIGKILL`.                        | `6s`            |
+| Name                        | Description                                                                                                                           | Default                          |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
+| `REST_PORT`                 | Port the server listens on.                                                                                                           | `8080`                           |
+| `REST_MAX_REQUEST_SIZE`     | Maximum request body size, in bytes.                                                                                                  | `16384` (16KiB)                  |
+| `REST_CLIENT_IP_HEADER`     | Header a trusted proxy sets to the visitor IP. Set it only when every request comes through that proxy.                               | TCP peer                         |
+| `REST_LIVENESS_PATH`        | Path that still answers during a planned downtime and skips the rate limit. The server answers its ping at `/ping`, so keep it there. | `/ping`                          |
+| `REST_RATE_LIMITS_ENABLED`  | Rate-limit each visitor on every route but `/ping`. Turn off only in test stacks.                                                     | `true`                           |
+| `REST_RATE_LIMIT`           | Requests each visitor sends to each route, as `<requests>/<window>`.                                                                  | `5/1s`                           |
+| `REST_CORS_ALLOWED_METHODS` | CORS allowed methods, comma-separated.                                                                                                | `HEAD,GET,POST,PUT,PATCH,DELETE` |
+| `REST_TIMEOUT_READ`         | Read timeout.                                                                                                                         | `15s`                            |
+| `REST_TIMEOUT_READ_HEADER`  | Header read timeout.                                                                                                                  | `3s`                             |
+| `REST_TIMEOUT_WRITE`        | Write timeout.                                                                                                                        | `30s`                            |
+| `REST_TIMEOUT_IDLE`         | Idle keep-alive timeout.                                                                                                              | `60s`                            |
+| `REST_TIMEOUT_REQUEST`      | Per-request timeout.                                                                                                                  | `1m`                             |
+| `REST_TIMEOUT_SHUTDOWN`     | Graceful shutdown budget. With the 2-second telemetry flush after it, it fits Kubernetes' 30 seconds before `SIGKILL`.                | `6s`                             |
 
 Memory (server images). A request holds a few copies of what it carries: a submit its payload, up to 16 MiB, and a read its responses, up to 24 MiB each. Twenty concurrent submits of the largest payloads peak near 1.6 GiB on one `grpc` instance. Give it 2 GiB with `GOMEMLIMIT` near `1600MiB`, or lower `GRPC_MAX_CONCURRENT_CALLS`.
 
@@ -311,7 +301,7 @@ eval "$(a-novel run env service-genai)"
 grpcurl --plaintext "localhost:${SERVICE_GENAI_GRPC_PORT}" list
 ```
 
-Without the CLI, the repository's compose file runs a target on its own. Enable the target's profile and set the host ports it publishes. The `sweep` target serves `POST /sweep` on `SWEEP_PORT`.
+Without the CLI, the repository's compose file runs a target on its own. Enable the target's profile and set the host ports it publishes. The `sweep` target serves its probes on `SWEEP_PORT`.
 
 ```bash
 POSTGRES_PORT=5432 GRPC_PORT=8080 METRICS_PORT=9090 podman compose -f builds/podman-compose.yaml --profile grpc up -d

@@ -994,8 +994,6 @@ func TestGenerationCheck(t *testing.T) {
 			} else {
 				require.Equal(t, testCase.expectStatus, result.Status)
 			}
-
-			mock.AssertExpectationsForObjects(t, connector, record, settleDao, attempt, usage, get)
 		})
 	}
 }

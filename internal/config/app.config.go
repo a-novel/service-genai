@@ -42,11 +42,8 @@ type Sweep struct {
 	Interval time.Duration `json:"interval" yaml:"interval"`
 	// BatchSize caps the generations one batch of a sweep takes.
 	BatchSize int `json:"batchSize" yaml:"batchSize"`
-	// Concurrency caps the checks the sweep runs at once, across every call that overlaps.
+	// Concurrency caps the checks the sweep runs at once.
 	Concurrency int `json:"concurrency" yaml:"concurrency"`
-	// Ticker makes the sweep server run the sweep every interval, besides answering a scheduler's
-	// calls. The server then needs its CPU between requests.
-	Ticker bool `json:"ticker" yaml:"ticker"`
 }
 
 // Generations holds how generations are kept.
@@ -95,7 +92,7 @@ type App struct {
 	// its errors.
 	Logger logging.Log `json:"logger" yaml:"logger"`
 	// GrpcLogger configures the gRPC request logging middleware.
-	GrpcLogger logging.RPCConfig `json:"grpclogger" yaml:"grpclogger"`
+	GrpcLogger logging.RPCConfig `json:"grpcLogger" yaml:"grpcLogger"`
 	// RestLogger configures the REST request logging middleware.
 	RestLogger logging.HTTPConfig `json:"restLogger" yaml:"restLogger"`
 	// Postgres configures the PostgreSQL connection.

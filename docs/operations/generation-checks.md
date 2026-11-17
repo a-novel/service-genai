@@ -8,7 +8,7 @@ After its insert, a run writes its `generations` row twice: the provider's call 
 
 - `GenerationSubmit` inserts the generation with its start, then sends the payload it holds in memory and records the call's id. The service never stores the payload, so no other check can send it.
 - `GenerationGet` checks every unsettled generation it reads, so a poll made after the provider finished returns the settled generation. The caller bounds how often it polls.
-- The `sweep` server checks every unsettled generation, each time a scheduler posts to `/sweep`, and every `SWEEP_INTERVAL` when `SWEEP_TICKER` is set. One run leads at a time across every replica: it holds a PostgreSQL advisory lock on a connection of its own, and a run that finds it taken checks nothing. The leader reads batches of `SWEEP_BATCH_SIZE` in id order while each comes back full, and starts no check its deadline could not wait out.
+- The `sweep` server checks every unsettled generation every `SWEEP_INTERVAL`. One run leads at a time across every replica: it holds a PostgreSQL advisory lock on a connection of its own, and a run that finds it taken checks nothing. The leader reads batches of `SWEEP_BATCH_SIZE` in id order while each comes back full.
 
 The sweep exists for generations whose caller stopped polling. The provider keeps a finished result it does not store only for a while, and only a check frees the concurrency slot of a generation nobody follows.
 
@@ -52,7 +52,7 @@ A held slot covers a call the provider may still run while nothing tracks or met
 
 Nothing needs draining. A start already sent runs detached from shutdown until the process exits. Kubernetes kills it 30 seconds after SIGTERM, its default grace period, long after a server's drain ends at 6 seconds. A provider answers a start well within that, so the start is not cut between the provider accepting the call and its id reaching the database. Every write the start makes after that carries its own deadline.
 
-A sweep stops taking generations once shutdown begins, and answers when the checks it started end. Its leader releases the advisory lock as the run ends, and the database releases it with the session if the process dies. With `SWEEP_TICKER`, the server exits once its run's checks end, or when Kubernetes kills it at 30 seconds. A replica that dies mid-check leaves a row the next poll or sweep picks up. A stream open on a stopping replica ends with `UNAVAILABLE`, and its caller resumes it on another replica, after the last event received.
+A sweep stops taking generations once shutdown begins, and ends when the checks it started end. Its leader releases the advisory lock as the run ends, and the database releases it with the session if the process dies. The server exits once its run's checks end, or when Kubernetes kills it at 30 seconds. A replica that dies mid-check leaves a row the next poll or sweep picks up. A stream open on a stopping replica ends with `UNAVAILABLE`, and its caller resumes it on another replica, after the last event received.
 
 The losses that remain are rare. Each settles its generation `failed`, `OUTCOME_UNKNOWN`, and its answer goes unrecorded:
 

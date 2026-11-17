@@ -579,8 +579,6 @@ func TestGenerationSubmit(t *testing.T) {
 					require.EqualError(t, err, testCase.expectMessage)
 				}
 			}
-
-			mock.AssertExpectationsForObjects(t, submitDao, attemptDao, usageDao, liveDao, check)
 		})
 	}
 
