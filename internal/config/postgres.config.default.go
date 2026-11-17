@@ -7,12 +7,13 @@ import (
 	"github.com/a-novel/service-genai/internal/config/env"
 )
 
+// migrationsSessionParams make a migration waiting for a lock give up after three seconds.
+var migrationsSessionParams = map[string]any{"lock_timeout": "3s"}
+
 // PostgresPresetMigrations is the migrations job's connection. A migration waiting for a lock gives
 // up after three seconds, so the queries queued behind it on its table proceed, and the runner tries
 // it again later. Its statements are not bounded, since building an index can run long.
-var PostgresPresetMigrations = lo.Must(env.Postgres.Preset(
-	pgdriver.WithConnParams(map[string]any{"lock_timeout": "3s"}),
-))
+var PostgresPresetMigrations = lo.Must(env.Postgres.Preset(pgdriver.WithConnParams(migrationsSessionParams)))
 
 // serverSessionTimeouts bound the server's sessions on the database side too: a statement, a lock
 // wait or an abandoned transaction gives up there, rather than holding a connection the client has

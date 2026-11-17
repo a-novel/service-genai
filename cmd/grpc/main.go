@@ -51,6 +51,44 @@ func main() {
 		defer cfg.Postgres.Close()
 	}
 
+	callLimit := grpcf.NewCallLimit(cfg.Grpc.MaxConcurrentCalls)
+	server := lo.Must(newServer(ctx, cfg, callLimit))
+
+	// =================================================================================================================
+	// RUN
+	// =================================================================================================================
+
+	log.Println("Starting gRPC server on :" + strconv.Itoa(cfg.Grpc.Port))
+	log.Println("Serving the calls in flight on :" + strconv.Itoa(cfg.Metrics.Port))
+
+	// Either server stops the other when it ends, so the process never serves calls it cannot report.
+	metrics := make(chan error, 1)
+
+	go func() {
+		metrics <- httpf.ListenAndServe(ctx, cfg.Metrics, callLimit)
+
+		stop()
+	}()
+
+	err := grpcf.ListenAndServe(ctx, cfg.Grpc, server)
+
+	stop()
+
+	err = errors.Join(err, <-metrics)
+	if err != nil {
+		panic(err)
+	}
+}
+
+// newServer builds the gRPC server and the whole graph behind it, under callLimit. Each call carries
+// the database of ctx, and passes the service-token gate first. The gate refuses an empty issuer
+// unless cfg opts a local stack out, so the server never starts open by mistake.
+func newServer(ctx context.Context, cfg config.App, callLimit *grpcf.CallLimit) (*grpc.Server, error) {
+	serviceToken, err := grpcf.ServiceTokenGate(cfg.ServiceToken, httpf.NewPoolClient(httpf.PoolOptions{}))
+	if err != nil {
+		return nil, fmt.Errorf("service token gate: %w", err)
+	}
+
 	// =================================================================================================================
 	// DAO
 	// =================================================================================================================
@@ -71,7 +109,10 @@ func main() {
 	// SERVICES
 	// =================================================================================================================
 
-	registry := lo.Must(connectors.NewRegistry(connectors.OpenAIConfig(cfg.OpenAI)))
+	registry, err := connectors.NewRegistry(connectors.OpenAIConfig(cfg.OpenAI))
+	if err != nil {
+		return nil, fmt.Errorf("connectors: %w", err)
+	}
 
 	transactor := postgres.NewTransactor(nil)
 
@@ -117,8 +158,8 @@ func main() {
 	// SERVER
 	// =================================================================================================================
 
-	callLimit := grpcf.NewCallLimit(cfg.Grpc.MaxConcurrentCalls)
-	server := lo.Must(newServer(ctx, cfg, callLimit))
+	options := slices.Concat(handlers.GrpcServerOptions(callLimit), serviceToken)
+	server := grpcf.NewGRPCServer(ctx, cfg.GrpcLogger, cfg.App.DowntimeStart, nil, options...)
 
 	grpcf.RegisterHealth(ctx, server)
 
@@ -131,42 +172,5 @@ func main() {
 
 	reflection.Register(server)
 
-	// =================================================================================================================
-	// RUN
-	// =================================================================================================================
-
-	log.Println("Starting gRPC server on :" + strconv.Itoa(cfg.Grpc.Port))
-	log.Println("Serving the calls in flight on :" + strconv.Itoa(cfg.Metrics.Port))
-
-	// Either server stops the other when it ends, so the process never serves calls it cannot report.
-	metrics := make(chan error, 1)
-
-	go func() {
-		metrics <- httpf.ListenAndServe(ctx, cfg.Metrics, callLimit)
-
-		stop()
-	}()
-
-	err := grpcf.ListenAndServe(ctx, cfg.Grpc, server)
-
-	stop()
-
-	err = errors.Join(err, <-metrics)
-	if err != nil {
-		panic(err)
-	}
-}
-
-// newServer builds the gRPC server under callLimit. Each call carries the database of ctx, and passes
-// the service-token gate first. The gate refuses an empty issuer unless cfg opts a local stack out, so
-// the server never starts open by mistake.
-func newServer(ctx context.Context, cfg config.App, callLimit *grpcf.CallLimit) (*grpc.Server, error) {
-	serviceToken, err := grpcf.ServiceTokenGate(cfg.ServiceToken, httpf.NewPoolClient(httpf.PoolOptions{}))
-	if err != nil {
-		return nil, fmt.Errorf("service token gate: %w", err)
-	}
-
-	options := slices.Concat(handlers.GrpcServerOptions(callLimit), serviceToken)
-
-	return grpcf.NewGRPCServer(ctx, cfg.GrpcLogger, cfg.App.DowntimeStart, nil, options...), nil
+	return server, nil
 }

@@ -5,8 +5,8 @@ import (
 )
 
 // AppPresetDefault is the configuration the service starts with. It reads every value from the
-// environment. With an OTLP endpoint, it logs through the OpenTelemetry backend, and spans record
-// each request and call, so the servers write no request log.
+// environment. Once telemetry exports over OTLP, spans record each request and call, so the servers
+// write no request log.
 var AppPresetDefault = App{
 	App: Main{
 		Name:          env.AppName,

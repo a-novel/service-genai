@@ -258,9 +258,9 @@ package main
 import (
 	"context"
 	"log"
+	"os"
 
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
+	"github.com/a-novel-kit/golib/grpcf"
 
 	servicegenai "github.com/a-novel/service-genai/pkg/go"
 )
@@ -268,13 +268,12 @@ import (
 func main() {
 	ctx := context.Background()
 
-	// A local stack without a token issuer takes plaintext calls with no service token. In
-	// production, dial with the options of golib's grpcf.ServiceTokenCredentialsProvider: it sends
-	// the caller's service token with every call, over TLS once its TLS field is set.
-	client, err := servicegenai.NewClient(
-		"service-genai:8080",
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
+	// LoadClientConfig reads SERVICE_GENAI_HOST, _PORT, _TLS and _TOKEN_PATH. In production, the
+	// token path names the caller's projected service token, which the server requires. Without
+	// it, the client dials a local standalone image in plaintext.
+	target := grpcf.LoadClientConfig(os.Getenv, "SERVICE_GENAI", grpcf.ClientConfig{Host: "service-genai", Port: 8080})
+
+	client, err := servicegenai.NewClient(target.Address(), target.DialOptions()...)
 	if err != nil {
 		log.Fatal(err)
 	}

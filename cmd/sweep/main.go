@@ -81,6 +81,10 @@ func main() {
 	// HANDLERS
 	// =================================================================================================================
 
+	handlerHealth := httpf.Health(map[string]func(context.Context) error{
+		"client:postgres": postgres.Health,
+	})
+
 	// =================================================================================================================
 	// ROUTER
 	// =================================================================================================================
@@ -88,7 +92,7 @@ func main() {
 	router := httpf.NewMux(cfg.Rest, cfg.RestLogger, cfg.App.DowntimeStart)
 
 	router.Get("/ping", httpf.Ping)
-	router.Get("/healthcheck", httpf.Health(map[string]func(context.Context) error{"client:postgres": postgres.Health}))
+	router.Get("/healthcheck", handlerHealth)
 
 	// =================================================================================================================
 	// RUN

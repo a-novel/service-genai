@@ -174,9 +174,7 @@ func TestClient(t *testing.T) {
 		tokenPath := filepath.Join(t.TempDir(), "token")
 		require.NoError(t, os.WriteFile(tokenPath, []byte("token"), 0o600))
 
-		provider := &grpcf.ServiceTokenCredentialsProvider{ServiceTokenPath: tokenPath}
-		options, err := provider.Options(t.Context())
-		require.NoError(t, err)
+		options := grpcf.ClientConfig{TokenPath: tokenPath}.DialOptions()
 
 		client, err := servicegenai.NewClient("passthrough:///bufconn", append(options,
 			grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
