@@ -2,9 +2,11 @@
 package configtest
 
 import (
-	"github.com/a-novel/service-genai/internal/config"
+	"github.com/samber/lo"
+
+	"github.com/a-novel/service-genai/internal/config/env"
 )
 
 // PostgresPreset is the PostgreSQL configuration used in integration tests: the connection every
 // preset shares, without the server's session timeouts.
-var PostgresPreset = config.NewPostgresPreset()
+var PostgresPreset = lo.Must(env.Postgres.Preset())

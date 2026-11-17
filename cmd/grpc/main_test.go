@@ -9,7 +9,6 @@ import (
 	"github.com/a-novel-kit/golib/servicetoken"
 
 	"github.com/a-novel/service-genai/internal/config"
-	"github.com/a-novel/service-genai/internal/handlers"
 )
 
 func TestNewServer(t *testing.T) {
@@ -18,8 +17,7 @@ func TestNewServer(t *testing.T) {
 	testCases := []struct {
 		name string
 
-		serviceToken   servicetoken.Config
-		issuerOptional bool
+		serviceToken servicetoken.Config
 
 		expectErr error
 	}{
@@ -36,13 +34,13 @@ func TestNewServer(t *testing.T) {
 			// A local stack opts out, and the server starts without the gate.
 			name: "Success/IssuerOptional",
 
-			issuerOptional: true,
+			serviceToken: servicetoken.Config{IssuerOptional: true},
 		},
 		{
 			// A deployment that forgets the issuer stops at startup rather than admit every caller.
 			name: "Error/IssuerRequired",
 
-			expectErr: handlers.ErrServiceTokenIssuerRequired,
+			expectErr: servicetoken.ErrIssuerRequired,
 		},
 	}
 
@@ -52,7 +50,6 @@ func TestNewServer(t *testing.T) {
 
 			cfg := config.AppPresetDefault
 			cfg.ServiceToken = testCase.serviceToken
-			cfg.ServiceIssuerOptional = testCase.issuerOptional
 
 			server, err := newServer(t.Context(), cfg, grpcf.NewCallLimit(0))
 			require.ErrorIs(t, err, testCase.expectErr)

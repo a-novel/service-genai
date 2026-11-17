@@ -100,7 +100,7 @@ func TestGrpcStatus(t *testing.T) {
 						require.NoError(t, tx.Rollback())
 					}()
 
-					ctx = context.WithValue(ctx, postgres.ContextKey{}, tx)
+					ctx = postgres.WithTx(ctx, tx)
 				}
 			}
 

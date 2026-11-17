@@ -72,11 +72,8 @@ type App struct {
 	// Rest holds the configuration of the sweep's REST server.
 	Rest httpf.ServerConfig
 	// ServiceToken names the service tokens the gRPC server accepts. Without an issuer, the server
-	// refuses to start unless ServiceIssuerOptional is set.
+	// refuses to start unless its IssuerOptional is set, which only a local or test stack does.
 	ServiceToken servicetoken.Config
-	// ServiceIssuerOptional lets the gRPC server start without a service-token issuer, and then
-	// take every call. Only a local or test stack sets it.
-	ServiceIssuerOptional bool
 	// Generations holds how generations are run and kept.
 	Generations Generations
 	// Sweep configures the sweep that checks generations nobody polled.

@@ -119,7 +119,7 @@ func TestClient(t *testing.T) {
 
 			return handler(ctx, req)
 		}))
-		grpcf.RegisterEchoServers(server)
+		grpcf.RegisterHealth(t.Context(), server)
 
 		listener := bufconn.Listen(1 << 16)
 		go func() { _ = server.Serve(listener) }()

@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -17,7 +16,6 @@ import (
 
 	"github.com/samber/lo"
 	"google.golang.org/grpc"
-	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
 
 	"github.com/a-novel-kit/golib/downtime"
@@ -27,7 +25,6 @@ import (
 	"github.com/a-novel-kit/golib/postgres"
 
 	"github.com/a-novel/service-genai/internal/config"
-	"github.com/a-novel/service-genai/internal/config/env"
 	"github.com/a-novel/service-genai/internal/core"
 	"github.com/a-novel/service-genai/internal/dao"
 	"github.com/a-novel/service-genai/internal/handlers"
@@ -47,16 +44,11 @@ func main() {
 	lo.Must0(otel.Init(cfg.Otel))
 	defer cfg.Otel.Flush()
 
-	if env.OTLPEndpoint == "" {
-		log.SetFlags(log.Flags() &^ (log.Ldate | log.Ltime))
-	}
-
 	// A server started during a planned downtime refuses work, so it leaves the database alone.
 	if !downtime.Started(cfg.App.DowntimeStart, time.Now()) {
 		ctx = lo.Must(postgres.NewContext(ctx, cfg.Postgres))
 
-		database := lo.Must(cfg.Postgres.DB(ctx))
-		defer closeDatabase(database)
+		defer cfg.Postgres.Close()
 	}
 
 	// =================================================================================================================
@@ -128,13 +120,7 @@ func main() {
 	callLimit := grpcf.NewCallLimit(cfg.Grpc.MaxConcurrentCalls)
 	server := lo.Must(newServer(ctx, cfg, callLimit))
 
-	healthcheck := grpcf.RegisterEchoServers(server)
-	healthcheck.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
-
-	go func() {
-		<-ctx.Done()
-		healthcheck.SetServingStatus("", healthpb.HealthCheckResponse_NOT_SERVING)
-	}()
+	grpcf.RegisterHealth(ctx, server)
 
 	genaiv0.RegisterStatusServiceServer(server, handlerStatus)
 	genaiv0.RegisterGenerationSubmitServiceServer(server, handlerSubmit)
@@ -175,25 +161,12 @@ func main() {
 // the service-token gate first. The gate refuses an empty issuer unless cfg opts a local stack out, so
 // the server never starts open by mistake.
 func newServer(ctx context.Context, cfg config.App, callLimit *grpcf.CallLimit) (*grpc.Server, error) {
-	serviceToken, err := handlers.GrpcServiceToken(
-		cfg.ServiceToken, cfg.ServiceIssuerOptional, httpf.NewPoolClient(httpf.PoolOptions{}),
-	)
+	serviceToken, err := grpcf.ServiceTokenGate(cfg.ServiceToken, httpf.NewPoolClient(httpf.PoolOptions{}))
 	if err != nil {
 		return nil, fmt.Errorf("service token gate: %w", err)
 	}
 
-	ctxInterceptor := func(rpCtx context.Context) context.Context {
-		return postgres.TransferContext(ctx, rpCtx)
-	}
-
 	options := slices.Concat(handlers.GrpcServerOptions(callLimit), serviceToken)
 
-	return grpcf.NewServer(ctx, cfg.Otel, cfg.GrpcLogger, cfg.App.DowntimeStart, ctxInterceptor, options...), nil
-}
-
-func closeDatabase(database io.Closer) {
-	err := database.Close()
-	if err != nil {
-		log.Println("Close Postgres: " + err.Error())
-	}
+	return grpcf.NewGRPCServer(ctx, cfg.GrpcLogger, cfg.App.DowntimeStart, nil, options...), nil
 }
