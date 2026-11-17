@@ -21,42 +21,11 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Log in to the container registry
-      if: inputs.registry_login == 'true'
-      shell: bash
+    - uses: a-novel-kit/workflows/build-actions/compose-up@v1.87.0
       env:
-        GH_TOKEN: ${{ github.token }}
-        REGISTRY_USERNAME: ${{ github.actor }}
-      run: |
-        set -euo pipefail
-        printf '%s' "${GH_TOKEN}" | docker login ghcr.io --username "${REGISTRY_USERNAME}" --password-stdin
-
-    - name: Start CI services
-      shell: bash
-      env:
-        CI_SERVICES: ${{ inputs.services }}
-        COMPOSE_PROJECT_NAME: ci-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
         DATABASE_IMAGE: ${{ inputs.database_image }}
-        POSTGRES_PASSWORD: postgres
         STANDALONE_GRPC_IMAGE: ${{ inputs.standalone_grpc_image }}
-      run: |
-        set -euo pipefail
-        read -r -a services <<< "${CI_SERVICES}"
-
-        set +e
-        docker compose --file builds/compose.ci.yaml up \
-          --detach \
-          --no-build \
-          --wait \
-          --wait-timeout 120 \
-          "${services[@]}"
-        status=$?
-        set -e
-
-        if (( status == 0 )); then
-          exit 0
-        fi
-
-        docker compose --file builds/compose.ci.yaml ps --all || true
-        docker compose --file builds/compose.ci.yaml logs --no-color || true
-        exit "${status}"
+        POSTGRES_PASSWORD: postgres
+      with:
+        services: ${{ inputs.services }}
+        registry_login: ${{ inputs.registry_login }}
