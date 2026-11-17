@@ -21,7 +21,7 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: a-novel-kit/workflows/build-actions/compose-up@v1.87.0
+    - uses: a-novel-kit/workflows/build-actions/compose-up@v1.87.1
       env:
         DATABASE_IMAGE: ${{ inputs.database_image }}
         STANDALONE_GRPC_IMAGE: ${{ inputs.standalone_grpc_image }}
