@@ -26,7 +26,7 @@ run-name: "${{ github.event_name == 'push' && format('📦 publish {0}', github.
 # plan and cut run release-core with this CLI version.
 env:
   # renovate: datasource=go depName=github.com/a-novel-kit/stack/cli
-  cli_version: "1.42.5"
+  cli_version: "1.43.0"
 
 jobs:
   plan:
