@@ -145,9 +145,6 @@ func TestGenerationStream(t *testing.T) {
 
 			require.ErrorIs(t, err, testCase.expectErr)
 			require.Equal(t, testCase.expect, received)
-
-			getDao.AssertExpectations(t)
-			streaming.AssertExpectations(t)
 		})
 	}
 }

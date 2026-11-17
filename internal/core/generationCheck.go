@@ -347,13 +347,12 @@ func (service *GenerationCheck) failStart(
 	// A start never sent, or turned away before the provider accepted it, ran nothing.
 	message, class := failureStartFailed, dao.GenerationFailureNotStarted
 
-	var (
-		rejection *connectors.RejectionError
-		response  json.RawMessage
-	)
+	var response json.RawMessage
+
+	rejection, rejected := errors.AsType[*connectors.RejectionError](cause)
 
 	switch {
-	case errors.As(cause, &rejection):
+	case rejected:
 		message, class, response = failureRejected, dao.GenerationFailureRejected, rejection.Response
 	case errors.Is(cause, connectors.ErrStartAmbiguous):
 		message, class = failureOutcomeUnknown, dao.GenerationFailureOutcomeUnknown

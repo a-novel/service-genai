@@ -18,20 +18,12 @@ grpcurl -plaintext "localhost:${SERVICE_GENAI_GRPC_PORT}" grpc.health.v1.Health/
 grpcurl -plaintext "localhost:${SERVICE_GENAI_GRPC_PORT}" anovel.genai.v0.StatusService/Status
 ```
 
-To sweep a local stack by hand, start the sweep server with the stack's environment:
+To sweep a local stack, start the sweep server with the stack's environment. It sweeps every `SWEEP_INTERVAL` on its own:
 
 ```bash
 eval "$(a-novel run env service-genai)"
 REST_PORT=8090 go run ./cmd/sweep
 ```
-
-Once it logs `Starting sweep server on :8090`, post to it from another shell:
-
-```bash
-curl -X POST localhost:8090/sweep
-```
-
-Start it with `SWEEP_TICKER=true` instead, and it sweeps every `SWEEP_INTERVAL` on its own.
 
 ### Generations
 

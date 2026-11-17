@@ -252,9 +252,8 @@ func streamEventOf(data json.RawMessage) (*StreamEvent, error) {
 
 // classifyOpenAIStreamError tells a stream the provider refuses from one worth opening again.
 func classifyOpenAIStreamError(err error) error {
-	var apiErr *openai.Error
-
-	if !errors.As(err, &apiErr) {
+	apiErr, ok := errors.AsType[*openai.Error](err)
+	if !ok {
 		return fmt.Errorf("%w: %w", ErrRetryable, err)
 	}
 
@@ -305,8 +304,8 @@ func (provider *OpenAI) Cancel(ctx context.Context, id string) (*Call, error) {
 	err := provider.client.Post(ctx, callPath(id)+"/cancel", nil, &raw, readOptions...)
 
 	// OpenAI refuses to cancel a response that already finished. Its result is still there, and paid.
-	var apiErr *openai.Error
-	if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusBadRequest {
+	apiErr, ok := errors.AsType[*openai.Error](err)
+	if ok && apiErr.StatusCode == http.StatusBadRequest {
 		call, getErr := provider.Get(ctx, id)
 		if getErr != nil {
 			return nil, otel.ReportError(span, getErr)
@@ -534,9 +533,8 @@ func unixTime(seconds float64) time.Time {
 // classifyOpenAIStartError separates definitive rejection from a response that may have been lost.
 // sent reports whether the request fully left.
 func classifyOpenAIStartError(err error, sent bool) error {
-	var apiErr *openai.Error
-
-	if !errors.As(err, &apiErr) {
+	apiErr, ok := errors.AsType[*openai.Error](err)
+	if !ok {
 		// A request that never fully left cannot have been accepted, whatever stopped it: a refused
 		// or timed-out dial, a stalled handshake, the start deadline.
 		if !sent {
@@ -587,16 +585,12 @@ func errorBody(apiErr *openai.Error) json.RawMessage {
 // Refused credentials are this service's configuration and say nothing about the operation. Anything
 // else, a not-found above all, means the operation cannot be read.
 func classifyOpenAIError(err error) error {
-	var (
-		apiErr       *openai.Error
-		oversizedErr *http.MaxBytesError
-	)
-
-	if errors.As(err, &oversizedErr) {
+	if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 		return fmt.Errorf("%w: %w", ErrResponseTooLarge, err)
 	}
 
-	if !errors.As(err, &apiErr) {
+	apiErr, ok := errors.AsType[*openai.Error](err)
+	if !ok {
 		// No HTTP response at all: a dial failure, a timeout, a reset connection.
 		return fmt.Errorf("%w: %w", ErrRetryable, err)
 	}

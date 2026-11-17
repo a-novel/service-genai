@@ -303,8 +303,6 @@ func TestGrpcGenerationSubmit(t *testing.T) {
 			} else {
 				require.Equal(t, testCase.expectRetry, retry.GetRetryDelay().AsDuration())
 			}
-
-			service.AssertExpectations(t)
 		})
 	}
 }

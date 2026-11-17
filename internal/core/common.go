@@ -13,9 +13,6 @@ var ErrGenerationNotFound = dao.ErrGenerationGetNotFound
 // begun it yet: its result is read by polling.
 var ErrStreamUnavailable = connectors.ErrStreamUnavailable
 
-// ErrProviderUnknown is returned for a provider no connector serves.
-var ErrProviderUnknown = connectors.ErrProviderUnknown
-
 // ErrModeUnsupported is returned when the provider's connector does not offer the mode a request
 // needs.
 var ErrModeUnsupported = connectors.ErrModeUnsupported

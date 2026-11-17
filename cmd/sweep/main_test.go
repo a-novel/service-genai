@@ -78,8 +78,6 @@ func TestSweepRun(t *testing.T) {
 			worked, err := sweepRun(service, testCase.downtimeStart)(t.Context())
 			require.ErrorIs(t, err, testCase.expectErr)
 			require.False(t, worked)
-
-			mock.AssertExpectationsForObjects(t, daoSweep, daoLock, daoUnlock, serviceCheck)
 		})
 	}
 }

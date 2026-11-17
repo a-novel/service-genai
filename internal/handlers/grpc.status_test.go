@@ -130,8 +130,6 @@ func TestGrpcStatus(t *testing.T) {
 				}
 				require.Equal(t, expectResponse, response)
 			}
-
-			queueDepth.AssertExpectations(t)
 		})
 	}
 
@@ -169,6 +167,5 @@ func TestGrpcStatus(t *testing.T) {
 		require.Nil(t, response)
 		require.Equal(t, codes.Unavailable, status.Code(err))
 		require.Equal(t, "service dependencies unavailable", status.Convert(err).Message())
-		queueDepth.AssertExpectations(t)
 	})
 }

@@ -25,8 +25,8 @@ var refusedClasses = []string{"22", "23", "54"}
 
 // refused joins [ErrRefused] to an error the database raised for a statement's values.
 func refused(err error) error {
-	var pgErr pgdriver.Error
-	if !errors.As(err, &pgErr) {
+	pgErr, ok := errors.AsType[pgdriver.Error](err)
+	if !ok {
 		return err
 	}
 

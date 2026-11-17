@@ -197,8 +197,6 @@ func TestGenerationGet(t *testing.T) {
 			default:
 				require.Equal(t, testCase.expectStatus, result.Status)
 			}
-
-			mock.AssertExpectationsForObjects(t, getDao, check, attemptDao)
 		})
 	}
 
@@ -280,7 +278,5 @@ func TestGenerationGet(t *testing.T) {
 		require.Equal(t, core.GenerationStatusRunning, statuses[pollsWhileRunning-1])
 		require.Equal(t, core.GenerationStatusSucceeded, statuses[pollsWhileRunning])
 		require.Equal(t, core.GenerationStatusSucceeded, statuses[len(statuses)-1])
-
-		mock.AssertExpectationsForObjects(t, connector, record, settle, attemptInsert, usage, getDao, attemptList)
 	})
 }

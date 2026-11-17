@@ -1,7 +1,7 @@
 package env
 
 import (
-	"net/http"
+	"cmp"
 	"os"
 	"strconv"
 	"time"
@@ -34,12 +34,6 @@ const (
 	MaxConcurrentCallsDefault = 20
 	// MetricsPortDefault is the port that serves the gRPC server's calls in flight to an autoscaler.
 	MetricsPortDefault = 9090
-
-	// TimeoutRequestDefault bounds a REST request, which runs its checks before it answers. A sweep call
-	// checks for a minute, then waits out its last checks, which take a minute at most.
-	TimeoutRequestDefault = 2 * time.Minute
-	// TimeoutWriteDefault lets a request answer once it has run to its deadline.
-	TimeoutWriteDefault = TimeoutRequestDefault + 15*time.Second
 
 	// OpenAIBaseURLDefault reaches OpenAI's own Responses API.
 	OpenAIBaseURLDefault = "https://api.openai.com/v1/"
@@ -92,7 +86,7 @@ var (
 	PostgresMaxIdleConns = config.LoadEnv(getEnv("POSTGRES_MAX_IDLE_CONNS"), PostgresMaxIdleConnsDefault, strconv.Atoi)
 
 	// AppName is the name of the application, as it appears in logs and tracing.
-	AppName = config.LoadEnv(getEnv("APP_NAME"), AppNameDefault, config.StringParser)
+	AppName = cmp.Or(getEnv("APP_NAME"), AppNameDefault)
 	// Otel enables OpenTelemetry tracing.
 	Otel = config.LoadEnv(getEnv("OTEL"), false, strconv.ParseBool)
 
@@ -124,7 +118,7 @@ var (
 	// so no caller holds one.
 	OpenAIAPIKey = getEnv("OPENAI_API_KEY")
 	// OpenAIBaseURL is the Responses API endpoint the OpenAI connector calls.
-	OpenAIBaseURL = config.LoadEnv(getEnv("OPENAI_BASE_URL"), OpenAIBaseURLDefault, config.StringParser)
+	OpenAIBaseURL = cmp.Or(getEnv("OPENAI_BASE_URL"), OpenAIBaseURLDefault)
 
 	// Retention is how long a settled generation's user content survives before the purge.
 	Retention = config.LoadEnv(getEnv("RETENTION"), RetentionDefault, time.ParseDuration)
@@ -133,8 +127,6 @@ var (
 	SweepInterval = config.LoadEnv(getEnv("SWEEP_INTERVAL"), SweepIntervalDefault, time.ParseDuration)
 	// SweepBatchSize caps the generations one batch of a sweep takes.
 	SweepBatchSize = config.LoadEnv(getEnv("SWEEP_BATCH_SIZE"), SweepBatchSizeDefault, strconv.Atoi)
-	// SweepTicker makes the sweep server run the sweep itself, every interval.
-	SweepTicker = config.LoadEnv(getEnv("SWEEP_TICKER"), false, strconv.ParseBool)
 
 	// OTLPEndpoint is the standard OTEL_EXPORTER_OTLP_ENDPOINT. When set, traces and logs export
 	// over OTLP/HTTP, which the OTEL_EXPORTER_OTLP_* variables configure. When empty, they go to
@@ -147,14 +139,10 @@ var (
 	DowntimeStart = config.LoadEnv(getEnv("DOWNTIME_START"), nil, downtime.ParseStart)
 )
 
-// restDefaults keeps golib's REST defaults but for a few. The drain fits the pod's grace period, and a
-// request has the time its checks need. The routes only read and sweep.
+// restDefaults keeps golib's REST defaults but for the drain, which fits the pod's grace period.
 func restDefaults() httpf.ServerConfig {
 	defaults := httpf.ServerConfigDefault
 	defaults.Timeouts.Shutdown = TimeoutShutdownDefault
-	defaults.Timeouts.Request = TimeoutRequestDefault
-	defaults.Timeouts.Write = TimeoutWriteDefault
-	defaults.Cors.AllowedMethods = []string{http.MethodHead, http.MethodGet, http.MethodPost}
 
 	return defaults
 }
