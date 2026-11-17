@@ -138,8 +138,6 @@ jobs:
     permissions:
       contents: read
       packages: read
-    outputs:
-      artifact-id: ${{ steps.test.outputs.artifact-id }}
     env:
       POSTGRES_DSN: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
     steps:
@@ -149,7 +147,6 @@ jobs:
       - *start-local-database
       - uses: $/.github/actions/run-migrations
       - uses: a-novel-kit/workflows/go-actions/test-go@v1.87.0
-        id: test
         with:
           include: /internal|/cmd
           skip_setup: true
@@ -165,8 +162,6 @@ jobs:
     permissions:
       contents: read
       packages: read
-    outputs:
-      artifact-id: ${{ steps.test.outputs.artifact-id }}
     env:
       GRPC_URL: "localhost:8080"
     steps:
@@ -180,7 +175,6 @@ jobs:
           standalone_grpc_image: ghcr.io/${{ github.repository }}/standalone-grpc@${{ needs.build-standalone-grpc.outputs.digest }}
           registry_login: "true"
       - uses: a-novel-kit/workflows/go-actions/test-go@v1.87.0
-        id: test
         with:
           include: /pkg
           test_artifact: gotestpkg
@@ -208,8 +202,7 @@ jobs:
           run_args: -e POSTGRES_PASSWORD=postgres
 
   # Infra tells a real database change from a version bump by digest alone, so the image must
-  # rebuild to the same digest. The two builds run at once, each on a fresh builder: both start
-  # cold, as a release does, and a shared builder would run their common steps only once.
+  # rebuild to the same digest.
   test-reproducible-database:
     runs-on: ubuntu-latest
     permissions:
@@ -319,8 +312,6 @@ jobs:
       - uses: a-novel-kit/workflows/generic-actions/codecov@v1.87.0
         with:
           codecov_token: ${{ secrets.CODECOV_TOKEN }}
-          coverage_files: coverage.txt,coverage_pkg.txt
-          coverage_artifact_ids: ${{ needs.test-go.outputs.artifact-id }},${{ needs.test-pkg.outputs.artifact-id }}
 
   publish-docs:
     runs-on: ubuntu-latest
