@@ -1,4 +1,4 @@
-# Runs the GenAI sweep server, which a scheduler calls to check the generations nobody polled.
+# Runs the GenAI sweep server, which checks the generations nobody polled every SWEEP_INTERVAL.
 # Requires a database with migrations already applied.
 FROM docker.io/library/golang:1.27.4-alpine AS builder
 

@@ -37,11 +37,9 @@ type GenerationSweepServiceCheck interface {
 // GenerationSweepRequest holds the parameters for a [GenerationSweep.Exec] call.
 type GenerationSweepRequest struct{}
 
-// GenerationSweepResult reports what one call found.
-type GenerationSweepResult struct {
-	// Checked is how many generations the call read. Zero when another sweep led the run.
-	Checked int
-}
+// GenerationSweepResult is the outcome of a [GenerationSweep.Exec] run, which reports nothing beyond
+// its error.
+type GenerationSweepResult struct{}
 
 // A GenerationSweep checks every unsettled generation once.
 //
@@ -75,7 +73,7 @@ func NewGenerationSweep(
 }
 
 // Exec leads the run, or skips it when another sweep leads. Leading, it checks batch after batch,
-// each following the last generation of the one before, while each comes back full, so one call reads
+// each following the last generation of the one before, while each comes back full, so one run reads
 // every unsettled generation once. It starts no check once its context ends, as when the server stops.
 // It answers once the checks it started finish.
 func (service *GenerationSweep) Exec(
@@ -103,8 +101,6 @@ func (service *GenerationSweep) Exec(
 		_ = service.daoUnlock.Exec(unlockCtx, &dao.GenerationSweepUnlockRequest{Lock: lock})
 	}()
 
-	result := &GenerationSweepResult{}
-
 	var after uuid.UUID
 
 	for ctx.Err() == nil {
@@ -113,8 +109,6 @@ func (service *GenerationSweep) Exec(
 			return nil, otel.ReportError(span, err)
 		}
 
-		result.Checked += len(generations)
-
 		if len(generations) < service.sweep.BatchSize {
 			break
 		}
@@ -122,13 +116,13 @@ func (service *GenerationSweep) Exec(
 		after = generations[len(generations)-1].ID
 	}
 
-	return result, nil
+	return &GenerationSweepResult{}, nil
 }
 
 // sweepBatch reads the batch after the given generation, checks it, and returns it. Checks of
 // different generations are independent, so several run at once, as many as the sweep's concurrency.
 // A slow provider then stretches a batch by its latency alone. A generation read but left unchecked
-// waits for a later call.
+// waits for a later run.
 func (service *GenerationSweep) sweepBatch(ctx context.Context, after uuid.UUID) ([]*dao.Generation, error) {
 	ctx, span := otel.Tracer().Start(ctx, "core.GenerationSweep(sweepBatch)")
 	defer span.End()
@@ -136,7 +130,7 @@ func (service *GenerationSweep) sweepBatch(ctx context.Context, after uuid.UUID)
 	generations, err := service.dao.Exec(ctx, &dao.GenerationSweepRequest{
 		After: after, Limit: service.sweep.BatchSize,
 	})
-	// A sweep stopped during its query checks nothing; what the query read waits for a later call.
+	// A sweep stopped during its query checks nothing; what the query read waits for a later run.
 	if err != nil && ctx.Err() != nil {
 		return nil, nil
 	}

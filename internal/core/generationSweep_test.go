@@ -64,7 +64,7 @@ func TestGenerationSweep(t *testing.T) {
 				{generation: first},
 			},
 
-			expect: &core.GenerationSweepResult{Checked: 1},
+			expect: &core.GenerationSweepResult{},
 		},
 		{
 			name: "Success/Empty",
@@ -87,7 +87,7 @@ func TestGenerationSweep(t *testing.T) {
 				{generation: third},
 			},
 
-			expect: &core.GenerationSweepResult{Checked: 3},
+			expect: &core.GenerationSweepResult{},
 		},
 		{
 			// One generation's failure stays with it: the rest of the batch progresses.
@@ -98,7 +98,7 @@ func TestGenerationSweep(t *testing.T) {
 				{generation: first, err: errFoo},
 			},
 
-			expect: &core.GenerationSweepResult{Checked: 1},
+			expect: &core.GenerationSweepResult{},
 		},
 		{
 			// A panic stays with its generation: the process keeps running and the batch progresses.
@@ -109,16 +109,16 @@ func TestGenerationSweep(t *testing.T) {
 				{generation: first, panics: true},
 			},
 
-			expect: &core.GenerationSweepResult{Checked: 1},
+			expect: &core.GenerationSweepResult{},
 		},
 		{
 			// A stopping server starts no check, not even of a batch already taken: it waits for a
-			// later call.
+			// later run.
 			name: "Success/ShutdownStopsDispatch",
 
 			batches: []batchMock{{swept: []*dao.Generation{first, second}, shutdown: true}},
 
-			expect: &core.GenerationSweepResult{Checked: 2},
+			expect: &core.GenerationSweepResult{},
 		},
 		{
 			// A query cut by the shutdown is no failure: the call ends with what it checked.
@@ -249,7 +249,7 @@ func TestGenerationSweep(t *testing.T) {
 
 		result, err := service.Exec(t.Context(), &core.GenerationSweepRequest{})
 		require.NoError(t, err)
-		require.Equal(t, &core.GenerationSweepResult{Checked: 2}, result)
+		require.Equal(t, &core.GenerationSweepResult{}, result)
 		require.False(t, overlapped.Load())
 	})
 }
