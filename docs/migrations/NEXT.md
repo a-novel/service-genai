@@ -30,20 +30,7 @@ The sweep server's REST defaults return to golib's: `REST_TIMEOUT_REQUEST` is `1
 
 ## Replace POSTGRES_DSN with the discrete fields
 
-The servers and the migrations job no longer read `POSTGRES_DSN`. A deployment that set it, and not `POSTGRES_HOST`, sets the discrete fields instead:
-
-```yaml
-# before
-POSTGRES_DSN: postgres://genai:secret@db:5432/genai?sslmode=disable
-
-# after
-POSTGRES_HOST: db
-POSTGRES_PORT: "5432"
-POSTGRES_USER: genai
-POSTGRES_PASSWORD: secret
-POSTGRES_DATABASE: genai
-POSTGRES_TLS_ENABLED: "false"
-```
+The servers and the migrations job no longer read `POSTGRES_DSN`. A deployment that set it, and not `POSTGRES_HOST`, sets each part of that URL in its own variable instead: `POSTGRES_HOST`, `POSTGRES_PORT` (default `5432`), `POSTGRES_USER`, `POSTGRES_PASSWORD` (inject it as a secret), `POSTGRES_DATABASE`, and `POSTGRES_TLS_ENABLED=false` where the URL said `sslmode=disable`.
 
 A deployment that already sets `POSTGRES_HOST` needs nothing: the DSN was read only without it.
 
