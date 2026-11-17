@@ -6,6 +6,8 @@ x-postgres-healthcheck: &postgres-healthcheck
   timeout: 5s
   retries: 10
 
+# The targets leave POSTGRES_PORT unset and reach the database on its default port, 5432. The
+# a-novel daemon owns that name for the host port it publishes the database on.
 services:
   # ====================================================================================================================
   # DATABASE
@@ -43,7 +45,11 @@ services:
       postgres-genai:
         condition: service_healthy
     environment:
-      POSTGRES_DSN: postgres://postgres:postgres@postgres-genai:5432/postgres?sslmode=disable
+      POSTGRES_HOST: postgres-genai
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DATABASE: postgres
+      POSTGRES_TLS_ENABLED: false
     networks:
       - api
 
@@ -63,7 +69,11 @@ services:
       postgres-genai:
         condition: service_healthy
     environment:
-      POSTGRES_DSN: postgres://postgres:postgres@postgres-genai:5432/postgres?sslmode=disable
+      POSTGRES_HOST: postgres-genai
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DATABASE: postgres
+      POSTGRES_TLS_ENABLED: false
       # The server refuses to start without a key. The placeholder starts it; generations fail until a
       # real key is exported.
       OPENAI_API_KEY: "${OPENAI_API_KEY:-placeholder}"
@@ -93,7 +103,11 @@ services:
       service-genai-migrations:
         condition: service_completed_successfully
     environment:
-      POSTGRES_DSN: postgres://postgres:postgres@postgres-genai:5432/postgres?sslmode=disable
+      POSTGRES_HOST: postgres-genai
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DATABASE: postgres
+      POSTGRES_TLS_ENABLED: false
       OPENAI_API_KEY: "${OPENAI_API_KEY:-placeholder}"
       REST_PORT: "${SWEEP_PORT}"
     networks:

@@ -39,14 +39,11 @@ type UsageCapError struct {
 	// RetryAfter is how long until the refusing window frees usage: its oldest Usage Record then leaves
 	// it. Zero when no known time frees it, as for a concurrency.
 	RetryAfter time.Duration
-
-	// Reason words the refusal after the sentinel's message, as admission writes it.
-	Reason string
 }
 
 // Error names the scope and the limit that refused.
 func (err *UsageCapError) Error() string {
-	return ErrUsageCapReached.Error() + ": " + err.Reason
+	return ErrUsageCapReached.Error() + ": " + err.Scope + " " + err.Limit
 }
 
 // Unwrap returns [ErrUsageCapReached].
@@ -57,11 +54,6 @@ func (err *UsageCapError) Unwrap() error {
 // GenerationSubmitDao records the generation.
 type GenerationSubmitDao interface {
 	Exec(ctx context.Context, request *dao.GenerationSubmitRequest) (*dao.GenerationSubmitResult, error)
-}
-
-// GenerationSubmitDaoAttemptList reads the attempts of a replayed generation.
-type GenerationSubmitDaoAttemptList interface {
-	Exec(ctx context.Context, request *dao.GenerationAttemptListRequest) ([]*dao.GenerationAttempt, error)
 }
 
 // GenerationSubmitDaoUsageSum adds up a user's usage over each window of a cap.
@@ -141,7 +133,7 @@ type GenerationSubmitResult struct {
 // resend.
 type GenerationSubmit struct {
 	dao            GenerationSubmitDao
-	daoAttemptList GenerationSubmitDaoAttemptList
+	daoAttemptList GenerationAttemptListDao
 	daoUsageSum    GenerationSubmitDaoUsageSum
 	daoCountLive   GenerationSubmitDaoCountLive
 	serviceCheck   GenerationSubmitServiceCheck
@@ -153,7 +145,7 @@ type GenerationSubmit struct {
 // NewGenerationSubmit returns a new GenerationSubmit service.
 func NewGenerationSubmit(
 	dao GenerationSubmitDao,
-	daoAttemptList GenerationSubmitDaoAttemptList,
+	daoAttemptList GenerationAttemptListDao,
 	daoUsageSum GenerationSubmitDaoUsageSum,
 	daoCountLive GenerationSubmitDaoCountLive,
 	serviceCheck GenerationSubmitServiceCheck,
@@ -265,19 +257,12 @@ func (service *GenerationSubmit) Exec(
 		}
 	}
 
-	var attempts []*dao.GenerationAttempt
-
-	if mayHaveAttempts(generation) {
-		attempts, err = service.daoAttemptList.Exec(ctx, &dao.GenerationAttemptListRequest{GenerationID: generation.ID})
-		if err != nil {
-			return nil, otel.ReportError(span, fmt.Errorf("list attempts: %w", err))
-		}
+	loaded, err := loadGeneration(ctx, service.daoAttemptList, generation)
+	if err != nil {
+		return nil, otel.ReportError(span, err)
 	}
 
-	return &GenerationSubmitResult{
-		Generation: newGeneration(generation, attempts),
-		Created:    result.Created,
-	}, nil
+	return &GenerationSubmitResult{Generation: loaded, Created: result.Created}, nil
 }
 
 // validateRequest checks the envelope of a request, never its payload's content, which belongs to the
@@ -344,11 +329,7 @@ func (service *GenerationSubmit) admit(ctx context.Context, request *GenerationS
 
 		// The count includes the generation this submit just created.
 		if live.Count > int64(*caps.Concurrency) {
-			return otel.ReportError(span, &UsageCapError{
-				Scope:  scope,
-				Limit:  fmt.Sprintf("concurrency %d", *caps.Concurrency),
-				Reason: fmt.Sprintf("%s concurrency: %d generations already in flight", scope, live.Count-1),
-			})
+			return otel.ReportError(span, &UsageCapError{Scope: scope, Limit: fmt.Sprintf("concurrency %d", *caps.Concurrency)})
 		}
 	}
 
@@ -393,11 +374,7 @@ func windowRefusal(scope string, window GenerationCapWindow, used *dao.Generatio
 		return nil
 	}
 
-	refusal := &UsageCapError{
-		Scope:  scope,
-		Limit:  fmt.Sprintf("%s tokens over %s", tokens, formatWindow(window.Duration)),
-		Reason: fmt.Sprintf("%s over %s", scope, window.Duration),
-	}
+	refusal := &UsageCapError{Scope: scope, Limit: fmt.Sprintf("%s tokens over %s", tokens, formatWindow(window.Duration))}
 
 	// The window frees usage once its oldest record leaves it.
 	if used.OldestAt != nil {

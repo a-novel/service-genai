@@ -30,13 +30,6 @@ func TestPgGenerationRecordProviderCall(t *testing.T) {
 			state: "starting",
 		},
 		{
-			name: "Error/NeverStarted",
-
-			state: "pending",
-
-			expectErr: dao.ErrGenerationChanged,
-		},
-		{
 			name: "Error/AlreadyRecorded",
 
 			state: "running",
@@ -63,20 +56,7 @@ func TestPgGenerationRecordProviderCall(t *testing.T) {
 			postgrestest.RunDBTest(t, configtest.PostgresPreset, migrations.Migrations, func(ctx context.Context, t *testing.T) {
 				t.Helper()
 
-				// A submitted generation is starting: its start intent is recorded.
-				seed := seedGeneration
-				if testCase.state == "pending" {
-					seed = seedUnstarted
-				}
-
-				generation := seed(ctx, t)
-
-				switch testCase.state {
-				case "running":
-					runGeneration(ctx, t, generation.ID)
-				case "settled":
-					settleGeneration(ctx, t, generation)
-				}
+				generation := seedState(ctx, t, testCase.state)
 
 				recorded, err := daoRecord.Exec(ctx, &dao.GenerationRecordProviderCallRequest{
 					ID: generation.ID, ProviderCallID: "resp_new",

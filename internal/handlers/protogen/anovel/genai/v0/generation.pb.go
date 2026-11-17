@@ -28,7 +28,7 @@ type GenerationStatus int32
 const (
 	// GENERATION_STATUS_UNSPECIFIED means the status was not set. The service never stores it.
 	GenerationStatus_GENERATION_STATUS_UNSPECIFIED GenerationStatus = 0
-	// GENERATION_STATUS_PENDING means no provider call has been accepted for the current attempt yet.
+	// GENERATION_STATUS_PENDING means the provider has not accepted the generation's call yet.
 	GenerationStatus_GENERATION_STATUS_PENDING GenerationStatus = 1
 	// GENERATION_STATUS_RUNNING means the provider accepted the call and it has not settled yet.
 	GenerationStatus_GENERATION_STATUS_RUNNING GenerationStatus = 2

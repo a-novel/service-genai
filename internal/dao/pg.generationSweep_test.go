@@ -32,21 +32,21 @@ func TestPgGenerationSweep(t *testing.T) {
 			name: "Success",
 
 			limit:  10,
-			expect: []string{"starting", "running", "unstarted"},
+			expect: []string{"starting", "running"},
 		},
 		{
 			name: "Success/Limit",
 
-			limit:  2,
-			expect: []string{"starting", "running"},
+			limit:  1,
+			expect: []string{"starting"},
 		},
 		{
 			// The next page follows the last generation of the one before.
 			name: "Success/After",
 
-			after:  "running",
-			limit:  2,
-			expect: []string{"unstarted"},
+			after:  "starting",
+			limit:  1,
+			expect: []string{"running"},
 		},
 	}
 
@@ -63,7 +63,6 @@ func TestPgGenerationSweep(t *testing.T) {
 				seeded := map[string]*dao.Generation{"starting": seedGeneration(ctx, t)}
 				seeded["settled"] = settleGeneration(ctx, t, runGeneration(ctx, t, seedGeneration(ctx, t).ID))
 				seeded["running"] = runGeneration(ctx, t, seedGeneration(ctx, t).ID)
-				seeded["unstarted"] = seedUnstarted(ctx, t)
 
 				names := make(map[uuid.UUID]string, len(seeded))
 				for name, generation := range seeded {

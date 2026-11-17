@@ -40,16 +40,20 @@ func seedGeneration(ctx context.Context, t *testing.T) *dao.Generation {
 	return result.Generation
 }
 
-// seedUnstarted seeds a pending generation as an earlier release recorded it between two starts: no
-// start intent.
-func seedUnstarted(ctx context.Context, t *testing.T) *dao.Generation {
+// seedState seeds one generation and moves it to the given state: "starting" (or empty) as its
+// submit leaves it, "running" once its provider call is recorded, or "settled" when a check failed
+// it while its start was in flight. It returns the generation as that last write left it.
+func seedState(ctx context.Context, t *testing.T, state string) *dao.Generation {
 	t.Helper()
 
 	generation := seedGeneration(ctx, t)
 
-	execute(ctx, t, `UPDATE generations SET start_requested_at = NULL WHERE id = ?0`, generation.ID)
-
-	generation.StartRequestedAt = nil
+	switch state {
+	case "running":
+		return runGeneration(ctx, t, generation.ID)
+	case "settled":
+		return settleGeneration(ctx, t, generation)
+	}
 
 	return generation
 }

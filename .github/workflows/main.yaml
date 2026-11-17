@@ -43,7 +43,12 @@ jobs:
       contents: read
       packages: read
     env:
-      POSTGRES_DSN: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DATABASE: postgres
+      POSTGRES_TLS_ENABLED: "false"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -165,7 +170,12 @@ jobs:
     outputs:
       artifact-id: ${{ steps.test.outputs.artifact-id }}
     env:
-      POSTGRES_DSN: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DATABASE: postgres
+      POSTGRES_TLS_ENABLED: "false"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -276,7 +286,12 @@ jobs:
       attestations: write
       id-token: write
     env:
-      POSTGRES_DSN: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DATABASE: postgres
+      POSTGRES_TLS_ENABLED: "false"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -288,7 +303,13 @@ jobs:
           file: builds/migrations.Dockerfile
           image_name: ${{ github.repository }}/jobs/migrations
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          run_args: -e POSTGRES_DSN="${POSTGRES_DSN}"
+          run_args: >-
+            -e POSTGRES_HOST="${POSTGRES_HOST}"
+            -e POSTGRES_PORT="${POSTGRES_PORT}"
+            -e POSTGRES_USER="${POSTGRES_USER}"
+            -e POSTGRES_PASSWORD="${POSTGRES_PASSWORD}"
+            -e POSTGRES_DATABASE="${POSTGRES_DATABASE}"
+            -e POSTGRES_TLS_ENABLED="${POSTGRES_TLS_ENABLED}"
 
   build-grpc:
     needs: [build-database]
@@ -299,7 +320,12 @@ jobs:
       attestations: write
       id-token: write
     env:
-      POSTGRES_DSN: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DATABASE: postgres
+      POSTGRES_TLS_ENABLED: "false"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -314,7 +340,13 @@ jobs:
           # The server refuses to start without a provider key or a token issuer. The smoke run never
           # calls the provider, and takes no service tokens.
           run_args: >-
-            -e POSTGRES_DSN="${POSTGRES_DSN}" -e OPENAI_API_KEY=smoke-test -e SERVICE_ISSUER_OPTIONAL=true
+            -e POSTGRES_HOST="${POSTGRES_HOST}"
+            -e POSTGRES_PORT="${POSTGRES_PORT}"
+            -e POSTGRES_USER="${POSTGRES_USER}"
+            -e POSTGRES_PASSWORD="${POSTGRES_PASSWORD}"
+            -e POSTGRES_DATABASE="${POSTGRES_DATABASE}"
+            -e POSTGRES_TLS_ENABLED="${POSTGRES_TLS_ENABLED}"
+            -e OPENAI_API_KEY=smoke-test -e SERVICE_ISSUER_OPTIONAL=true
 
   build-sweep:
     needs: [build-database]
@@ -325,7 +357,12 @@ jobs:
       attestations: write
       id-token: write
     env:
-      POSTGRES_DSN: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DATABASE: postgres
+      POSTGRES_TLS_ENABLED: "false"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -338,7 +375,14 @@ jobs:
           image_name: ${{ github.repository }}/sweep
           github_token: ${{ secrets.GITHUB_TOKEN }}
           # The server refuses to start without a provider key. The smoke run never calls the provider.
-          run_args: -e POSTGRES_DSN="${POSTGRES_DSN}" -e OPENAI_API_KEY=smoke-test
+          run_args: >-
+            -e POSTGRES_HOST="${POSTGRES_HOST}"
+            -e POSTGRES_PORT="${POSTGRES_PORT}"
+            -e POSTGRES_USER="${POSTGRES_USER}"
+            -e POSTGRES_PASSWORD="${POSTGRES_PASSWORD}"
+            -e POSTGRES_DATABASE="${POSTGRES_DATABASE}"
+            -e POSTGRES_TLS_ENABLED="${POSTGRES_TLS_ENABLED}"
+            -e OPENAI_API_KEY=smoke-test
 
   build-standalone-grpc:
     runs-on: ubuntu-latest

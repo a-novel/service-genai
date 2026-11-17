@@ -2,9 +2,9 @@ package core
 
 import (
 	"errors"
-	"strings"
 
 	"github.com/go-playground/validator/v10"
+	"github.com/go-playground/validator/v10/non-standard/validators"
 )
 
 var validate = validator.New(validator.WithRequiredStructEnabled())
@@ -12,14 +12,9 @@ var validate = validator.New(validator.WithRequiredStructEnabled())
 // ErrInvalidRequest is returned by a service Exec when its request fails struct validation.
 var ErrInvalidRequest = errors.New("invalid request")
 
-// ValidateNotBlank reports whether a string holds a non-whitespace character, rejecting values that
-// are empty or whitespace-only. Register it with the "notblank" struct tag.
-func ValidateNotBlank(fl validator.FieldLevel) bool {
-	return strings.TrimSpace(fl.Field().String()) != ""
-}
-
+// The "notblank" tag rejects a string that is empty or holds only whitespace.
 func init() {
-	err := validate.RegisterValidation("notblank", ValidateNotBlank)
+	err := validate.RegisterValidation("notblank", validators.NotBlank)
 	if err != nil {
 		panic(err)
 	}

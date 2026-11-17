@@ -44,8 +44,8 @@ const (
 // Generation is the durable record of one provider call.
 //
 // Its attempts hold user content, so the row is purged on a retention schedule and they go with it.
-// Every statement names the columns it reads, so a migration can drop a column no running release
-// names.
+// Statements read the whole row: the handle discards the columns this model does not name, so a
+// migration can drop a column once no running release's model names it.
 type Generation struct {
 	bun.BaseModel `bun:"table:generations,alias:generations"`
 
@@ -65,7 +65,7 @@ type Generation struct {
 
 	Status GenerationStatus `bun:"status"`
 	// StartRequestedAt records that paid work may exist even before its provider ID is durable.
-	StartRequestedAt  *time.Time `bun:"start_requested_at,nullzero"`
+	StartRequestedAt  time.Time  `bun:"start_requested_at"`
 	ProviderCallID    *string    `bun:"provider_call_id,nullzero"`
 	CancelRequestedAt *time.Time `bun:"cancel_requested_at,nullzero"`
 	// ReadAt is the database clock when the statement read the row, so a check measures every age on

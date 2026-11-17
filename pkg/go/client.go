@@ -70,9 +70,8 @@ const (
 	GenerationFailureOutcomeUnknown = genaiv0.GenerationFailure_GENERATION_FAILURE_OUTCOME_UNKNOWN
 )
 
-// maxReceiveBytes lets a generation through whole: its attempts carry the provider's raw responses,
-// of up to 24 MiB each, past gRPC's default 4 MiB receive limit. A generation holds one, or two when
-// an earlier release retried its call.
+// maxReceiveBytes lets a generation through whole: it carries the provider's raw response, of up to
+// 24 MiB, past gRPC's default 4 MiB receive limit.
 const maxReceiveBytes = 64 << 20
 
 // A Client issues the service's gRPC calls, one method per RPC. Construct one

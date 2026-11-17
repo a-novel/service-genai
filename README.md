@@ -150,13 +150,12 @@ Every variable is read from the process environment. `SERVICE_GENAI_ENV_PREFIX` 
 
 | Name                   | Description                                                                                                                   | Images      |
 | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ----------- |
-| `POSTGRES_HOST`        | PostgreSQL hostname or IP address. Selects the discrete connection fields. **Required for deployments.**                      | all         |
+| `POSTGRES_HOST`        | PostgreSQL hostname or IP address. **Required.**                                                                              | all         |
 | `POSTGRES_PORT`        | PostgreSQL port. Defaults to `5432`.                                                                                          | all         |
-| `POSTGRES_USER`        | PostgreSQL login role. **Required when `POSTGRES_HOST` is set.**                                                              | all         |
-| `POSTGRES_PASSWORD`    | PostgreSQL login password. **Required when `POSTGRES_HOST` is set; inject it as a secret.**                                   | all         |
-| `POSTGRES_DATABASE`    | PostgreSQL database name. **Required when `POSTGRES_HOST` is set.**                                                           | all         |
+| `POSTGRES_USER`        | PostgreSQL login role. **Required.**                                                                                          | all         |
+| `POSTGRES_PASSWORD`    | PostgreSQL login password. **Required; inject it as a secret.**                                                               | all         |
+| `POSTGRES_DATABASE`    | PostgreSQL database name. **Required.**                                                                                       | all         |
 | `POSTGRES_TLS_ENABLED` | Encrypt the PostgreSQL connection. Defaults to `true`; disable only when another trusted boundary protects the database link. | all         |
-| `POSTGRES_DSN`         | Connection URL, read only when `POSTGRES_HOST` is empty. Local development uses it.                                           | all         |
 | `OPENAI_API_KEY`       | OpenAI credential. **Required; inject it as a secret.** The server refuses to start without it. No caller holds one.          | all servers |
 
 <details>

@@ -75,10 +75,6 @@ func (handler *GrpcGenerationSubmit) GenerationSubmit(
 		return nil, newGrpcUsageCapStatus(refusal)
 	}
 
-	if errors.Is(err, core.ErrUsageCapReached) {
-		return nil, status.Error(codes.ResourceExhausted, err.Error())
-	}
-
 	if errors.Is(err, core.ErrModeUnsupported) {
 		return nil, status.Error(codes.Unimplemented, "the provider does not support the requested mode")
 	}

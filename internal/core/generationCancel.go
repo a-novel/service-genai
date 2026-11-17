@@ -10,7 +10,6 @@ import (
 
 	"github.com/a-novel-kit/golib/otel"
 
-	"github.com/a-novel/service-genai/internal/config"
 	"github.com/a-novel/service-genai/internal/dao"
 )
 
@@ -22,11 +21,6 @@ type GenerationCancelDao interface {
 // GenerationCancelDaoGet reads a generation that could not be stopped.
 type GenerationCancelDaoGet interface {
 	Exec(ctx context.Context, request *dao.GenerationGetRequest) (*dao.Generation, error)
-}
-
-// GenerationCancelDaoAttemptList reads the provider's answers to the generation's attempts.
-type GenerationCancelDaoAttemptList interface {
-	Exec(ctx context.Context, request *dao.GenerationAttemptListRequest) ([]*dao.GenerationAttempt, error)
 }
 
 // GenerationCancelServiceCheck stops a running provider call.
@@ -47,30 +41,26 @@ type GenerationCancelRequest struct {
 // One whose provider call is known is checked right away, which cancels the call and settles it with
 // the provider's answer: a cancelled call is not a free one. One whose start is in flight is only
 // marked, and the submit sending it stops the call as soon as the provider accepts it. One already
-// settled is returned as it stands, so a cancel that lost a race or is retried still succeeds. One an
-// earlier release left with no start in flight is settled at once.
+// settled is returned as it stands, so a cancel that lost a race or is retried still succeeds.
 type GenerationCancel struct {
 	dao            GenerationCancelDao
 	daoGet         GenerationCancelDaoGet
-	daoAttemptList GenerationCancelDaoAttemptList
+	daoAttemptList GenerationAttemptListDao
 	serviceCheck   GenerationCancelServiceCheck
-	generations    config.Generations
 }
 
 // NewGenerationCancel returns a new GenerationCancel service.
 func NewGenerationCancel(
 	dao GenerationCancelDao,
 	daoGet GenerationCancelDaoGet,
-	daoAttemptList GenerationCancelDaoAttemptList,
+	daoAttemptList GenerationAttemptListDao,
 	serviceCheck GenerationCancelServiceCheck,
-	generations config.Generations,
 ) *GenerationCancel {
 	return &GenerationCancel{
 		dao:            dao,
 		daoGet:         daoGet,
 		daoAttemptList: daoAttemptList,
 		serviceCheck:   serviceCheck,
-		generations:    generations,
 	}
 }
 
@@ -90,14 +80,7 @@ func (service *GenerationCancel) Exec(
 		return nil, otel.ReportError(span, errors.Join(err, ErrInvalidRequest))
 	}
 
-	daoRequest := &dao.GenerationRequestCancelRequest{
-		ID:        request.ID,
-		OwnerID:   request.OwnerID,
-		Error:     generationCancelledReason,
-		Retention: service.generations.Retention,
-	}
-
-	generation, err := service.dao.Exec(ctx, daoRequest)
+	generation, err := service.dao.Exec(ctx, &dao.GenerationRequestCancelRequest{ID: request.ID, OwnerID: request.OwnerID})
 
 	if errors.Is(err, dao.ErrGenerationNotCancellable) {
 		// Settled already, or not this owner's. The read is owner-scoped, so it tells the two apart
@@ -116,14 +99,10 @@ func (service *GenerationCancel) Exec(
 		}
 	}
 
-	var attempts []*dao.GenerationAttempt
-
-	if mayHaveAttempts(generation) {
-		attempts, err = service.daoAttemptList.Exec(ctx, &dao.GenerationAttemptListRequest{GenerationID: generation.ID})
-		if err != nil {
-			return nil, otel.ReportError(span, fmt.Errorf("list attempts: %w", err))
-		}
+	loaded, err := loadGeneration(ctx, service.daoAttemptList, generation)
+	if err != nil {
+		return nil, otel.ReportError(span, err)
 	}
 
-	return newGeneration(generation, attempts), nil
+	return loaded, nil
 }

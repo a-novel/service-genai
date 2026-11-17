@@ -105,7 +105,7 @@ func main() {
 		cfg.Purposes,
 	)
 	serviceGet := core.NewGenerationGet(daoGet, daoAttemptList, serviceCheck)
-	serviceCancel := core.NewGenerationCancel(daoRequestCancel, daoGet, daoAttemptList, serviceCheck, cfg.Generations)
+	serviceCancel := core.NewGenerationCancel(daoRequestCancel, daoGet, daoAttemptList, serviceCheck)
 	serviceStream := core.NewGenerationStream(daoGet, registry)
 	serviceQueueDepth := core.NewGenerationQueueDepth(daoQueueDepth)
 	serviceUsageSummary := core.NewUsageSummary(daoCountLive, daoUsageSum, cfg.Purposes)
