@@ -122,10 +122,11 @@ func TestPgGenerationSettle(t *testing.T) {
 			expectErr: dao.ErrRefused,
 		},
 		{
+			// The settled row carries the start and no call, as the settle does: only the status fence
+			// refuses it.
 			name: "Error/AlreadySettled",
 
 			state:  "settled",
-			callID: &callID,
 			status: dao.GenerationStatusSucceeded,
 
 			expectErr: dao.ErrGenerationChanged,
