@@ -35,7 +35,6 @@ type (
 	Generation        = genaiv0.Generation
 	GenerationStatus  = genaiv0.GenerationStatus
 	GenerationFailure = genaiv0.GenerationFailure
-	GenerationAttempt = genaiv0.GenerationAttempt
 
 	UsageSummaryRequest  = genaiv0.UsageSummaryRequest
 	UsageSummaryResponse = genaiv0.UsageSummaryResponse

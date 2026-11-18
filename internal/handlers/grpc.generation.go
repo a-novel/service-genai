@@ -38,7 +38,6 @@ func NewGrpcGeneration(generation *core.Generation) *genaiv0.Generation {
 		FailureClass: generationFailures[lo.FromPtr(generation.Failure)],
 		Status:       generationStatuses[generation.Status],
 		Response:     generation.Response,
-		Attempts:     []*genaiv0.GenerationAttempt{},
 		CreatedAt:    timestamppb.New(generation.CreatedAt),
 		UpdatedAt:    timestamppb.New(generation.UpdatedAt),
 	}
@@ -49,11 +48,6 @@ func NewGrpcGeneration(generation *core.Generation) *genaiv0.Generation {
 
 	if generation.ExpiresAt != nil {
 		message.ExpiresAt = timestamppb.New(*generation.ExpiresAt)
-	}
-
-	// Attempts repeats the response for the callers that still read it there.
-	if generation.Response != nil {
-		message.Attempts = []*genaiv0.GenerationAttempt{{Number: 1, Response: generation.Response}}
 	}
 
 	return message

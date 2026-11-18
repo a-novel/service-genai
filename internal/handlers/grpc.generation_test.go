@@ -45,14 +45,13 @@ func TestNewGrpcGeneration(t *testing.T) {
 			expect: &genaiv0.Generation{
 				Id: testGenerationID, OwnerId: testOwnerID, Purpose: "studio.generation", Provider: "openai",
 				Status:    genaiv0.GenerationStatus_GENERATION_STATUS_PENDING,
-				Attempts:  []*genaiv0.GenerationAttempt{},
 				CreatedAt: &timestamppb.Timestamp{Seconds: createdAtUnix, Nanos: 123456000},
 				UpdatedAt: &timestamppb.Timestamp{Seconds: createdAtUnix, Nanos: 123456000},
 			},
 		},
 		{
 			// A failure still returns the provider's answer, and with it what the call consumed. Its class
-			// tells the caller whether a resend may succeed. The answer is repeated in attempts.
+			// tells the caller whether a resend may succeed.
 			name: "Success/FailedWithResponse",
 
 			generation: &core.Generation{
@@ -68,7 +67,6 @@ func TestNewGrpcGeneration(t *testing.T) {
 				Status: genaiv0.GenerationStatus_GENERATION_STATUS_FAILED, Error: message,
 				FailureClass: genaiv0.GenerationFailure_GENERATION_FAILURE_PROVIDER_FAILED,
 				Response:     []byte(failedResponse),
-				Attempts:     []*genaiv0.GenerationAttempt{{Number: 1, Response: []byte(failedResponse)}},
 				CreatedAt:    &timestamppb.Timestamp{Seconds: createdAtUnix, Nanos: 123456000},
 				UpdatedAt:    &timestamppb.Timestamp{Seconds: createdAtUnix + 60, Nanos: 123456000},
 				SettledAt:    &timestamppb.Timestamp{Seconds: createdAtUnix + 60, Nanos: 123456000},

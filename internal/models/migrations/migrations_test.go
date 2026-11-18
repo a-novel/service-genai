@@ -46,7 +46,7 @@ func TestPurgeSettledGenerations(t *testing.T) {
 			CURRENT_TIMESTAMP, 'resp_1', CASE WHEN secs IS NOT NULL THEN CURRENT_TIMESTAMP END,
 			CURRENT_TIMESTAMP + make_interval(secs => secs)
 		FROM (SELECT ?1::float8 AS secs) AS expiry`,
-		"INSERT INTO generation_attempts (generation_id, attempt, response) VALUES (?0, 1, '{}')",
+		"INSERT INTO generation_attempts (generation_id, response) VALUES (?0, '{}')",
 		`INSERT INTO generation_usage (
 			generation_id, attempt, owner_id, purpose, provider, model, class, input_tokens,
 			output_tokens, started_at
@@ -154,7 +154,7 @@ func TestPurgeSettledGenerations(t *testing.T) {
 
 			generations: 2,
 			content: []string{
-				"INSERT INTO generation_attempts (generation_id, attempt, response) SELECT id, 1, '{}' FROM generations",
+				"INSERT INTO generation_attempts (generation_id, response) SELECT id, '{}' FROM generations",
 			},
 			purge: "SELECT purge_settled_generations(1)",
 
