@@ -39,7 +39,6 @@ func testGrpcGeneration() *genaiv0.Generation {
 		Purpose:   "studio.generation",
 		Provider:  "openai",
 		Status:    genaiv0.GenerationStatus_GENERATION_STATUS_PENDING,
-		Attempts:  []*genaiv0.GenerationAttempt{},
 		CreatedAt: timestamppb.New(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)),
 		UpdatedAt: timestamppb.New(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)),
 	}

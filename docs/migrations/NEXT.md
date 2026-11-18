@@ -1,0 +1,30 @@
+# Upgrading to NEXT
+
+A generation no longer lists its answer in `attempts`: `Generation.response`, added in v0.12.0, is the only place it comes back. The `GenerationAttempt` message and its Go client alias are gone, and the answer table loses its always-1 `attempt` column.
+
+## Do I need to act?
+
+**Required** for callers that still read `Generation.attempts` or the `GenerationAttempt` type: read `Generation.response` instead, as v0.12.0's guide describes. No repository in either organization does any more.
+
+**No** for operators: the migration needs no action, and the previous release keeps serving while it runs.
+
+## Read the response
+
+`attempts` held the same bytes as `response`, numbered 1. The field number 17 and the name `attempts` are reserved, so no later field reuses them.
+
+```go
+// before
+attempts := generation.GetAttempts()
+response := attempts[len(attempts)-1].GetResponse()
+
+// after
+response := generation.GetResponse()
+```
+
+`response` is empty until the generation settles, and when its call produced no answer.
+
+## Notes
+
+The migration drops `generation_attempts.attempt` and keys the table on `generation_id` alone. v0.12 stopped naming the column, so the previous release keeps serving while the migration runs. The down migration restores the column, with every answer as attempt 1.
+
+`generation_usage.attempt` stays: the Usage Records are never purged, and releases before v0.9.0 retried a call, so a generation may hold a second record there.

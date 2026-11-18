@@ -38,31 +38,19 @@ message Generation {
   // output and the usage are in it. Empty until the generation settles, and when the call produced no
   // answer.
   bytes response = 23;
-  // Attempts repeats response as a list of at most one, numbered 1. A later release removes it: read
-  // response instead.
-  repeated GenerationAttempt attempts = 17;
 
   // The caller reads the output, the failure kind and the usage off the provider's responses.
   reserved 7, 14, 15;
   reserved "output", "failure", "usage";
-  // Attempts are an execution policy of this service; each answered one is listed in attempts.
-  reserved 5, 6;
-  reserved "attempt", "max_attempts";
+  // A generation sends one call and never retries it: its answer is response.
+  reserved 5, 6, 17;
+  reserved "attempt", "max_attempts", "attempts";
   // The provider's own identifier for the operation stays server-side: it is this service's
   // recovery mechanism.
   reserved 13;
   reserved "provider_call_id";
   // Reserved so the numbers of the timestamps' retired RFC 3339 string form are never reused.
   reserved 9 to 12;
-}
-
-// GenerationAttempt repeats a generation's response, for the callers that still read attempts.
-message GenerationAttempt {
-  // Number is always 1: a generation sends one call.
-  int32 number = 1;
-  // Response is the provider's final answer to the call, as the provider sent it: the finished
-  // response, or the error body of a request the provider rejected.
-  bytes response = 2;
 }
 
 // GenerationStatus is where a generation sits in its lifecycle.
