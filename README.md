@@ -64,7 +64,7 @@ The `grpc` server does its work inside a request, so it needs no CPU outside of 
 ```yaml
 services:
   postgres-genai:
-    image: ghcr.io/a-novel/service-genai/database:v0.12.1
+    image: ghcr.io/a-novel/service-genai/database:v0.13.0
     networks: [api]
     environment:
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
@@ -82,7 +82,7 @@ services:
       retries: 10
 
   migrations-genai:
-    image: ghcr.io/a-novel/service-genai/jobs/migrations:v0.12.1
+    image: ghcr.io/a-novel/service-genai/jobs/migrations:v0.13.0
     depends_on:
       postgres-genai: { condition: service_healthy }
     environment:
@@ -95,7 +95,7 @@ services:
     networks: [api]
 
   service-genai:
-    image: ghcr.io/a-novel/service-genai/grpc:v0.12.1
+    image: ghcr.io/a-novel/service-genai/grpc:v0.13.0
     ports: ["${SERVICE_GENAI_GRPC_PORT}:8080"] # the container always listens on 8080
     depends_on:
       postgres-genai: { condition: service_healthy }
@@ -111,7 +111,7 @@ services:
     networks: [api]
 
   sweep-genai:
-    image: ghcr.io/a-novel/service-genai/sweep:v0.12.1
+    image: ghcr.io/a-novel/service-genai/sweep:v0.13.0
     depends_on:
       postgres-genai: { condition: service_healthy }
       migrations-genai: { condition: service_completed_successfully }

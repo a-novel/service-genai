@@ -1,5 +1,6 @@
 # Migration guides
 
+- [v0.13.0](./v0.13.0.md): A generation no longer lists its answer in `attempts`: `Generation.response`, added in v0.12.0, is the only place it comes back. The `GenerationAttempt` message and its Go client alias are gone, and the answer table loses its always-1 `attempt` column.
 - [v0.12.0](./v0.12.0.md): The sweep runs only on its own schedule: `POST /sweep` and `SWEEP_TICKER` are gone. A generation now always carries its start intent and returns the provider's answer in `response`, the servers read only the discrete `POSTGRES_*` fields, and the unused `pkg/go/mocks` package is gone.
 - [v0.11.0](v0.11.0.md): Deploy only once v0.10 runs everywhere: the migrations drop the generation columns and the payload table it stopped using.
 - [v0.10.0](v0.10.0.md): Send caps on every submit and drop `user_tier`; remove the `rest` server and `OPENAI_WEBHOOK_SECRET`; stop shipping a caps file; deploy everywhere before the next release.
