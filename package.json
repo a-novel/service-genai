@@ -44,7 +44,7 @@
     "prettier-plugin-sql": "^0.20.0",
     "typescript-eslint": "^8.46.4"
   },
-  "packageManager": "pnpm@12.21.0",
+  "packageManager": "pnpm@12.22.0",
   "engines": {
     "node": ">=23.11.0",
     "npm": ">=10.9.2"
